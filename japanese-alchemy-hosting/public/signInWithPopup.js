@@ -1,0 +1,81 @@
+import { initializeApp } from 'firebase/app';
+import { signInWithPopup, GoogleAuthProvider, getAuth, signOut } from 'firebase/auth';
+
+// Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyBGE0Ty4NFy15Y8OGIfCJDM6hTZaMrBlv8",
+  authDomain: "japanese-alchemy.firebaseapp.com",
+  projectId: "japanese-alchemy",
+  storageBucket: "japanese-alchemy.firebasestorage.app",
+  messagingSenderId: "534868241348",
+  appId: "1:534868241348:web:161aeabbdd6acf0dad5291",
+  measurementId: "G-0BWD8153FC"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+// This code runs inside of an iframe in the extension's offscreen document.
+// This gives you a reference to the parent frame, i.e. the offscreen document.
+// You will need this to assign the targetOrigin for postMessage.
+const PARENT_FRAME = document.location.ancestorOrigins[0];
+
+function sendResponse(result) {
+  globalThis.parent.self.postMessage(JSON.stringify(result), PARENT_FRAME);
+}
+
+globalThis.addEventListener('message', async function({data}) {
+  console.log('[Firebase Hosting] Received message:', data);
+  
+  if (data.type === 'signInWithGoogle') {
+    // Opens the Google sign-in page in a popup, inside of an iframe in the
+    // extension's offscreen document.
+    signInWithPopup(auth, provider)
+      .then((result) => {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        const user = {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName,
+          photoURL: result.user.photoURL,
+          accessToken: credential.accessToken
+        };
+        sendResponse({
+          success: true,
+          user: user,
+          credential: {
+            providerId: credential.providerId,
+            signInMethod: credential.signInMethod,
+            accessToken: credential.accessToken
+          }
+        });
+      })
+      .catch((error) => {
+        console.error('[Firebase Hosting] Sign in error:', error);
+        sendResponse({
+          success: false,
+          error: error.message,
+          code: error.code
+        });
+      });
+  } else if (data.type === 'signOut') {
+    signOut(auth)
+      .then(() => {
+        sendResponse({
+          action: 'signOut',
+          success: true
+        });
+      })
+      .catch((error) => {
+        console.error('[Firebase Hosting] Sign out error:', error);
+        sendResponse({
+          action: 'signOut',
+          success: false,
+          error: error.message,
+          code: error.code
+        });
+      });
+  }
+});

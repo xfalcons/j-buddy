@@ -1,0 +1,498 @@
+{
+  "id": "PROJ-save-analysis-v3",
+  "title": "Save Analysis Feature v3.0 - Simplified JSON Approach",
+  "description": "Implement ability to save full analysis to backend API using simplified 2-field schema (term/pattern + details)",
+  "priority": "high",
+  "status": "ready-for-implementation",
+  "assignee": "@agent-Coder",
+  "created": "2025-12-25",
+  "updated": "2025-12-25",
+  "scope_simplified": true,
+  "design_version": "v3.0-simplified",
+
+  "overview": {
+    "approach": "Simplified JSON Structure - 50% Less Complexity",
+    "key_decisions": [
+      "Save full analysis only (single 'Save Analysis' button, no inline saves)",
+      "Simplified schema: 2 fields per item (term/pattern + details)",
+      "Details field contains raw markdown (no parsing of individual fields)",
+      "Ruby syntax preservation is automatic (keep markdown as-is)",
+      "No local storage (backend API handles all persistence)",
+      "No UI for viewing saved items (separate application)"
+    ],
+    "v3_benefits": [
+      "50% reduction in implementation time (18h vs 39h)",
+      "50% reduction in code (190 lines vs 400 lines)",
+      "More robust (simple splitting, no complex regex)",
+      "Better maintainability",
+      "Automatic Ruby preservation"
+    ]
+  },
+
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "title": "Save Full Analysis",
+      "description": "Users can save the entire analysis (all words and grammar) with one click",
+      "acceptance_criteria": [
+        "Single 'Save Analysis' button in prose-toolbar",
+        "Parses all vocabulary and grammar points from current analysis",
+        "Sends simplified JSON (2 fields per item) to backend API",
+        "Shows count of items saved (e.g., 'Saved 13 words, 2 grammar points!')",
+        "Visual confirmation when saved (success/error)"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "REQ-2",
+      "title": "Simplified Markdown Parsing",
+      "description": "Extract term/pattern from markdown, keep rest as raw details",
+      "acceptance_criteria": [
+        "Extract vocabulary term (first line with Ruby tag: {kanji|reading})",
+        "Extract grammar pattern (first line: #### 1. 〜と (N3))",
+        "Capture everything else as raw markdown in 'details' field",
+        "Preserve Ruby syntax in term and details fields",
+        "Handle edge cases (missing sections, empty content)"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "REQ-3",
+      "title": "Visual Feedback",
+      "description": "Users receive clear visual feedback for save action",
+      "acceptance_criteria": [
+        "Loading state shown during save operation",
+        "Success confirmation with checkmark/icon",
+        "Error notification with retry option",
+        "Toast notification showing counts saved"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "REQ-4",
+      "title": "Ruby Syntax Preservation",
+      "description": "Ruby tags {kanji|reading} must be preserved throughout",
+      "acceptance_criteria": [
+        "Ruby tags preserved in vocabulary.term field",
+        "Ruby tags preserved in grammar_points.pattern field (if present)",
+        "Ruby tags preserved in details field (raw markdown)",
+        "No stripping or modification of Ruby syntax"
+      ],
+      "status": "pending"
+    }
+  ],
+
+  "data_schema": {
+    "v3_simplified": {
+      "description": "Only 2 fields per item - term/pattern + details",
+      "vocabulary_item": {
+        "term": "string (WITH Ruby: お{正月|しょうがつ} or {並|なら}ぶ)",
+        "details": "string (Raw markdown with all info: accent, meaning, conjugations, etc.)"
+      },
+      "grammar_point": {
+        "pattern": "string (WITH Ruby: #### 1. 〜と (N3))",
+        "details": "string (Raw markdown with all info: connection, explanation, examples, etc.)"
+      },
+      "metadata": {
+        "source_text": "string (original selected text)",
+        "source_url": "string (optional, URL of page)",
+        "saved_at": "string (ISO 8601 timestamp)"
+      }
+    },
+    "example_json": {
+      "vocabulary": [
+        {
+          "term": "{並|なら}ぶ",
+          "details": "\n  - 讀音：ならぶ\n  - 重音：2\n  - 動詞分類：五段動詞\n  - 意思：排列、並列\n  - 辭書形：{並|なら}ぶ\n  - て形：{並|なら}んで\n  - 否定形：{並|なら}ばない"
+        }
+      ],
+      "grammar_points": [
+        {
+          "pattern": "#### 1. 〜と (N3)",
+          "details": "- **接續形式**\n  - 動詞辭書形 + と\n- **用法說明**\n  - 表示當前項條件成立時，後項結果必然會發生..."
+        }
+      ],
+      "metadata": {
+        "source_text": "お正月の食卓に...",
+        "source_url": "https://example.com/japanese-text",
+        "saved_at": "2025-12-25T20:00:00Z"
+      }
+    }
+  },
+
+  "api_contract": {
+    "endpoint": "POST /api/v1/save-items",
+    "base_url": "https://ja-alchemy-api.xfalcons.workers.dev",
+    "content_type": "application/json",
+
+    "request_schema_v3": {
+      "save_type": "full_analysis",
+      "analysis": {
+        "vocabulary": [
+          {
+            "term": "string (WITH Ruby: {kanji|reading})",
+            "details": "string (raw markdown)"
+          }
+        ],
+        "grammar_points": [
+          {
+            "pattern": "string (WITH Ruby: #### 1. 〜と (N3))",
+            "details": "string (raw markdown)"
+          }
+        ],
+        "metadata": {
+          "source_text": "string",
+          "source_url": "string (optional)",
+          "saved_at": "string (ISO 8601)"
+        }
+      },
+      "timestamp": "string (ISO 8601)"
+    },
+
+    "success_response": {
+      "success": true,
+      "saved": {
+        "vocabulary_count": "number",
+        "grammar_points_count": "number"
+      },
+      "message": "string"
+    },
+
+    "error_response": {
+      "success": false,
+      "error": "string",
+      "code": "string"
+    }
+  },
+
+  "ui_specifications": {
+    "save_analysis_button": {
+      "location": "In prose-toolbar, next to 'Save As' button",
+      "icon": "Bookmark icon + 'Save Analysis' text",
+      "states": {
+        "default": "Outline bookmark icon, enabled when content loaded",
+        "loading": "Spinner icon, 'Saving...' text, disabled",
+        "success": "Checkmark icon, green color, 'Saved!' (2s, then reverts)",
+        "error": "X icon, red color, 'Failed' (stays until clicked again)"
+      }
+    },
+    "toast_notifications": {
+      "position": "Bottom-right of sidepanel",
+      "duration": "3 seconds auto-dismiss",
+      "style": "Dark background, Bootstrap-like",
+      "types": ["Success (green)", "Error (red)", "Info (blue)"],
+      "success_message": "Saved {vocabulary_count} words, {grammar_points_count} grammar points!"
+    }
+  },
+
+  "parsing_algorithm": {
+    "key_insight": "We DON'T parse the details! Just extract term/pattern, keep rest as-is",
+    "vocabulary_parsing": {
+      "step_1": "Find vocabulary section (### Words|Vocabulary|単語)",
+      "step_2": "Split by double newlines to get word blocks",
+      "step_3": "For each block: extract first line as term (Ruby tag)",
+      "step_4": "Everything after first line is details (raw markdown)",
+      "code_example": "const rubyMatch = firstLine.match(/\\{(.+?)\\|(.+?)\\}/); const term = rubyMatch[0]; const details = lines.slice(1).join('\\n');"
+    },
+    "grammar_parsing": {
+      "step_1": "Find grammar section (### Grammar|文法)",
+      "step_2": "Split by double newlines or '####' headers",
+      "step_3": "For each block: first line is pattern header",
+      "step_4": "Everything after first line is details (raw markdown)",
+      "code_example": "if (firstLine.match(/^####\\s*\\d+\\./)) { const pattern = firstLine; const details = lines.slice(1).join('\\n'); }"
+    },
+    "ruby_preservation": {
+      "automatic": "By keeping details as raw markdown, Ruby is preserved automatically",
+      "no_special_handling": "No need to track Ruby through multiple field transformations",
+      "example": "Input: {並|なら}ぶ\\n  - 辭書形：{並|なら}ぶ → Output: term: '{並|なら}ぶ}', details: '\\n  - 辭書形：{並|なら}ぶ'"
+    }
+  },
+
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "title": "Implement Simplified Markdown Parsing",
+      "description": "Create functions to parse markdown into simplified 2-field schema",
+      "assigned_to": "@agent-Coder",
+      "file": "src/sidepanel/sidepanel.js",
+      "details": [
+        "Create parseMarkdownToSimplified(markdown, sourceText, sourceUrl) function",
+        "Create parseVocabularySection(markdown) - extract term + details",
+        "Create parseVocabularyItem(block) - split first line as term, rest as details",
+        "Create parseGrammarSection(markdown) - extract pattern + details",
+        "Create parseGrammarItem(block) - split first line as pattern, rest as details",
+        "Create extractSection(markdown, sectionName) helper",
+        "Key: NO parsing of individual fields (accent, POS, conjugations, etc.)",
+        "Test with sample markdown from docs/parse-markdown-example.md"
+      ],
+      "dependencies": [],
+      "estimated_hours": 4,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-2",
+      "title": "Update API Service with Save Method",
+      "description": "Add saveAnalysis() method to JaAlchemyApiService",
+      "assigned_to": "@agent-Coder",
+      "file": "src/scripts/jaAlchemyApiService.js",
+      "details": [
+        "Add saveAnalysis(analysis) method",
+        "Construct POST request to /api/v1/save-items",
+        "Use simplified JSON schema (save_type: 'full_analysis')",
+        "Handle errors gracefully",
+        "Return structured response (vocabulary_count, grammar_points_count)",
+        "Key: Only ONE save type to implement (no individual saves)"
+      ],
+      "dependencies": [],
+      "estimated_hours": 2,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-3",
+      "title": "Implement Save Analysis Function",
+      "description": "Add saveAnalysis() function in sidepanel.js",
+      "assigned_to": "@agent-Coder",
+      "file": "src/sidepanel/sidepanel.js",
+      "details": [
+        "Create async saveAnalysis() function",
+        "Call parseMarkdownToSimplified() to get simplified JSON",
+        "Get sourceText and sourceUrl from current state",
+        "Call API service saveAnalysis() method",
+        "Handle loading state (show spinner, disable button)",
+        "Handle success (show toast, update button to success state)",
+        "Handle error (show error toast, keep button in error state)",
+        "Key: Single save operation for entire analysis"
+      ],
+      "dependencies": ["TASK-1", "TASK-2"],
+      "estimated_hours": 3,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-4",
+      "title": "Add Save Analysis Button and Checkbox to UI",
+      "description": "Add Save Analysis button to prose-toolbar, add checkbox to each word/grammar point",
+      "assigned_to": "@agent-Coder",
+      "file": "src/sidepanel/sidepanel.html",
+      "details": [
+        "Add Save Analysis button HTML to prose-toolbar (next to 'Save As')",
+        "Add styling for button (outline bookmark icon)",
+        "Add loading state styles (spinner icon)",
+        "Add success state styles (checkmark icon, green)",
+        "Add error state styles (X icon, red)",
+        "Add checkbox next to each word/grammar item which will be collected on save",
+        "Attach click handler in sidepanel.js",
+        "Disable button when no content is loaded",
+        "Key: Single button, no inline save buttons needed"
+      ],
+      "dependencies": [],
+      "estimated_hours": 2,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-5",
+      "title": "Implement Visual Feedback System",
+      "description": "Add button state management and error handling",
+      "assigned_to": "@agent-Coder",
+      "file": "src/sidepanel/sidepanel.js",
+      "details": [
+        "Create updateSaveButtonState(state, message) function",
+        "States: 'default', 'loading', 'success', 'error'",
+        "Update button icon and text based on state",
+        "Enable/disable button based on state",
+        "Handle retry when in error state",
+        "Integrate with saveAnalysis() function"
+      ],
+      "dependencies": ["TASK-3", "TASK-4"],
+      "estimated_hours": 2,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-6",
+      "title": "Add Toast Notification System",
+      "description": "Add HTML, CSS, and JS for toast notifications",
+      "assigned_to": "@agent-Coder",
+      "files": [
+        "src/sidepanel/sidepanel.html",
+        "src/sidepanel/sidepanel.css",
+        "src/sidepanel/sidepanel.js"
+      ],
+      "details": [
+        "Add toast container HTML to sidepanel.html",
+        "Add CSS for toast positioning (bottom-right) and animations",
+        "Create showToast(message, type, duration) function in sidepanel.js",
+        "Support multiple toast types (success, error, info)",
+        "Auto-dismiss after duration (default 3s)",
+        "Show success message with counts: 'Saved {n} words, {n} grammar points!'"
+      ],
+      "dependencies": [],
+      "estimated_hours": 1,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-7",
+      "title": "Testing and Bug Fixes",
+      "description": "Test all save functionality and verify Ruby preservation",
+      "assigned_to": "@agent-QA",
+      "details": [
+        "Test parsing with sample markdown from docs/parse-markdown-example.md",
+        "Test Ruby preservation in vocabulary.term field",
+        "Test Ruby preservation in grammar_points.pattern field",
+        "Test Ruby preservation in details field",
+        "Test save operation success flow",
+        "Test save operation error scenarios (network failure, API error)",
+        "Test edge cases (empty content, malformed markdown, missing sections)",
+        "Test visual feedback in all states (loading, success, error)",
+        "Test toast notifications",
+        "Fix identified bugs",
+        "Verify end-to-end flow from text selection to save"
+      ],
+      "dependencies": ["TASK-1", "TASK-2", "TASK-3", "TASK-4", "TASK-5", "TASK-6"],
+      "estimated_hours": 4,
+      "status": "pending"
+    }
+  ],
+
+  "timeline": {
+    "total_estimated_hours": 18,
+    "total_estimated_days": "2-2.5",
+    "day_1": {
+      "tasks": ["TASK-1", "TASK-2"],
+      "hours": 6,
+      "description": "Simplified parsing and API service setup"
+    },
+    "day_2": {
+      "tasks": ["TASK-3", "TASK-4", "TASK-5", "TASK-6"],
+      "hours": 8,
+      "description": "Save function, UI button, visual feedback, toasts"
+    },
+    "day_3": {
+      "tasks": ["TASK-7"],
+      "hours": 4,
+      "description": "Testing, bug fixes, and verification"
+    }
+  },
+
+  "implementation_notes": {
+    "ruby_preservation": {
+      "critical": "Ruby syntax {kanji|reading} MUST be preserved",
+      "automatic": "By keeping details as raw markdown, Ruby is preserved automatically",
+      "test_cases": [
+        "Simple word: {漢字|かんじ} → term: '{漢字|かんじ}'",
+        "Word with details: {並|なら}ぶ\\n  - 辭書形：{並|なら}ぶ → Ruby preserved in both term and details",
+        "Grammar with Ruby in examples: All Ruby in details preserved as-is"
+      ]
+    },
+    "parsing_simplicity": {
+      "key": "Don't overthink the parsing - just split on first line",
+      "vocabulary": "First line = term (Ruby tag), rest = details",
+      "grammar": "First line = pattern (header), rest = details",
+      "no_regex": "Avoid complex regex for individual fields (accent, POS, etc.)"
+    },
+    "code_structure": {
+      "total_lines": "~190 lines (down from ~400 in v2.0)",
+      "sidepanel_js_additions": "~150 lines (parsing, save function, UI handling)",
+      "sidepanel_html_additions": "~20 lines (Save Analysis button, toast container)",
+      "api_service_additions": "~20 lines (saveAnalysis method)"
+    }
+  },
+
+  "risks": [
+    {
+      "id": "RISK-1",
+      "description": "Markdown parsing fails on edge cases",
+      "mitigation": "Test with sample API responses; fallback to save entire markdown if parsing fails",
+      "severity": "low",
+      "status": "open"
+    },
+    {
+      "id": "RISK-2",
+      "description": "Backend API not ready or endpoint differs",
+      "mitigation": "Mock API for development; keep endpoint configurable",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "id": "RISK-3",
+      "description": "Ruby tags accidentally stripped during parsing",
+      "mitigation": "By using simplified approach (keep details as raw markdown), Ruby is automatically preserved",
+      "severity": "low",
+      "status": "mitigated"
+    }
+  ],
+
+  "dependencies": {
+    "external": [
+      {
+        "item": "Backend API endpoint /api/v1/save-items",
+        "owner": "Backend Team",
+        "status": "pending",
+        "blocking": false
+      },
+      {
+        "item": "PostgreSQL schema for saved_analyses table",
+        "owner": "Backend Team",
+        "status": "pending",
+        "blocking": false,
+        "schema": "CREATE TABLE saved_analyses (id UUID, user_id VARCHAR, analysis JSONB, created_at TIMESTAMP)"
+      }
+    ],
+    "internal": []
+  },
+
+  "acceptance_criteria": [
+    "User can save full analysis with one 'Save Analysis' button click",
+    "Simplified JSON sent to backend (2 fields per item: term/pattern + details)",
+    "Ruby syntax preserved in term, pattern, and details fields",
+    "Visual feedback shown for save action (loading, success, error)",
+    "Toast notification shows counts saved (words and grammar)",
+    "Network errors handled gracefully with retry option",
+    "Markdown parsing extracts vocabulary and grammar correctly",
+    "End-to-end flow works: select text → analyze → save → verify"
+
+  ],
+
+  "definition_of_done": [
+    "All acceptance criteria met",
+    "Code reviewed by @Architect",
+    "Manual testing completed with sample API responses",
+    "Ruby preservation verified in all fields",
+    "Edge cases tested (empty content, malformed markdown, network errors)",
+    "API service updated with saveAnalysis method",
+    "Visual feedback working for all save states",
+    "Documentation updated (CLAUDE.md)",
+    "Ready for backend API integration"
+  ],
+
+  "out_of_scope": [
+    "Individual save buttons for each word/grammar (Phase 2)",
+    "Viewing saved items in extension (separate application)",
+    "Managing saved items (delete, edit) in extension",
+    "User authentication (backend handles)",
+    "Offline save queue",
+    "Duplicate detection (Phase 2)",
+    "Search/filter saved items (Phase 2)",
+    "Export functionality (backend provides)"
+  ],
+
+  "phase_2_enhancements": [
+    "Individual save buttons if users request more granular control",
+    "Duplicate detection to warn if analysis already saved",
+    "Search/filter saved analyses by term or pattern",
+    "Export saved analyses as JSON file"
+  ],
+
+  "notes": [
+    "v3.0 is dramatically simplified compared to v2.0 (50% less complexity)",
+    "Key insight: Don't parse individual fields - just extract term/pattern, keep rest as markdown",
+    "Ruby preservation is automatic with simplified approach",
+    "Start with Save Analysis only (Option A) - add individual saves in Phase 2 if needed",
+    "Reference docs: ARCHITECT-v3-SUMMARY.md, TECHNICAL-DESIGN-v3-SIMPLIFIED.md, api-contract-save-items-v3.md"
+  ],
+
+  "references": [
+    "docs/ARCHITECT-v3-SUMMARY.md - Executive summary of v3.0 simplification",
+    "docs/TECHNICAL-DESIGN-v3-SIMPLIFIED.md - Complete technical design",
+    "docs/api-contract-save-items-v3.md - Simplified API contract",
+    "docs/parse-markdown-example.md - Example JSON structure"
+  ]
+}

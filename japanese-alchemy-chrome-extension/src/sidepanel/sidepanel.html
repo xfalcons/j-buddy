@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Japanese Language Analysis</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      /* Colors */
+      --bg-primary: #ffffff;
+      --bg-secondary: #f3f4f6;
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --border-color: #e5e7eb;
+      --button-bg: #2563eb;
+      --button-hover: #c3d3ff;
+      --shadow-color: rgba(0, 0, 0, 0.1);
+      --alert-text: #ff0018;
+
+      --bg-ruby-base: #ecf3a4;
+      --text-ruby-base: #7070ff;
+      --text-ruby-text: #ed1313;
+    }
+
+    :root[data-theme="dark"] {
+      /* Colors */
+      --bg-primary: #282828;
+      --bg-secondary: #333438;
+      --text-primary: #efefef;
+      --text-secondary: #d4d4d4;
+      --border-color: #424242;
+      --button-bg: #63a3ff;
+      --button-hover: #528dd8;
+      --shadow-color: rgba(255, 255, 255, 0.1);
+      --alert-text: #ff3535;
+
+      --bg-ruby-base: #ecf3a4;
+      --text-ruby-base: #96b9e3;
+      --text-ruby-text: #b7c766;
+    }
+
+    *, ::after, ::before {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: "Noto Sans JP", "Helvetica Neue", system-ui, -apple-system, sans-serif;
+      transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    }
+
+    .alert-message {
+      display: none;
+      padding: 1rem;
+      background-color: var(--bg-secondary);
+      color: var(--alert-text);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      margin: 8px 0;
+    }
+
+    .alert-message.show {
+      display: block;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Loading Section */
+    .loading {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      background: var(--bg-primary);
+      border-radius: 4px;
+      margin: 0 0 8px 0;
+      box-shadow: 0 4px 6px -1px var(--shadow-color);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-color);
+    }
+
+    .loading.show {
+      display: flex;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .spinner {
+      width: 1.5rem;
+      height: 1.5rem;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--text-primary);
+      border-radius: 50%;
+      animation: spin 1s cubic-bezier(0.76, 0.35, 0.2, 0.7) infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .container {
+      padding-top: 1rem;
+      --bs-gutter-x: 1.5rem;
+      --bs-gutter-y: 0;
+      width: 100%;
+      padding-right: calc(var(--bs-gutter-x) * .5);
+      padding-left: calc(var(--bs-gutter-x) * .5);
+      margin-right: auto;
+      margin-left: auto;
+    }
+
+    /* Result Section */
+    .result {
+      display: none;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    .result.show {
+      display: block;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .prose {
+      line-height: calc(2.0rem * 12/16);
+      background: var(--bg-primary);
+      /* background-color: var(--bg-secondary); */
+      padding: 0.7rem;
+      box-shadow: 0 4px 6px -1px var(--shadow-color);
+      border: 1px solid var(--border-color);
+      border-radius: 0 0 4px 4px;
+    }
+
+    .prose h3 {
+      --tw-border-opacity: 1;
+      border: solid #0b4068;
+      border-color: rgb(11 64 104 / var(--tw-border-opacity));
+      border-width: 0 0 0 5px;
+      padding-left: .5rem;
+    }
+
+    .prose p {
+      margin-bottom: 0.5rem;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      transition: background-color 0.3s ease;
+    }
+
+    .prose p:hover {
+      background-color: rgba(99, 102, 241, 0.05);
+    }
+
+    /* Ordered and Unordered Lists */
+    .prose > ul, .prose > ol {
+      background-color: var(--bg-secondary);
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      transition: all 0.3s ease;
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+
+    .prose li {
+      /* border-radius: 0.5rem; */
+      transition: background-color 0.3s ease;
+    }
+
+    /* Ruby (Furigana) styling */
+    ruby {
+      flex-direction: column-reverse;
+      margin: 0 0.4em;
+    }
+
+    ruby:hover {
+      background-color: var(--bg-ruby-base);
+      transform: translateY(-2px);
+    }
+
+    rb {
+      color: var(--text-ruby-base);
+    }
+
+    rt {
+      font-size: calc(70%);
+      color: var(--text-ruby-text);
+      text-align: center;
+      margin-bottom: 0.1em;
+      transform: translateY(-0.2em);
+    }
+
+    .controls {
+      position: sticky;
+      top: 0;
+      background: var(--bg-primary);
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border-color);
+      z-index: 100;
+      transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+      margin: -16px -16px 24px -16px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .controls-left {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .controls-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .theme-toggle {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .theme-toggle:hover {
+      border-color: var(--button-bg);
+      background: var(--bg-secondary);
+    }
+
+    .theme-toggle svg {
+      width: 20px;
+      height: 20px;
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    .theme-toggle .sun-icon {
+      display: block;
+    }
+
+    .theme-toggle .moon-icon {
+      display: none;
+    }
+
+    [data-theme="dark"] .theme-toggle .sun-icon {
+      display: none;
+    }
+
+    [data-theme="dark"] .theme-toggle .moon-icon {
+      display: block;
+    }
+
+    .prose-toolbar {
+      display: flex;
+      gap: 8px;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s, visibility 0.2s;
+      background: var(--bg-secondary);
+      justify-content: right;
+      border: 1px solid var(--border-color);
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
+      padding: 8px;
+    }
+
+    .prose-toolbar.visible {
+      opacity: 1;
+      visibility: visible;
+      padding: 8px 22px 4px 22px;
+    }
+
+    .prose-toolbar.translating {
+      opacity: 0.7;
+    }
+
+    .font-size-button, .copy-button, .save-as-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      opacity: 0.9;
+      transition: opacity 0.2s, background-color 0.2s;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      padding: 8px;
+      margin: 0;
+    }
+
+    .font-size-button:hover, .copy-button:hover, .save-as-button:hover {
+      opacity: 1;
+      background-color: var(--button-hover);
+    }
+
+    .font-size-button {
+      position: relative;
+      padding: 1px;
+    }
+
+    .font-size-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      display: none;
+      z-index: 1000;
+      padding: 4px 0;
+      min-width: 60px;
+      margin-top: 4px;
+    }
+
+    .font-size-menu.visible {
+      display: block;
+    }
+
+    .font-size-option {
+      padding: 4px 12px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .font-size-option:hover {
+      background: var(--bg-secondary);
+    }
+
+    .font-size-option.selected {
+      background: var(--bg-secondary);
+      font-weight: bold;
+    }
+
+    .font-size-button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .copy-button {
+      padding: 8px;
+      opacity: 0.5;
+    }
+
+    .copy-button svg {
+      width: 16px;
+      height: 16px;
+      position: absolute;
+      transition: opacity 0.2s;
+    }
+
+    .copy-button .check-icon {
+      width: 14px;
+      height: 14px;
+      opacity: 0;
+    }
+
+    .copy-button.copied .copy-icon {
+      opacity: 0;
+    }
+
+    .copy-button.copied .check-icon {
+      opacity: 1;
+      display: block;
+    }
+
+    .copy-button path {
+      fill: var(--text-primary);
+    }
+
+    .save-as-button {
+      position: relative;
+      padding: 2px;
+    }
+
+    .save-as-button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .save-for-later-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--button-bg);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .save-for-later-btn:hover {
+      background: var(--button-hover);
+      transform: translateY(-1px);
+    }
+
+    .save-for-later-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .save-for-later-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .save-for-later-btn .saving {
+      display: none;
+    }
+
+    .save-for-later-btn.saving .saving {
+      display: inline-block;
+    }
+
+    .share-checkbox-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: var(--text-primary);
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.2s;
+    }
+
+    .share-checkbox-container.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .share-checkbox {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--button-bg);
+    }
+
+    .share-checkbox:disabled {
+      cursor: not-allowed;
+    }
+
+    .share-label {
+      white-space: nowrap;
+    }
+
+    .save-for-later-btn.saving .default {
+      display: none;
+    }
+
+    .spinner-small {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s cubic-bezier(0.76, 0.35, 0.2, 0.7) infinite;
+      display: inline-block;
+    }
+
+    /* Auth Section */
+    .auth-section {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .auth-signed-out {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .auth-message {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text-primary);
+      text-align: center;
+    }
+
+    .auth-button {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      transition: all 0.2s ease-in-out;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .auth-button:hover {
+      background: var(--bg-primary);
+      border-color: var(--button-bg);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    }
+
+    .auth-button:active {
+      transform: translateY(0);
+    }
+
+    .auth-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .auth-button .google-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    .auth-signed-in {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .user-photo {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border-color);
+    }
+
+    .user-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .user-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .user-email {
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sign-out-button {
+      padding: 8px 12px;
+      background: none;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-secondary);
+      transition: all 0.2s ease-in-out;
+      white-space: nowrap;
+    }
+
+    .sign-out-button:hover {
+      background: var(--button-bg);
+      color: white;
+      border-color: var(--button-bg);
+    }
+
+    .sign-out-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+  </style>
+
+  <!-- Bootstrap Bundle with Popper -->
+  <script defer="defer" src="/scripts/bootstrap.bundle.min.js"></script>
+  <!-- Scripts will be automatically injected by webpack -->
+</head>
+<body>
+    <div class="container-fluid">
+    <!-- Auth Section -->
+    <div id="authSection" class="auth-section">
+      <div id="authSignedOut" class="auth-signed-out">
+        <p class="auth-message">Sign in to save items privately, or save as shared collection without signing in</p>
+        <button class="auth-button" id="signInBtn">
+          <svg class="google-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          <span>Sign in with Google</span>
+        </button>
+      </div>
+      <div id="authSignedIn" class="auth-signed-in" style="display: none;">
+        <div class="user-info">
+          <img id="userPhoto" class="user-photo" src="" alt="User photo">
+          <div class="user-details">
+            <div id="userDisplayName" class="user-name"></div>
+            <div id="userEmail" class="user-email"></div>
+          </div>
+        </div>
+        <button class="sign-out-button" id="signOutBtn">Sign Out</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="controls-left">
+        <button class="save-for-later-btn" id="saveForLaterBtn" title="Save selected items for later">
+          <span class="default">
+            <span>Save For Later</span>
+          </span>
+          <span class="saving">
+            <span class="spinner-small"></span>
+            <span>Saving...</span>
+          </span>
+        </button>
+        <label class="share-checkbox-container" id="shareCheckboxContainer">
+          <input type="checkbox" id="shareCheckbox" class="share-checkbox">
+          <span class="share-label">Share with others</span>
+        </label>
+      </div>
+      <div class="controls-right">
+        <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+          <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: block;">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+          </svg>
+          <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: none;">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+          </svg>
+        </button>
+        <!-- <button class="theme-toggle" id="configButton" title="Configuration">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+          </svg>
+        </button> -->
+      </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <span>AIによる分析中...</span>
+    </div>
+
+    <!-- Message -->
+    <div id="alertMessage" class="alert-message">No text selected or text is too short(2) or too long(120). Please select some text on the page and open the sidepanel again.</div>
+
+    <!-- Analysis Result -->
+    <div id="result" class="result">
+      <div class="prose-toolbar visible">
+        <button class="font-size-button" id="fontSizeBtn" title="Adjust font size">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="m22 6-3-4-3 4h2v4h-2l3 4 3-4h-2V6zM9.307 4l-6 16h2.137l1.875-5h6.363l1.875 5h2.137l-6-16H9.307zm-1.239 9L10.5 6.515 12.932 13H8.068z"></path>
+          </svg>
+          <div class="font-size-menu" id="fontSizeMenu"><div class="font-size-option">12px</div><div class="font-size-option selected">14px</div><div class="font-size-option">16px</div><div class="font-size-option">18px</div><div class="font-size-option">20px</div></div>
+        </button>
+        <button class="copy-button" title="Copy markdown">
+          <svg class="copy-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M7 5C7 3.34315 8.34315 2 10 2H19C20.6569 2 22 3.34315 22 5V14C22 15.6569 20.6569 17 19 17H17V19C17 20.6569 15.6569 22 14 22H5C3.34315 22 2 20.6569 2 19V10C2 8.34315 3.34315 7 5 7H7V5ZM9 7H14C15.6569 7 17 8.34315 17 10V15H19C19.5523 15 20 14.5523 20 14V5C20 4.44772 19.5523 4 19 4H10C9.44772 4 9 4.44772 9 5V7ZM5 9C4.44772 9 4 9.44772 4 10V19C4 19.5523 4.44772 20 5 20H14C14.5523 20 15 19.5523 15 19V10C15 9.44772 14.5523 9 14 9H5Z" fill="currentColor"/>
+          </svg>
+          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision" text-rendering="geometricPrecision" image-rendering="optimizeQuality" fill-rule="evenodd" clip-rule="evenodd" viewBox="0 0 512 459.53">
+            <path fill-rule="nonzero" d="M9.38 212.26l91.05-1.2c1.9-.01 3.69.53 5.19 1.49 32.96 19.01 62.2 42.95 87.35 71.5 33.32-54.09 68.94-103.63 106.55-149.04C339.7 86.5 382.32 42.5 426.98 2.46a9.464 9.464 0 016.33-2.41L502.67 0c8.53 0 12.23 9.31 6.73 16.26-61.47 68.29-117.32 139.05-167.78 212a2075.014 2075.014 0 00-135.99 226.12c-2.4 4.65-8.14 6.49-12.79 4.09a9.476 9.476 0 01-4.35-4.63C146.26 363.35 86.92 286.45 4.14 229.6c-7.67-5.25-3.96-17.2 5.24-17.34z" fill="currentColor"/>
+          </svg>
+        </button>
+        <button class="save-as-button" id="saveAsBtn" title="Save markdown">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+          </svg>
+        </button>
+      </div>
+      <!-- Results will be inserted here with proper ruby tags -->
+      <div class="prose"></div>
+    </div>
+  </div>
+
+</body>
+</html>

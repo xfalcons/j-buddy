@@ -1,0 +1,417 @@
+{
+  "id": "PROJ-save-analysis",
+  "title": "Save Analysis Feature - Backend API Integration",
+  "description": "Implement ability to save individual words and grammar points to backend API for external review",
+  "priority": "high",
+  "status": "ready-for-implementation",
+  "assignee": "@Architect",
+  "created": "2025-12-25",
+  "updated": "2025-12-25",
+  "scope_simplified": true,
+
+  "overview": {
+    "approach": "Backend API Storage",
+    "key_decisions": [
+      "No local storage in extension (chrome.storage.local not used for saved items)",
+      "No UI for viewing/managing saved items in extension",
+      "Backend API handles all persistence (PostgreSQL)",
+      "Separate viewing application accesses saved data from backend"
+    ]
+  },
+
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "title": "Save Individual Words",
+      "description": "Users can save individual vocabulary entries with metadata to backend API",
+      "acceptance_criteria": [
+        "Save button/control for each word in analysis",
+        "Saved word includes: surface (kanji/kana), reading, meaning, JLPT level, context sentence, source text, source URL",
+        "Visual confirmation when word is saved (success/error)",
+        "Error handling for network failures"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "REQ-2",
+      "title": "Save Individual Grammar Points",
+      "description": "Users can save individual grammar points with examples to backend API",
+      "acceptance_criteria": [
+        "Save button/control for each grammar point",
+        "Saved grammar includes: pattern, explanation, examples, JLPT level, source text, source URL",
+        "Visual confirmation when grammar is saved (success/error)",
+        "Error handling for network failures"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "REQ-3",
+      "title": "Save All Items",
+      "description": "Users can save all words and grammar from current analysis with one action",
+      "acceptance_criteria": [
+        "Save All button in prose-toolbar",
+        "Parses all words and grammar points from current analysis",
+        "Sends batch POST request to backend API",
+        "Shows count of items saved (e.g., 'Saved 7 items!')"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "REQ-4",
+      "title": "Visual Feedback",
+      "description": "Users receive clear visual feedback for save actions",
+      "acceptance_criteria": [
+        "Loading state shown during save operation",
+        "Success confirmation with checkmark/icon",
+        "Error notification with retry option",
+        "Toast notifications for Save All action"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "REQ-5",
+      "title": "Markdown Parsing",
+      "description": "Extract structured data from markdown response for saving",
+      "acceptance_criteria": [
+        "Parse Words section to extract individual word entries",
+        "Parse Grammar section to extract individual grammar entries",
+        "Extract kanji/reading from {kanji|reading} ruby format",
+        "Handle edge cases (missing sections, malformed data)"
+      ],
+      "status": "pending"
+    }
+  ],
+
+  "api_contract": {
+    "endpoint": "POST /api/v1/save-items",
+    "base_url": "http://localhost:8787",
+    "content_type": "application/json",
+
+    "request_schema": {
+      "items": [
+        {
+          "type": "word",
+          "surface": "string (kanji/kana)",
+          "reading": "string (furigana)",
+          "meaning": "string (definition)",
+          "jlptLevel": "string (optional, e.g., 'N4')",
+          "contextSentence": "string (optional)",
+          "sourceText": "string (original analyzed text)",
+          "sourceUrl": "string (optional, URL of page)"
+        },
+        {
+          "type": "grammar",
+          "pattern": "string (grammar pattern)",
+          "explanation": "string (explanation)",
+          "examples": ["string (example sentences)"],
+          "jlptLevel": "string (optional)",
+          "sourceText": "string (original analyzed text)",
+          "sourceUrl": "string (optional)"
+        }
+      ],
+      "userId": "string (optional, backend handles auth)",
+      "timestamp": "string (ISO 8601 format)"
+    },
+
+    "success_response": {
+      "success": true,
+      "saved": {
+        "words": "number (count of words saved)",
+        "grammar": "number (count of grammar saved)"
+      },
+      "failed": [],
+      "message": "string (description)"
+    },
+
+    "error_response": {
+      "success": false,
+      "error": "string (error message)",
+      "code": "string (error code)"
+    },
+
+    "http_status_codes": {
+      "200": "Success",
+      "400": "Bad Request (invalid data)",
+      "401": "Authentication required",
+      "500": "Internal Server Error"
+    }
+  },
+
+  "data_extraction": {
+    "challenge": "API returns markdown, not structured data",
+    "approach": "Parse markdown to extract words/grammar items",
+    "word_pattern": "### Words\\n\\n{kanji|reading} - Meaning (JLPT)\\nDefinition",
+    "grammar_pattern": "### Grammar\\n\\npattern (reading) - JLPT\\nExplanation",
+    "ruby_format": "{kanji|reading} needs to be parsed to extract surface and reading"
+  },
+
+  "ui_specifications": {
+    "inline_save_button": {
+      "location": "Next to each word/grammar item in prose",
+      "default_state": "Outline bookmark icon, 'Save' text",
+      "hover_state": "Filled bookmark icon, blue color",
+      "loading_state": "Spinner icon, 'Saving...' text",
+      "success_state": "Checkmark icon, green color, 'Saved!' (2s, then reverts)",
+      "error_state": "X icon, red color, 'Failed' (stays until clicked again)"
+    },
+    "save_all_button": {
+      "location": "In prose-toolbar, next to 'Save As' button",
+      "icon": "Bookmark list icon + 'Save All' text",
+      "behavior": "Shows count badge while saving (e.g., 'Saving 7 items...')",
+      "success": "Toast notification 'Saved 7 items!'"
+    },
+    "toast_notifications": {
+      "position": "Bottom-right of sidepanel",
+      "duration": "3 seconds auto-dismiss",
+      "style": "Bootstrap toast, dark background",
+      "types": ["Success (green)", "Error (red)", "Info (blue)"]
+    }
+  },
+
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "title": "Implement Markdown Parsing Logic",
+      "description": "Create functions to parse markdown response and extract structured word/grammar data",
+      "assigned_to": "@Architect",
+      "file": "src/sidepanel/sidepanel.js",
+      "details": [
+        "Create parseAnalysisToItems(markdown) function",
+        "Create parseWordsSection(section) function",
+        "Create parseGrammarSection(section) function",
+        "Extract kanji/reading from {kanji|reading} format",
+        "Handle edge cases (missing sections, malformed data)",
+        "Unit tests for parsing logic"
+      ],
+      "dependencies": [],
+      "estimated_hours": 6,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-2",
+      "title": "Update API Service with Save Method",
+      "description": "Add saveItems() method to JaAlchemyApiService",
+      "assigned_to": "@Architect",
+      "file": "src/scripts/jaAlchemyApiService.js",
+      "details": [
+        "Add saveItems(items) method",
+        "Construct POST request to /api/v1/save-items",
+        "Handle batch save requests",
+        "Error handling for network failures",
+        "Return structured response (success, saved counts, errors)"
+      ],
+      "dependencies": [],
+      "estimated_hours": 3,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-3",
+      "title": "Implement Save Functions in Sidepanel",
+      "description": "Add saveWord, saveGrammar, and saveAll functions",
+      "assigned_to": "@Architect",
+      "file": "src/sidepanel/sidepanel.js",
+      "details": [
+        "Create saveWord(wordData) function",
+        "Create saveGrammar(grammarData) function",
+        "Create saveAll() function that parses and saves all items",
+        "Integrate with API service",
+        "Handle loading states and errors"
+      ],
+      "dependencies": ["TASK-1", "TASK-2"],
+      "estimated_hours": 5,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-4",
+      "title": "Add Checkbox to UI",
+      "description": "Modify markdown rendering to include checkbox for each word/grammar item only",
+      "assigned_to": "@Architect",
+      "file": "src/sidepanel/sidepanel.js",
+      "details": [
+        "Add unique IDs to each word/grammar item for targeting items",
+        "Ensure checkboxes work with existing rendering"
+      ],
+      "dependencies": ["TASK-1"],
+      "estimated_hours": 5,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-5",
+      "title": "Add Save All Button to Toolbar",
+      "description": "Add Save All button to prose-toolbar",
+      "assigned_to": "@Architect",
+      "file": "src/sidepanel/sidepanel.html",
+      "details": [
+        "Add Save All button HTML to prose-toolbar",
+        "Add styling for Save All button",
+        "Attach click handler in sidepanel.js",
+        "Disable button when no content is loaded"
+      ],
+      "dependencies": [],
+      "estimated_hours": 2,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-6",
+      "title": "Implement Visual Feedback System",
+      "description": "Add loading states, success indicators, and error handling",
+      "assigned_to": "@Architect",
+      "file": "src/sidepanel/sidepanel.js",
+      "details": [
+        "Create showLoadingState(button) function",
+        "Create showSuccessState(button) function",
+        "Create showErrorState(button, error) function",
+        "Add toast notification system",
+        "Handle network errors gracefully"
+      ],
+      "dependencies": ["TASK-3", "TASK-4"],
+      "estimated_hours": 4,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-7",
+      "title": "Add Toast Notification Container and Styles",
+      "description": "Add HTML and CSS for toast notifications",
+      "assigned_to": "@Architect",
+      "file": "src/sidepanel/sidepanel.html",
+      "details": [
+        "Add toast container HTML",
+        "Add CSS for toast positioning and animations",
+        "Implement toast show/hide logic",
+        "Support multiple toast types (success, error, info)"
+      ],
+      "dependencies": [],
+      "estimated_hours": 2,
+      "status": "pending"
+    },
+    {
+      "id": "TASK-8",
+      "title": "Testing and Bug Fixes",
+      "description": "Test all save functionality and fix bugs",
+      "assigned_to": "@QA",
+      "details": [
+        "Test individual word save",
+        "Test individual grammar save",
+        "Test Save All functionality",
+        "Test error scenarios (network failure, API error)",
+        "Test edge cases (empty content, malformed markdown)",
+        "Test visual feedback in all states",
+        "Fix identified bugs"
+      ],
+      "dependencies": ["TASK-1", "TASK-2", "TASK-3", "TASK-4", "TASK-5", "TASK-6", "TASK-7"],
+      "estimated_hours": 6,
+      "status": "pending"
+    }
+  ],
+
+  "timeline": {
+    "total_estimated_days": "2-3",
+    "day_1": {
+      "tasks": ["TASK-1", "TASK-2"],
+      "description": "Markdown parsing and API service setup"
+    },
+    "day_2": {
+      "tasks": ["TASK-3", "TASK-4", "TASK-5", "TASK-7"],
+      "description": "UI implementation and save functions"
+    },
+    "day_3": {
+      "tasks": ["TASK-6", "TASK-8"],
+      "description": "Visual feedback, testing, and bug fixes"
+    }
+  },
+
+  "risks": [
+    {
+      "id": "RISK-1",
+      "description": "Markdown parsing fails on edge cases or API format changes",
+      "mitigation": "Comprehensive regex testing with sample API responses; fallback to save entire markdown if parsing fails",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "id": "RISK-2",
+      "description": "Backend API not ready or endpoint differs from specification",
+      "mitigation": "Mock API for development; keep endpoint configurable in API service",
+      "severity": "high",
+      "status": "open"
+    },
+    {
+      "id": "RISK-3",
+      "description": "Network errors cause user frustration (items not saved)",
+      "mitigation": "Clear error messages with retry option; log failures for debugging",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "id": "RISK-4",
+      "description": "Save buttons interfere with existing ruby tag rendering",
+      "mitigation": "Test save button placement carefully; use CSS to prevent layout issues",
+      "severity": "low",
+      "status": "open"
+    }
+  ],
+
+  "dependencies": {
+    "external": [
+      {
+        "item": "Backend API endpoint /api/v1/save-items",
+        "owner": "Backend Team",
+        "status": "pending",
+        "blocking": false
+      },
+      {
+        "item": "PostgreSQL schema for saved items",
+        "owner": "Backend Team",
+        "status": "pending",
+        "blocking": false
+      },
+      {
+        "item": "API documentation and example requests/responses",
+        "owner": "Backend Team",
+        "status": "pending",
+        "blocking": false
+      }
+    ],
+    "internal": []
+  },
+
+  "acceptance_criteria": [
+    "User can save individual words with all required metadata",
+    "User can save individual grammar points with all required metadata",
+    "User can save all items from current analysis with one click",
+    "Visual feedback shown for all save actions (loading, success, error)",
+    "Toast notifications shown for Save All action",
+    "Network errors handled gracefully with retry option",
+    "Markdown parsing extracts words and grammar correctly",
+    "Save buttons integrate cleanly with existing UI"
+  ],
+
+  "definition_of_done": [
+    "All acceptance criteria met",
+    "Code reviewed by @Architect",
+    "Manual testing completed with sample API responses",
+    "Edge cases tested (empty content, malformed markdown, network errors)",
+    "API service updated with saveItems method",
+    "Visual feedback working for all save actions",
+    "Documentation updated (CLAUDE.md, PRD.md)",
+    "Ready for backend API integration"
+  ],
+
+  "out_of_scope": [
+    "Viewing saved items in extension (handled by separate application)",
+    "Managing saved items (delete, edit) in extension",
+    "User authentication (backend handles)",
+    "Offline save queue",
+    "Export functionality (backend provides)",
+    "Search/filter saved items",
+    "Local storage of saved items"
+  ],
+
+  "notes": [
+    "This is a simplified scope compared to original requirements",
+    "No local storage means extension is stateless regarding saved items",
+    "Backend API is the source of truth for all saved data",
+    "Extension is purely a collection interface, not a management interface",
+    "Future consideration: Modify backend API to return structured data alongside markdown for more reliable parsing"
+  ]
+}

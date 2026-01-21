@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "J-Buddy Learn Japanese",
+  "short_name": "J-Buddy",
+  "version": "1.1.0",
+  "description": "你的 AI 日文隨身家教，查單字、看語法一氣呵成；點擊之間，讓日文閱讀從「阻礙」變成「享受」！",
+  "icons": {
+    "16": "images/icon-16.png",
+    "32": "images/icon-32.png",
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
+  },
+  "action": {
+    "default_title": "J-Buddy",
+    "default_icon": {
+      "16": "images/icon-16.png",
+      "32": "images/icon-32.png",
+      "48": "images/icon-48.png",
+      "128": "images/icon-128.png"
+    }
+  },
+  "permissions": [ 
+    "sidePanel",
+    "storage",
+    "offscreen"
+  ],
+  "background": {
+    "service_worker": "scripts/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*/*"],
+      "js": ["scripts/contentScript.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html",
+    "open_panel_on_action_click": true
+  }
+}

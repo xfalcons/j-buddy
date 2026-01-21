@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>Japanese Language Analysis</title>
+        <script defer="defer" src="/scripts/bootstrap.bundle.min.js"></script>
+        <script defer="defer" src="scripts/sidepanel.bundle.js"></script>
+        <script defer="defer" src="scripts/jaAlchemyApiService.bundle.js"></script>
+        <link href="style.css" rel="stylesheet">
+    </head>
+    <body class="bg-light">
+        <div class="container-fluid py-3">
+            <div class="d-flex align-items-center"><h3 class="h4 mb-3">選擇你想要分析的句子</h3></div>
+            <div id="selectedText" class="selected-text bg-white shadow-sm">
+                OpenAIは2025年3月25日、同社の最新マルチモーダルAIモデル「GPT-4o」に高精度な画像生成機能「4o Image
+                Generation」を統合したと発表した。この機能は、ChatGPTのWebアプリおよびモバイルアプリを通じて、全ユーザーに段階的に提供されるという。
+            </div>
+            <div id="loading" class="loading bg-white shadow-sm">
+                <div class="spinner"></div>
+                <span class="text-muted">Processing with AI...</span>
+            </div>
+            <div id="result" class="result show">
+                <div class="prose">
+                    <h2 class="heading">原句：</h2>
+                    <ul class="list">
+                        <li>
+                            OpenAIは2025年3月25日、 <ruby><rb>同社</rb><rt>どうしゃ</rt></ruby>の <ruby><rb>最新</rb><rt>さいしん</rt></ruby>マルチモーダルAIモデル「GPT-4o」に <ruby><rb>高精度</rb><rt>こうせいど</rt></ruby>な
+                            <ruby><rb>画像</rb><rt>がぞう</rt></ruby> <ruby><rb>生成</rb><rt>せいせい</rt></ruby> <ruby><rb>機能</rb><rt>きのう</rt></ruby>「4o Image Generation」を <ruby><rb>統合</rb><rt>とうごう</rt></ruby>したと
+                            <ruby><rb>発表</rb><rt>はっぴょう</rt></ruby>した。この <ruby><rb>機能</rb><rt>きのう</rt></ruby>は、ChatGPTのWebアプリおよびモバイルアプリを <ruby><rb>通</rb><rt>つう</rt></ruby>じて、
+                            <ruby><rb>全</rb><rt>ぜん</rt></ruby>ユーザーに <ruby><rb>段階的</rb><rt>だんかいけき</rt></ruby>に <ruby><rb>提供</rb><rt>ていきょう</rt></ruby>されるという。
+                        </li>
+                        <li>翻譯：OpenAI於2025年3月25日宣布，已將其最新的多模態AI模型「GPT-4o」與高精度的圖像生成功能「4o Image Generation」整合。據稱，此功能將通過ChatGPT的Web應用程式和行動應用程式，逐步提供給所有用戶。</li>
+                    </ul>
+                    <h2 class="heading">單字分析：</h2>
+                    <h3 class="heading">
+                        <ruby><rb>発表</rb><rt>はっぴょう</rt></ruby>
+                    </h3>
+                    <ul class="list">
+                        <li>重音：0型</li>
+                        <li>詞性：サ變動詞</li>
+                        <li>意思：發表、公布</li>
+                        <li>
+                            辭書形： <ruby><rb>発表する</rb><rt>はっぴょうする</rt></ruby>
+                        </li>
+                        <li>
+                            て形： <ruby><rb>発表して</rb><rt>はっぴょうして</rt></ruby>
+                        </li>
+                        <li>
+                            否定形： <ruby><rb>発表しない</rb><rt>はっぴょうしない</rt></ruby>
+                        </li>
+                    </ul>
+                    <h3 class="heading">
+                        <ruby><rb>統合</rb><rt>とうごう</rt></ruby>
+                    </h3>
+                    <ul class="list">
+                        <li>重音：0型</li>
+                        <li>詞性：サ變動詞</li>
+                        <li>意思：整合、合併</li>
+                        <li>
+                            辭書形： <ruby><rb>統合する</rb><rt>とうごうする</rt></ruby>
+                        </li>
+                        <li>
+                            て形： <ruby><rb>統合して</rb><rt>とうごうして</rt></ruby>
+                        </li>
+                        <li>
+                            否定形： <ruby><rb>統合しない</rb><rt>とうごうしない</rt></ruby>
+                        </li>
+                    </ul>
+                    <h3 class="heading">
+                        <ruby><rb>提供</rb><rt>ていきょう</rt></ruby>
+                    </h3>
+                    <ul class="list">
+                        <li>重音：0型</li>
+                        <li>詞性：サ變動詞</li>
+                        <li>意思：提供</li>
+                        <li>
+                            辭書形： <ruby><rb>提供する</rb><rt>ていきょうする</rt></ruby>
+                        </li>
+                        <li>
+                            て形： <ruby><rb>提供して</rb><rt>ていきょうして</rt></ruby>
+                        </li>
+                        <li>
+                            否定形： <ruby><rb>提供しない</rb><rt>ていきょうしない</rt></ruby>
+                        </li>
+                    </ul>
+                    <h3 class="heading">
+                        <ruby><rb>最新</rb><rt>さいしん</rt></ruby>
+                    </h3>
+                    <ul class="list">
+                        <li>重音：0型</li>
+                        <li>詞性：名詞</li>
+                        <li>意思：最新</li>
+                        <li>英文：latest</li>
+                    </ul>
+                    <h3 class="heading">モーダル (マルチモーダル)</h3>
+                    <ul class="list">
+                        <li>英文：Modal (Multimodal)</li>
+                        <li>意思：模態 (多模態)</li>
+                    </ul>
+                    <h3 class="heading">イメージ (Image)</h3>
+                    <ul class="list">
+                        <li>英文：Image</li>
+                        <li>意思：圖像</li>
+                    </ul>
+                    <h3 class="heading">ジェネレーション (Generation)</h3>
+                    <ul class="list">
+                        <li>英文：Generation</li>
+                        <li>意思：生成</li>
+                    </ul>
+                    <h2 class="heading">文法分析：</h2>
+                    <ul class="list">
+                        <li>「～によると」表示消息來源，相當於「根據…」。</li>
+                        <li>「～を通じて」表示通過…，經由…，相當於「藉由…」。</li>
+                        <li>「～という」表示傳聞或引用，相當於「據說…」。</li>
+                    </ul>
+                    <h3 class="heading">N1文法例句：</h3>
+                    <ul class="list">
+                        <li>
+                            <ruby><rb>会社</rb><rt>かいしゃ</rt></ruby>の <ruby><rb>方針</rb><rt>ほうしん</rt></ruby>が <ruby><rb>発表</rb><rt>はっぴょう</rt></ruby>された <ruby><rb>以上</rb><rt>いじょう</rt></ruby>、
+                            <ruby><rb>私</rb><rt>わたし</rt></ruby>たちはそれに <ruby><rb>従</rb><rt>したが</rt></ruby><ruby><rb>わざるを得</rb><rt>え</rt></ruby>ない。
+                        </li>
+                        <li>N1文法：～ざるを得ない：不得不…</li>
+                        <li>接續：動詞未然形＋ざるを得ない（する→せざるを得ない）</li>
+                        <li>翻譯：既然公司的方針已經發表，我們不得不遵從。</li>
+                    </ul>
+                    <h3 class="heading">N2文法例句：</h3>
+                    <ul class="list">
+                        <li>
+                            <ruby><rb>新</rb><rt>あたら</rt></ruby>しい プロジェクトを <ruby><rb>成功</rb><rt>せいこう</rt></ruby>させるべく、 <ruby><rb>全社員</rb><rt>ぜんしゃいん</rt></ruby>が
+                            <ruby><rb>協力</rb><rt>きょうりょく</rt></ruby>して <ruby><rb>統合</rb><rt>とうごう</rt></ruby>していく <ruby><rb>必要</rb><rt>ひつよう</rt></ruby>がある。
+                        </li>
+                        <li>N2文法：～べく：為了…</li>
+                        <li>接續：動詞辞書形＋べく</li>
+                        <li>翻譯：為了使新項目成功，全體員工有必要互相合作並整合。</li>
+                    </ul>
+                    <h3 class="heading">N3文法例句：</h3>
+                    <ul class="list">
+                        <li>
+                            この <ruby><rb>新</rb><rt>あたら</rt></ruby>しいサービスは、まずは <ruby><rb>一部</rb><rt>いちぶ</rt></ruby>の ユーザーに <ruby><rb>提供</rb><rt>ていきょう</rt></ruby>されるとのことです。
+                        </li>
+                        <li>N3文法：～とのことです：據說…，聽說…</li>
+                        <li>接續：普通形＋とのことです</li>
+                        <li>翻譯：據說這項新服務首先會提供給一部分用戶。</li>
+                    </ul>
+                    <h3 class="heading">N4文法例句：</h3>
+                    <ul class="list">
+                        <li>
+                            <ruby><rb>私</rb><rt>わたし</rt></ruby>は <ruby><rb>最新</rb><rt>さいしん</rt></ruby>の <ruby><rb>技術</rb><rt>ぎじゅつ</rt></ruby>を <ruby><rb>使</rb><rt>つか</rt></ruby>って、
+                            <ruby><rb>新</rb><rt>あたら</rt></ruby>しい <ruby><rb>作品</rb><rt>さくひん</rt></ruby><ruby><rb>を作</rb><rt>つく</rt></ruby>りたいです。
+                        </li>
+                        <li>N4文法：～たいです：想要…</li>
+                        <li>接續：動詞ます形＋たいです</li>
+                        <li>翻譯：我想要使用最新的技術來創作新的作品。</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

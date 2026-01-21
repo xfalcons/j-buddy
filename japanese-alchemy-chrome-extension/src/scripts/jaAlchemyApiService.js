@@ -1,0 +1,107 @@
+// Import Firebase Functions
+import { initializeApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import firebaseConfig from './firebaseConfig.js';
+
+class JaAlchemyApiService {
+  constructor() {
+    // Initialize Firebase app (singleton pattern)
+    if (!window.firebaseApp) {
+      window.firebaseApp = initializeApp(firebaseConfig);
+    }
+
+    // Initialize Firebase Functions
+    this.app = window.firebaseApp;
+    this.functions = getFunctions(this.app, 'us-central1'); // Use your region
+  }
+
+  /**
+   * Generate response using Firebase callable function
+   * @param {string} selectedText - The text to analyze
+   * @param {string} promptVersion - The prompt version ("v1" or "v2")
+   * @returns {Promise<Object>} Analysis result
+   */
+  async generateResponse(selectedText, promptVersion = "v2") {
+    try {
+      console.log('[Firebase API] Calling explain function with:', {
+        content: selectedText.substring(0, 100) + '...',
+        prompt: promptVersion
+      });
+
+      const explainCallable = httpsCallable(this.functions, 'explain');
+      const result = await explainCallable({
+        content: selectedText,
+        prompt: promptVersion
+      });
+
+      /*
+      result.data structure:
+
+      export interface SuccessResponse {
+        success: boolean;
+        data?: any;
+        timestamp?: number;
+      }
+      */
+      console.log('[Firebase API] Explain function response:', result.data.data);
+      return result.data.data;
+    } catch (error) {
+      console.error('[Firebase API] Explain function error:', error);
+      
+      // Extract error details from Firebase error
+      const errorMessage = error.message || error.code || 'Unknown error occurred';
+      throw new Error(`Firebase explain function failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Save analysis to Firestore using Firebase callable function
+   * @param {Object} analysis - Analysis object with words and grammars
+   * @param {string|null} userId - Optional user ID (null for shared collections)
+   * @returns {Promise<Object>} Response with saved counts
+   */
+  async saveAnalysis(analysis, userId = null) {
+    try {
+      console.log('[Firebase API] Calling saveItems function with:', {
+        user_id: userId || 'shared',
+        is_shared: analysis.is_shared,
+        words_count: analysis.words?.length || 0,
+        grammars_count: analysis.grammars?.length || 0
+      });
+
+      const saveItemsCallable = httpsCallable(this.functions, 'saveItems');
+      const result = await saveItemsCallable({
+        userId: userId,
+        analysis: analysis
+      });
+
+      console.log('[Firebase API] SaveItems function response:', result.data);
+
+      if (!result.data || !result.data.success) {
+        throw new Error(result.data?.message || 'Save operation failed');
+      }
+
+      return {
+        success: true,
+        words_count: result.data.saved?.words_count || 0,
+        grammars_count: result.data.saved?.grammars_count || 0,
+        message: result.data.message || 'Analysis saved successfully'
+      };
+    } catch (error) {
+      console.error('[Firebase API] SaveItems function error:', error);
+      
+      // Handle specific Firebase errors
+      // Handle specific authentication errors (only for private collections)
+      if (!analysis.is_shared && (error.code === 'unauthenticated' || error.message?.includes('unauthenticated'))) {
+        throw new Error('You must be signed in to save items to your private collection. Please sign in first.');
+      }
+      
+      // Extract error details
+      const errorMessage = error.message || error.code || 'Unknown error occurred';
+      throw new Error(`Firebase saveItems function failed: ${errorMessage}`);
+    }
+  }
+}
+
+// Export the service
+window.JaAlchemyApiService = JaAlchemyApiService;
