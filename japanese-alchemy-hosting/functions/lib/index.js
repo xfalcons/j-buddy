@@ -23,17 +23,19 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.saveItems = exports.explain = void 0;
+exports.saveItems = exports.explainStream = exports.explain = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 // Initialize Firebase Admin (only once)
 admin.initializeApp();
 // Import handler functions and secret
 const explainCallable_1 = require("./v1/explainCallable");
+const explainStreamHandler_1 = require("./v1/explainStreamHandler");
 const saveItemsCallable_1 = require("./v1/saveItemsCallable");
 const config_1 = require("./config");
 // Create and export callable functions with v2 API
 // The configSecret object is passed to the secrets parameter
 exports.explain = (0, https_1.onCall)({ secrets: [config_1.configSecret] }, explainCallable_1.explainHandler);
+exports.explainStream = (0, https_1.onRequest)({ secrets: [config_1.configSecret], cors: true, timeoutSeconds: 120 }, explainStreamHandler_1.explainStreamHandler);
 exports.saveItems = (0, https_1.onCall)({ secrets: [config_1.configSecret] }, saveItemsCallable_1.saveItemsHandler);
 //# sourceMappingURL=index.js.map

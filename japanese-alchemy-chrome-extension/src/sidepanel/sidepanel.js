@@ -152,6 +152,17 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
 
 let isAnalizing = false;
 let saveForLaterJson = {};
+let renderThrottleTimer = null;
+
+// Throttled progressive render: re-parses accumulated markdown at most every 80ms
+function renderStreamingPreview(proseElement, accumulatedText) {
+    if (renderThrottleTimer) return; // already scheduled
+    renderThrottleTimer = setTimeout(() => {
+        renderThrottleTimer = null;
+        const rubyConverted = convertToRuby(accumulatedText);
+        proseElement.innerHTML = marked.parse(rubyConverted);
+    }, 80);
+}
 
 async function analizingSelectedText(selectedText) {
     if (isAnalizing || !selectedText) return;
@@ -159,15 +170,15 @@ async function analizingSelectedText(selectedText) {
     const resultElement = document.getElementById('result');
     const proseElement = resultElement.querySelector('.prose');
     const loadingElement = document.getElementById('loading');
-    
+
     console.log('Analizing Selected Text...');
     isAnalizing = true;
 
     // Clear previous alertMessage
     elements.alertMessage.classList.remove('show');
-    
+
     try {
-        // Check if selected text equal last selected text
+        // Check if selected text equal last selected text (cache hit)
         const storedLastSelectedText = localStorage.getItem('lastSelectedText');
         if (selectedText === storedLastSelectedText) {
             console.log('Selected text is same as last time');
@@ -178,28 +189,58 @@ async function analizingSelectedText(selectedText) {
             resultElement.classList.add('show');
         } else if (selectedText && selectedText.length >= 2 && selectedText.length < 500) {
             localStorage.setItem('lastSelectedText', selectedText);
-        
+
             // Show loading state
             setLoadingState(loadingElement, true);
-            
+
             try {
                 console.log('Initializing API service...');
                 const jaAlchemyApiService = new JaAlchemyApiService();
-                
-                console.log('Generating response...');
-                const response = await jaAlchemyApiService.generateResponse(selectedText);
-                localStorage.setItem('lastResponse', response);
 
-                const analysisResult = formatAnalysisResult(response);
-                saveForLaterJson = analysisResult.json;
-                proseElement.innerHTML = analysisResult.html;
-                resultElement.classList.add('show');
+                console.log('Generating response (streaming)...');
+                let firstChunkReceived = false;
+
+                await jaAlchemyApiService.generateResponseStream(
+                    selectedText,
+                    'v2',
+                    // onChunk: progressively render each chunk
+                    (chunk, fullText) => {
+                        if (!firstChunkReceived) {
+                            firstChunkReceived = true;
+                            setLoadingState(loadingElement, false);
+                            resultElement.classList.add('show');
+                        }
+                        renderStreamingPreview(proseElement, fullText);
+                    },
+                    // onDone: finalize with full formatting (checkboxes, structured data)
+                    (fullText) => {
+                        localStorage.setItem('lastResponse', fullText);
+                        if (renderThrottleTimer) {
+                            clearTimeout(renderThrottleTimer);
+                            renderThrottleTimer = null;
+                        }
+                        const analysisResult = formatAnalysisResult(fullText);
+                        saveForLaterJson = analysisResult.json;
+                        proseElement.innerHTML = analysisResult.html;
+                        resultElement.classList.add('show');
+                        setLoadingState(loadingElement, false);
+                    },
+                    // onError
+                    (errorMessage) => {
+                        console.warn('Streaming API Error:', errorMessage);
+                        if (renderThrottleTimer) {
+                            clearTimeout(renderThrottleTimer);
+                            renderThrottleTimer = null;
+                        }
+                        alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}<br>`, 'error');
+                        elements.alertMessage.classList.add('show');
+                        setLoadingState(loadingElement, false);
+                    }
+                );
             } catch (apiError) {
                 console.warn('Calling API Error:', apiError);
                 alertMessage(elements.alertMessage, `Error calling API service: ${apiError.message}<br>`, 'error');
-                // resultElement.classList.add('show');
                 elements.alertMessage.classList.add('show');
-            } finally {
                 setLoadingState(loadingElement, false);
             }
         } else {

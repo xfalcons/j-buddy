@@ -18,6 +18,50 @@ export class GeminiService {
     }
   }
 
+  async geminiStreamCompletion(systemPrompt: string, content: string): Promise<Response> {
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: content },
+    ];
+
+    const payload: GeminiRequest = {
+      messages,
+      model: this.model,
+      temperature: 0.1,
+      max_tokens: 8192,
+      stream: true,
+    };
+
+    functions.logger.info("Calling Gemini API (streaming)", {
+      model: this.model,
+      messagesCount: messages.length,
+    });
+
+    const response = await fetch(`${this.apiUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      functions.logger.error("Gemini API Error (streaming)", {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText,
+      });
+      throw new functions.https.HttpsError(
+        "internal",
+        `Gemini API error: ${response.status} ${response.statusText}`
+      );
+    }
+
+    return response;
+  }
+
   async geminiChatCompletion(systemPrompt: string, content: string): Promise<SuccessResponse> {
     const messages = [
       {

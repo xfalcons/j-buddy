@@ -1,0 +1,102 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.explainStreamHandler = void 0;
+const systemPromptV1_1 = require("../models/systemPromptV1");
+const systemPromptV2_1 = require("../models/systemPromptV2");
+const geminiService_1 = require("../services/geminiService");
+const logger_1 = require("../utils/logger");
+async function explainStreamHandler(req, res) {
+    const { content, prompt = "v2" } = req.body || {};
+    if (!content) {
+        res.status(400).json({ error: "Content is required" });
+        return;
+    }
+    if (prompt !== "v1" && prompt !== "v2") {
+        res.status(400).json({ error: "Prompt must be 'v1' or 'v2'" });
+        return;
+    }
+    logger_1.logger.info(`Streaming explain request with prompt version: ${prompt}`);
+    logger_1.logger.info(`Content: ${content.substring(0, 100)}...`);
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    const sendSSE = (event, data) => {
+        const dataStr = typeof data === "string" ? data : JSON.stringify(data);
+        res.write(`event: ${event}\ndata: ${dataStr}\n\n`);
+    };
+    try {
+        const systemPrompt = prompt === "v2" ? systemPromptV2_1.SYSTEM_PROMPT_V2 : systemPromptV1_1.SYSTEM_PROMPT_V1;
+        const geminiService = new geminiService_1.GeminiService();
+        const geminiResponse = await geminiService.geminiStreamCompletion(systemPrompt, content);
+        if (!geminiResponse.body) {
+            sendSSE("error", { error: "No response body from Gemini" });
+            res.end();
+            return;
+        }
+        const decoder = new TextDecoder();
+        const reader = geminiResponse.body.getReader();
+        let buffer = "";
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done)
+                break;
+            buffer += decoder.decode(value, { stream: true });
+            // SSE frames from Gemini are separated by double newlines
+            const lines = buffer.split("\n");
+            // Keep the last incomplete line in the buffer
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith(":"))
+                    continue;
+                if (trimmed === "data: [DONE]") {
+                    sendSSE("done", "[DONE]");
+                    continue;
+                }
+                if (trimmed.startsWith("data: ")) {
+                    const jsonStr = trimmed.slice(6);
+                    try {
+                        const parsed = JSON.parse(jsonStr);
+                        const delta = parsed.choices?.[0]?.delta?.content;
+                        if (delta) {
+                            sendSSE("chunk", { content: delta });
+                        }
+                    }
+                    catch {
+                        // Malformed JSON — skip
+                    }
+                }
+            }
+        }
+        // Process any remaining buffer
+        if (buffer.trim() && buffer.trim() !== "data: [DONE]") {
+            const trimmed = buffer.trim();
+            if (trimmed.startsWith("data: ")) {
+                const jsonStr = trimmed.slice(6);
+                try {
+                    const parsed = JSON.parse(jsonStr);
+                    const delta = parsed.choices?.[0]?.delta?.content;
+                    if (delta) {
+                        sendSSE("chunk", { content: delta });
+                    }
+                }
+                catch {
+                    // Skip
+                }
+            }
+        }
+        sendSSE("done", "[DONE]");
+        logger_1.logger.info("Streaming explain request completed");
+        res.end();
+    }
+    catch (error) {
+        logger_1.logger.error("Error in streaming explain", error);
+        sendSSE("error", { error: error instanceof Error ? error.message : "Unknown error" });
+        res.end();
+    }
+}
+exports.explainStreamHandler = explainStreamHandler;
+//# sourceMappingURL=explainStreamHandler.js.map

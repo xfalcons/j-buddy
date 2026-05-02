@@ -66,6 +66,7 @@ export interface GeminiRequest {
   model: string;
   temperature: number;
   max_tokens: number;
+  stream?: boolean;
 }
 
 export interface GeminiResponse {
