@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
-import { GeminiService } from "../services/geminiService";
+import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
 
 export async function explainStreamHandler(req: Request, res: Response): Promise<void> {
@@ -34,22 +34,36 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
 
   try {
     const systemPrompt = prompt === "v2" ? SYSTEM_PROMPT_V2 : SYSTEM_PROMPT_V1;
-    const geminiService = new GeminiService();
-    const geminiResponse = await geminiService.geminiStreamCompletion(systemPrompt, content);
+    const llmService = createLlmService();
 
-    if (!geminiResponse.body) {
-      sendSSE("error", { error: "No response body from Gemini" });
+    const t0 = Date.now();
+    logger.info("LLM API request initiated");
+
+    const llmResponse = await llmService.streamCompletion(systemPrompt, content);
+
+    const ttfb = Date.now() - t0;
+    logger.info(`LLM API headers received (TTFB): ${ttfb}ms`);
+
+    if (!llmResponse.body) {
+      sendSSE("error", { error: "No response body from LLM provider" });
       res.end();
       return;
     }
 
     const decoder = new TextDecoder();
-    const reader = geminiResponse.body.getReader();
+    const reader = llmResponse.body.getReader();
     let buffer = "";
+    let firstChunkSent = false;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+
+      if (!firstChunkSent) {
+        const firstChunkMs = Date.now() - t0;
+        logger.info(`First content chunk forwarded to client: ${firstChunkMs}ms (body latency: ${firstChunkMs - ttfb}ms)`);
+        firstChunkSent = true;
+      }
 
       buffer += decoder.decode(value, { stream: true });
 
@@ -99,8 +113,9 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
       }
     }
 
+    const totalMs = Date.now() - t0;
     sendSSE("done", "[DONE]");
-    logger.info("Streaming explain request completed");
+    logger.info(`Streaming explain request completed: ${totalMs}ms total (TTFB: ${ttfb}ms)`);
     res.end();
   } catch (error) {
     logger.error("Error in streaming explain", error);

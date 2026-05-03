@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "J-Buddy Learn Japanese",
   "short_name": "J-Buddy",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "你的 AI 日文隨身家教，查單字、看語法一氣呵成；點擊之間，讓日文閱讀從「阻礙」變成「享受」！",
   "icons": {
     "16": "images/icon-16.png",

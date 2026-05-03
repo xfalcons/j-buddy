@@ -55,21 +55,29 @@ export interface SaveItemsResponse {
   };
 }
 
-// Gemini API types
-export interface GeminiMessage {
+// LLM API types (OpenAI-compatible, used by Gemini and ZAI)
+export interface LlmMessage {
   role: string;
   content: string;
 }
 
-export interface GeminiRequest {
-  messages: GeminiMessage[];
+export interface LlmRequest {
+  messages: LlmMessage[];
   model: string;
   temperature: number;
   max_tokens: number;
   stream?: boolean;
+  extra_body?: {
+    google?: {
+      thinking_config?: {
+        thinking_budget: number;
+        include_thoughts: boolean;
+      };
+    };
+  };
 }
 
-export interface GeminiResponse {
+export interface LlmResponse {
   choices: Array<{
     message: {
       role: string;

@@ -27,7 +27,7 @@ exports.explainHandler = void 0;
 const functions = __importStar(require("firebase-functions"));
 const systemPromptV1_1 = require("../models/systemPromptV1");
 const systemPromptV2_1 = require("../models/systemPromptV2");
-const geminiService_1 = require("../services/geminiService");
+const llmService_1 = require("../services/llmService");
 const logger_1 = require("../utils/logger");
 async function explainHandler(request) {
     logger_1.logger.setContext(request);
@@ -45,8 +45,8 @@ async function explainHandler(request) {
     logger_1.logger.info(`Content: ${content.substring(0, 100)}...`);
     const systemPrompt = prompt === "v2" ? systemPromptV2_1.SYSTEM_PROMPT_V2 : systemPromptV1_1.SYSTEM_PROMPT_V1;
     try {
-        const geminiService = new geminiService_1.GeminiService();
-        const result = await geminiService.geminiChatCompletion(systemPrompt, content);
+        const llmService = (0, llmService_1.createLlmService)();
+        const result = await llmService.chatCompletion(systemPrompt, content);
         logger_1.logger.info("Explain request completed successfully");
         return result;
     }

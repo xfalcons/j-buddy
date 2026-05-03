@@ -8,68 +8,81 @@ This project provides Firebase Cloud Functions for Japanese text analysis and da
 
 ### Functions
 
-- `explain` - Analyze Japanese text and extract vocabulary/grammar (public, no auth required)
+- `explain` - Analyze Japanese text and extract vocabulary/grammar (public, callable)
+- `explainStream` - Same as explain, but streams results via SSE (HTTP endpoint)
 - `saveItems` - Save analysis results to Firestore (requires Firebase Authentication)
+
+### LLM Providers
+
+The backend supports multiple LLM providers behind a common `LlmService` interface. Provider is selected via `LLM_PROVIDER` in `src/config.ts`:
+
+- `"gemini"` (default) — Google Gemini via OpenAI-compatible endpoint
+- `"zai"` — ZAI provider via OpenAI-compatible endpoint
+
+Switching providers requires changing the constant and redeploying — no secret changes needed.
 
 ## Architecture
 
 ```
 functions/
 ├── src/
-│   ├── config.ts           # Firebase Secret Manager configuration
+│   ├── config.ts           # LLM_PROVIDER selection + Firebase Secret config
 │   ├── index.ts            # Main entry point, exports functions
 │   ├── models/             # TypeScript type definitions
-│   ├── services/           # Business logic services
+│   ├── services/
+│   │   ├── llmService.ts       # LlmService interface + createLlmService() factory
+│   │   ├── geminiLlmService.ts # Gemini provider implementation
+│   │   └── zaiLlmService.ts    # ZAI provider implementation
 │   ├── utils/              # Utility functions
-│   └── v1/                # API v1 callable functions
-└── lib/                   # Compiled JavaScript output
+│   └── v1/                 # API handlers (callable + streaming)
+└── lib/                    # Compiled JavaScript output
 ```
 
 ## Configuration
 
-The functions use Firebase Secret Manager for configuration. The secret `JAPANESE_ALCHEMY_CONFIG` contains:
+The functions use Google Cloud Secret Manager for storing API credentials. The secret `JAPANESE_ALCHEMY_CONFIG` contains:
 
 ```json
 {
-  "google": {
-    "api_url": "YOUR_GEMINI_API_URL"
-  },
   "gemini": {
+    "api_url": "https://generativelanguage.googleapis.com/v1beta/openai",
     "api_key": "YOUR_GEMINI_API_KEY",
-    "model": "gemini-2.0-flash-exp"
+    "model": "gemini-2.0-flash"
+  },
+  "zai": {
+    "api_url": "YOUR_ZAI_API_URL",
+    "api_key": "YOUR_ZAI_API_KEY",
+    "model": "YOUR_ZAI_MODEL"
   }
 }
 ```
 
-### Setting Up Secrets
+The active provider is set via `LLM_PROVIDER` in `src/config.ts` (defaults to `"gemini"`).
 
-**First time setup:**
+### Managing Secrets
+
+Secrets are stored in Google Cloud Secret Manager. Use Firebase CLI to manage:
+
+**View current secret value:**
 
 ```bash
-cd japanese-alchemy-hosting
-
-# Export existing config to Secret Manager
-firebase functions:config:export
-
-# Follow the prompts to name your secret (e.g., JAPANESE_ALCHEMY_CONFIG)
+firebase functions:secrets:access JAPANESE_ALCHEMY_CONFIG
 ```
 
-**Updating secrets:**
+**Update secret (creates a new version):**
 
 ```bash
-# Update the config values
-firebase functions:config:set google.api_url="YOUR_GEMINI_API_URL"
-firebase functions:config:set gemini.api_key="YOUR_GEMINI_API_KEY"
-firebase functions:config:set gemini.model="gemini-2.0-flash-exp"
+echo '{"gemini":{"api_url":"https://...","api_key":"...","model":"..."},"zai":{"api_url":"...","api_key":"...","model":"..."}}' | \
+  firebase functions:secrets:set JAPANESE_ALCHEMY_CONFIG --data-file=-
 
-# Export to update the secret
-firebase functions:config:export
+# or
+firebase functions:secrets:set JAPANESE_ALCHEMY_CONFIG --data-file=./functions/secrets.json
 ```
 
-**Viewing secrets:**
+After updating, redeploy for functions to pick up the new version:
 
 ```bash
-firebase secrets:access JAPANESE_ALCHEMY_CONFIG
+cd japanese-alchemy-hosting && firebase deploy --only functions
 ```
 
 ## Installation
@@ -100,17 +113,24 @@ This will start:
 
 ### Testing with Emulators
 
-To test locally, create a local secret file or set environment variables:
+To test locally, create a `secrets.json` file in the `functions/` directory:
 
 ```bash
-# For functions emulator, you can use environment variables
-export GOOGLE_API_URL="YOUR_GEMINI_API_URL"
-export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-export GEMINI_MODEL="gemini-2.0-flash-exp"
-
-# Or create a .runtimeconfig.json file
-echo '{"google":{"api_url":"YOUR_GEMINI_API_URL"},"gemini":{"api_key":"YOUR_GEMINI_API_KEY","model":"gemini-2.0-flash-exp"}}' > .runtimeconfig.json
+echo '{
+  "gemini": {
+    "api_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "api_key": "YOUR_GEMINI_API_KEY",
+    "model": "gemini-2.0-flash"
+  },
+  "zai": {
+    "api_url": "YOUR_ZAI_API_URL",
+    "api_key": "YOUR_ZAI_API_KEY",
+    "model": "YOUR_ZAI_MODEL"
+  }
+}' > secrets.json
 ```
+
+This file is gitignored and is automatically loaded by the Firebase emulator.
 
 ## Deployment
 
@@ -266,22 +286,10 @@ users/
 The `JAPANESE_ALCHEMY_CONFIG` secret must exist in Secret Manager:
 
 ```bash
-# Check if secret exists
-firebase secrets:list
+# Check if secret exists and view its value
+firebase functions:secrets:access JAPANESE_ALCHEMY_CONFIG
 
-# If not exists, create it
-firebase functions:config:export
-```
-
-### "functions.config() is deprecated" warning
-
-This project has been migrated to Secret Manager. You can safely ignore this warning or remove old config:
-
-```bash
-# Remove old config (after migration)
-firebase functions:config:unset google.api_url
-firebase functions:config:unset gemini.api_key
-firebase functions:config:unset gemini.model
+# If not, create it (see "Managing Secrets" section above)
 ```
 
 ### Build errors

@@ -69,66 +69,7 @@ firebase init
 
 ### Configuration
 
-The project uses Firebase Secret Manager to securely store API keys and configuration.
-
-#### Set Up Secrets (First Time)
-
-Create a JSON file with your configuration:
-
-```json
-{
-  "google": {
-    "api_url": "YOUR_GEMINI_API_URL"
-  },
-  "gemini": {
-    "api_key": "YOUR_GEMINI_API_KEY",
-    "model": "gemini-2.0-flash-exp"
-  }
-}
-```
-
-Then deploy the secret to Firebase:
-
-```bash
-# Create the secret in Firebase Secret Manager
-firebase secrets:create JAPANESE_ALCHEMY_CONFIG --data-file config.json
-```
-
-#### Update Existing Secret
-
-If you already have the secret and need to update it:
-
-```bash
-# Create a JSON file with your configuration
-cat > config.json << EOF
-{
-  "google": {
-    "api_url": "YOUR_GEMINI_API_URL"
-  },
-  "gemini": {
-    "api_key": "YOUR_GEMINI_API_KEY",
-    "model": "gemini-2.0-flash-exp"
-  }
-}
-EOF
-
-# Update the secret
-firebase secrets:update JAPANESE_ALCHEMY_CONFIG --data-file config.json
-```
-
-#### View Secret Value
-
-```bash
-# Access the secret value
-firebase secrets:access JAPANESE_ALchemy_CONFIG
-```
-
-#### List Secrets
-
-```bash
-# List all secrets
-firebase secrets:list
-```
+The project uses Firebase Secret Manager (`JAPANESE_ALCHEMY_CONFIG`) to store LLM provider credentials. See [Functions README](functions/README.md) for secret setup, viewing, and updating instructions.
 
 ### Development
 

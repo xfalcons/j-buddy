@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.explainStreamHandler = void 0;
 const systemPromptV1_1 = require("../models/systemPromptV1");
 const systemPromptV2_1 = require("../models/systemPromptV2");
-const geminiService_1 = require("../services/geminiService");
+const llmService_1 = require("../services/llmService");
 const logger_1 = require("../utils/logger");
 async function explainStreamHandler(req, res) {
     const { content, prompt = "v2" } = req.body || {};
@@ -29,20 +29,30 @@ async function explainStreamHandler(req, res) {
     };
     try {
         const systemPrompt = prompt === "v2" ? systemPromptV2_1.SYSTEM_PROMPT_V2 : systemPromptV1_1.SYSTEM_PROMPT_V1;
-        const geminiService = new geminiService_1.GeminiService();
-        const geminiResponse = await geminiService.geminiStreamCompletion(systemPrompt, content);
-        if (!geminiResponse.body) {
-            sendSSE("error", { error: "No response body from Gemini" });
+        const llmService = (0, llmService_1.createLlmService)();
+        const t0 = Date.now();
+        logger_1.logger.info("LLM API request initiated");
+        const llmResponse = await llmService.streamCompletion(systemPrompt, content);
+        const ttfb = Date.now() - t0;
+        logger_1.logger.info(`LLM API headers received (TTFB): ${ttfb}ms`);
+        if (!llmResponse.body) {
+            sendSSE("error", { error: "No response body from LLM provider" });
             res.end();
             return;
         }
         const decoder = new TextDecoder();
-        const reader = geminiResponse.body.getReader();
+        const reader = llmResponse.body.getReader();
         let buffer = "";
+        let firstChunkSent = false;
         while (true) {
             const { done, value } = await reader.read();
             if (done)
                 break;
+            if (!firstChunkSent) {
+                const firstChunkMs = Date.now() - t0;
+                logger_1.logger.info(`First content chunk forwarded to client: ${firstChunkMs}ms (body latency: ${firstChunkMs - ttfb}ms)`);
+                firstChunkSent = true;
+            }
             buffer += decoder.decode(value, { stream: true });
             // SSE frames from Gemini are separated by double newlines
             const lines = buffer.split("\n");
@@ -88,8 +98,9 @@ async function explainStreamHandler(req, res) {
                 }
             }
         }
+        const totalMs = Date.now() - t0;
         sendSSE("done", "[DONE]");
-        logger_1.logger.info("Streaming explain request completed");
+        logger_1.logger.info(`Streaming explain request completed: ${totalMs}ms total (TTFB: ${ttfb}ms)`);
         res.end();
     }
     catch (error) {

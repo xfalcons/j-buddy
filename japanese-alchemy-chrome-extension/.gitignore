@@ -45,3 +45,4 @@ coverage/
 *.temp
 .cache/
 release-package/
+release/

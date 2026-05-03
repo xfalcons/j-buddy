@@ -23,23 +23,23 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GeminiService = void 0;
+exports.GeminiLlmService = void 0;
 const functions = __importStar(require("firebase-functions"));
 const config_1 = require("../config");
-class GeminiService {
+class GeminiLlmService {
     apiUrl;
     apiKey;
     model;
     constructor() {
-        // Get configuration from the secret
-        this.apiUrl = config_1.configSecret.value().google.api_url;
-        this.apiKey = config_1.configSecret.value().gemini.api_key;
-        this.model = config_1.configSecret.value().gemini.model;
+        const config = config_1.configSecret.value();
+        this.apiUrl = config.gemini.api_url;
+        this.apiKey = config.gemini.api_key;
+        this.model = config.gemini.model;
         if (!this.apiKey) {
-            throw new Error('GEMINI_API_KEY not found in JAPANESE_ALCHEMY_CONFIG secret');
+            throw new Error("Gemini API key not found in JAPANESE_ALCHEMY_CONFIG secret");
         }
     }
-    async geminiStreamCompletion(systemPrompt, content) {
+    async streamCompletion(systemPrompt, content) {
         const messages = [
             { role: "system", content: systemPrompt },
             { role: "user", content: content },
@@ -50,6 +50,14 @@ class GeminiService {
             temperature: 0.1,
             max_tokens: 8192,
             stream: true,
+            extra_body: {
+                google: {
+                    thinking_config: {
+                        thinking_budget: 512,
+                        include_thoughts: false // Returns model's reasoning steps
+                    }
+                }
+            }
         };
         functions.logger.info("Calling Gemini API (streaming)", {
             model: this.model,
@@ -74,16 +82,10 @@ class GeminiService {
         }
         return response;
     }
-    async geminiChatCompletion(systemPrompt, content) {
+    async chatCompletion(systemPrompt, content) {
         const messages = [
-            {
-                role: "system",
-                content: systemPrompt,
-            },
-            {
-                role: "user",
-                content: content,
-            },
+            { role: "system", content: systemPrompt },
+            { role: "user", content: content },
         ];
         const payload = {
             messages,
@@ -123,5 +125,5 @@ class GeminiService {
         return result;
     }
 }
-exports.GeminiService = GeminiService;
-//# sourceMappingURL=geminiService.js.map
+exports.GeminiLlmService = GeminiLlmService;
+//# sourceMappingURL=geminiLlmService.js.map

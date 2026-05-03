@@ -1,35 +1,44 @@
 import * as functions from "firebase-functions";
-import { GeminiRequest, GeminiResponse, SuccessResponse } from "../models/types";
+import { LlmRequest, LlmResponse, SuccessResponse } from "../models/types";
 import { configSecret } from "../config";
+import { LlmService } from "./llmService";
 
-export class GeminiService {
+export class GeminiLlmService implements LlmService {
   private apiUrl: string;
   private apiKey: string;
   private model: string;
 
   constructor() {
-    // Get configuration from the secret
-    this.apiUrl = configSecret.value().google.api_url;
-    this.apiKey = configSecret.value().gemini.api_key;
-    this.model = configSecret.value().gemini.model;
+    const config = configSecret.value();
+    this.apiUrl = config.gemini.api_url;
+    this.apiKey = config.gemini.api_key;
+    this.model = config.gemini.model;
 
     if (!this.apiKey) {
-      throw new Error('GEMINI_API_KEY not found in JAPANESE_ALCHEMY_CONFIG secret');
+      throw new Error("Gemini API key not found in JAPANESE_ALCHEMY_CONFIG secret");
     }
   }
 
-  async geminiStreamCompletion(systemPrompt: string, content: string): Promise<Response> {
+  async streamCompletion(systemPrompt: string, content: string): Promise<Response> {
     const messages = [
       { role: "system", content: systemPrompt },
       { role: "user", content: content },
     ];
 
-    const payload: GeminiRequest = {
+    const payload: LlmRequest = {
       messages,
       model: this.model,
       temperature: 0.1,
       max_tokens: 8192,
       stream: true,
+      extra_body: {
+        google: {
+          thinking_config: {
+            thinking_budget: 512, // Specific token limit (0 to 24,576)
+            include_thoughts: false // Returns model's reasoning steps
+          }
+        }
+      }
     };
 
     functions.logger.info("Calling Gemini API (streaming)", {
@@ -62,19 +71,13 @@ export class GeminiService {
     return response;
   }
 
-  async geminiChatCompletion(systemPrompt: string, content: string): Promise<SuccessResponse> {
+  async chatCompletion(systemPrompt: string, content: string): Promise<SuccessResponse> {
     const messages = [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      {
-        role: "user",
-        content: content,
-      },
+      { role: "system", content: systemPrompt },
+      { role: "user", content: content },
     ];
 
-    const payload: GeminiRequest = {
+    const payload: LlmRequest = {
       messages,
       model: this.model,
       temperature: 0.1,
@@ -109,7 +112,7 @@ export class GeminiService {
     }
 
     functions.logger.info("Gemini API Success");
-    const data = await response.json() as GeminiResponse;
+    const data = await response.json() as LlmResponse;
     functions.logger.debug("Gemini Response Data", data);
 
     const result: SuccessResponse = {

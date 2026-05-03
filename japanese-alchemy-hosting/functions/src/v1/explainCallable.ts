@@ -2,7 +2,7 @@ import * as functions from "firebase-functions";
 import { ExplainRequest, SuccessResponse } from "../models/types";
 import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
-import { GeminiService } from "../services/geminiService";
+import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
 
 export async function explainHandler(request: any): Promise<SuccessResponse> {
@@ -33,8 +33,8 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
   const systemPrompt = prompt === "v2" ? SYSTEM_PROMPT_V2 : SYSTEM_PROMPT_V1;
 
   try {
-    const geminiService = new GeminiService();
-    const result: SuccessResponse = await geminiService.geminiChatCompletion(systemPrompt, content);
+    const llmService = createLlmService();
+    const result: SuccessResponse = await llmService.chatCompletion(systemPrompt, content);
 
     logger.info("Explain request completed successfully");
     return result;
