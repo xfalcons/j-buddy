@@ -37,3 +37,6 @@ wrangler.toml
 *.crx
 *.pem
 release-package/
+
+# Secret files
+**/*/secrets.*
