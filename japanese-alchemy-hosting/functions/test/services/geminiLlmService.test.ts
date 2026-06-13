@@ -1,38 +1,61 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
-import { GeminiService } from "../../src/services/geminiService";
+import { GeminiLlmService } from "../../src/services/geminiLlmService";
 
-// Mock fetch
-const mockFetch = jest.fn();
-(global as any).fetch = mockFetch;
-
-// Mock getConfig
+// Mock the config so configSecret.value().gemini returns test credentials.
 jest.mock("../../src/config", () => ({
-  getConfig: jest.fn(() => ({
-    google: {
-      api_url: "https://test-api-url.com",
-    },
-    gemini: {
-      api_key: "test-api-key",
-      model: "test-model",
-    },
-  })),
+  configSecret: {
+    value: () => ({
+      gemini: {
+        api_url: "https://test-api-url.com",
+        api_key: "test-api-key",
+        model: "test-model",
+      },
+      zai: {
+        api_url: "https://zai.test-api-url.com",
+        api_key: "test-zai-key",
+        model: "test-zai-model",
+      },
+    }),
+  },
+  LLM_PROVIDER: "gemini",
 }));
 
-describe("GeminiService", () => {
-  let service: GeminiService;
+// Mock fetch. Cast as any so mockResolvedValue/mockClear accept any payload
+// regardless of the global jest typing (jest.fn() infers `never` here).
+const mockFetch = jest.fn() as any;
+(global as any).fetch = mockFetch;
+
+describe("GeminiLlmService", () => {
+  let service: GeminiLlmService;
 
   beforeEach(() => {
-    service = new GeminiService();
     mockFetch.mockClear();
+    service = new GeminiLlmService();
   });
 
   describe("Constructor", () => {
     it("should initialize with correct configuration", () => {
       expect(service).toBeDefined();
     });
+
+    it("should throw when the Gemini API key is missing", () => {
+      // Temporarily override configSecret to omit the api_key.
+      const { configSecret } = require("../../src/config");
+      const original = configSecret.value;
+      configSecret.value = () => ({
+        gemini: { api_url: "https://test-api-url.com", api_key: "", model: "test-model" },
+        zai: { api_url: "", api_key: "", model: "" },
+      });
+
+      expect(() => new GeminiLlmService()).toThrow(
+        "Gemini API key not found"
+      );
+
+      configSecret.value = original;
+    });
   });
 
-  describe("geminiChatCompletion", () => {
+  describe("chatCompletion", () => {
     const mockSystemPrompt = "You are a helpful assistant";
     const mockContent = "Test content";
     const mockResponse = {
@@ -51,7 +74,7 @@ describe("GeminiService", () => {
         json: async () => mockResponse,
       });
 
-      await service.geminiChatCompletion(mockSystemPrompt, mockContent);
+      await service.chatCompletion(mockSystemPrompt, mockContent);
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch).toHaveBeenCalledWith(
@@ -81,7 +104,7 @@ describe("GeminiService", () => {
         json: async () => mockResponse,
       });
 
-      const result = await service.geminiChatCompletion(mockSystemPrompt, mockContent);
+      const result = await service.chatCompletion(mockSystemPrompt, mockContent);
 
       expect(result).toEqual({
         success: true,
@@ -99,7 +122,7 @@ describe("GeminiService", () => {
       });
 
       await expect(
-        service.geminiChatCompletion(mockSystemPrompt, mockContent)
+        service.chatCompletion(mockSystemPrompt, mockContent)
       ).rejects.toThrow("Gemini API error: 500 Internal Server Error");
     });
 
@@ -111,10 +134,7 @@ describe("GeminiService", () => {
         json: async () => mockResponse,
       });
 
-      const result = await service.geminiChatCompletion(
-        mockSystemPrompt,
-        mockContent
-      );
+      const result = await service.chatCompletion(mockSystemPrompt, mockContent);
 
       const afterCall = Date.now();
 
@@ -130,21 +150,21 @@ describe("GeminiService", () => {
         }),
       });
 
-      const result = await service.geminiChatCompletion(mockSystemPrompt, "");
+      const result = await service.chatCompletion(mockSystemPrompt, "");
 
       expect(result.success).toBe(true);
       expect(result.data).toBe("");
     });
 
     it("should handle long content", async () => {
-      const longContent = "a".repeat(10000);
+      const longContent = "あ".repeat(10000);
 
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => mockResponse,
       });
 
-      const result = await service.geminiChatCompletion(mockSystemPrompt, longContent);
+      const result = await service.chatCompletion(mockSystemPrompt, longContent);
 
       expect(result.success).toBe(true);
     });
@@ -157,10 +177,7 @@ describe("GeminiService", () => {
         json: async () => mockResponse,
       });
 
-      const result = await service.geminiChatCompletion(
-        mockSystemPrompt,
-        specialContent
-      );
+      const result = await service.chatCompletion(mockSystemPrompt, specialContent);
 
       expect(result.success).toBe(true);
     });

@@ -1,0 +1,81 @@
+{
+  "id": "near-500-char-urban-redevelopment",
+  "input": "都市再開発計画について住民説明会で意見を求められた担当者は、駅前の老朽化した建物を取り壊して商業施設と公共図書館を併設すれば地域の利便性が高まる一方、長年営業してきた個人商店が立ち退きを余儀なくされ、家賃の上昇によって若い世代や子育て世帯まで住み続けられなくなるおそれがあることを認めつつも、計画を白紙に戻すわけにはいかないとして、工事期間中の騒音や交通規制を最小限に抑えるための具体策を示したうえで、移転を希望する店には優先的に新店舗を紹介し、高齢者には仮設住宅への引っ越しを支援し、失われる緑地については屋上庭園と街路樹で補う方針を説明した。しかし参加者からは、経済効果ばかりが強調され、災害時の避難経路や学校周辺の安全、歴史的景観の保存といった生活に直結する問題が十分に検討されていないのではないかという批判が相次いだため、市は第三者委員会を設けて資料を公開し、半年後に修正案を提示すると約束したものの、その約束が単なる時間稼ぎに終わるのではないかと疑う声も消えず、行政と事業者だけで結論を急ぐのではなく、反対意見を含む住民の提案を継続的に取り入れ、費用と利益の配分を明確にしない限り、たとえ法律上の手続きが整っていても地域の納得は得られないだろうという認識が共有された。",
+  "difficulty": "N1｜長文壓力測試（539 字元）",
+  "expectedVocabulary": [
+    "取り壊す",
+    "併設する",
+    "余儀なくされる",
+    "抑える",
+    "相次ぐ",
+    "取り入れる"
+  ],
+  "expectedGrammar": [
+    "〜一方（で）（N2）",
+    "〜を余儀なくされる（N1）",
+    "〜つつも（N1）",
+    "〜わけにはいかない（N2）",
+    "〜ない限り（N2）"
+  ],
+  "expectedSections": [
+    "原句",
+    "單字分析",
+    "文法分析"
+  ],
+  "targetVersions": [
+    "v2"
+  ],
+  "structuralChecks": [
+    {
+      "name": "furiganaFormatValid",
+      "required": true,
+      "description": "All annotated kanji use {漢字|かな}. Reject HTML <ruby>, empty readings, malformed braces, and readings placed outside the braces.",
+      "patternHint": "\\{[^{}|]+\\|[ぁ-ゖー]+\\}"
+    },
+    {
+      "name": "requiredHeadingsPresent",
+      "required": true,
+      "description": "The response contains the Markdown headings `### 原句`, `### 單字分析`, and `### 文法分析` in that order."
+    },
+    {
+      "name": "translationInsideOriginalSection",
+      "required": true,
+      "description": "A line beginning with `翻譯：` appears inside `### 原句`, not as a separate top-level section."
+    },
+    {
+      "name": "vocabularyHeadingMatchesContent",
+      "required": true,
+      "description": "Every vocabulary entry starts with `#### <單字>` and contains analysis appropriate to its type: kanji/verb fields for Japanese words, or accent/English/explanation for katakana."
+    },
+    {
+      "name": "grammarHeadingMatchesContent",
+      "required": true,
+      "description": "Every grammar entry starts with `#### <文法>...（N1|N2|N3）`, and the named pattern matches the quoted evidence and explanation."
+    },
+    {
+      "name": "allOutputKanjiAnnotated",
+      "required": true,
+      "description": "Japanese kanji appearing in generated explanatory Japanese, examples, and quoted source fragments are annotated with `{漢字|かな}` except inside the raw input field."
+    },
+    {
+      "name": "expectedVocabularyCovered",
+      "required": true,
+      "description": "Every item in expectedVocabulary is represented by a matching `#### <單字>` entry or explicitly covered as a reading-disambiguation target."
+    },
+    {
+      "name": "expectedGrammarCovered",
+      "required": true,
+      "description": "Every required item in expectedGrammar appears as an identified grammar heading."
+    },
+    {
+      "name": "v2GrammarShape",
+      "required": true,
+      "description": "V2 contains 1–5 grammar entries. Each has `接續形式`, `元素分解`, `用法說明`, `母語者語感`, and `例句`; `相似文法比較` is included when pedagogically useful."
+    },
+    {
+      "name": "longInputHandledWithoutTruncation",
+      "required": true,
+      "description": "The complete input is represented in the 原句 section and the response ends cleanly without a cut-off grammar block."
+    }
+  ]
+}

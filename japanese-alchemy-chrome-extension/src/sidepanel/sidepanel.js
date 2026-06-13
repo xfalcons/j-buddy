@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import authService from '../scripts/authService.js';
+import { getPromptVariant } from '../scripts/promptVariant.js';
 
 // Configure marked.js to preserve ruby tags and add classes
 marked.setOptions({
@@ -200,9 +201,12 @@ async function analizingSelectedText(selectedText) {
                 console.log('Generating response (streaming)...');
                 let firstChunkReceived = false;
 
+                // Resolve the A/B prompt variant from chrome.storage.local (defaults to "v2").
+                const promptVariant = await getPromptVariant();
+
                 await jaAlchemyApiService.generateResponseStream(
                     selectedText,
-                    'v2',
+                    promptVariant,
                     // onChunk: progressively render each chunk
                     (chunk, fullText) => {
                         if (!firstChunkReceived) {

@@ -32,7 +32,8 @@ const logger_1 = require("../utils/logger");
 async function explainHandler(request) {
     logger_1.logger.setContext(request);
     const data = request.data;
-    const { content, prompt = "v1" } = data;
+    // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
+    const { content, prompt = "v2" } = data;
     if (!content) {
         logger_1.logger.error("Invalid request: content is required");
         throw new functions.https.HttpsError("invalid-argument", "Content is required");

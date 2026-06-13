@@ -2,26 +2,38 @@ import * as admin from "firebase-admin";
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { FirestoreService } from "../../src/services/firestoreService";
 
-// Mock firebase-admin
+// Mock firebase-admin. `firestore` is a stable jest.fn whose return value is
+// configured in beforeEach so the service's constructor (this.db = admin.firestore())
+// and the test see the same db instance. The current source writes via
+// db.batch().set().commit(), not collection.add().
 jest.mock("firebase-admin", () => ({
   initializeApp: jest.fn(),
-  firestore: jest.fn(() => ({
-    collection: jest.fn(() => ({
-      add: jest.fn(),
-      doc: jest.fn(),
-    })),
-  })),
+  firestore: jest.fn(),
 }));
 
 describe("FirestoreService", () => {
   let service: FirestoreService;
   let mockDb: any;
+  let mockBatch: any;
   let mockCollection: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockDb = admin.firestore();
-    mockCollection = mockDb.collection.mock.results[0]?.value;
+
+    // commit() returns undefined by default; `await undefined` resolves fine,
+    // so no mockResolvedValue is needed (and jest.fn() here infers `never`).
+    mockBatch = {
+      set: jest.fn(),
+      commit: jest.fn(),
+    };
+    mockCollection = { doc: jest.fn() };
+    mockDb = {
+      batch: jest.fn(() => mockBatch),
+      collection: jest.fn(() => mockCollection),
+    };
+
+    (admin as any).firestore.mockReturnValue(mockDb);
+
     service = new FirestoreService();
   });
 
@@ -33,29 +45,25 @@ describe("FirestoreService", () => {
       ];
       const userId = "test-user";
 
-      // Mock successful saves
-      mockCollection.add = jest.fn()
-        .mockResolvedValueOnce({ id: "doc1" })
-        .mockResolvedValueOnce({ id: "doc2" });
-
       const saved = await service.saveVocabulary(userId, words);
 
       expect(saved).toBe(2);
+      expect(mockBatch.set).toHaveBeenCalledTimes(2);
+      expect(mockBatch.commit).toHaveBeenCalledTimes(1);
     });
 
-    it("should handle empty words array", async () => {
+    it("should handle empty words array without writing", async () => {
       const userId = "test-user";
 
       const saved = await service.saveVocabulary(userId, []);
 
       expect(saved).toBe(0);
+      expect(mockBatch.commit).not.toHaveBeenCalled();
     });
 
-    it("should include userId in collection path", async () => {
+    it("should use the per-user vocabularies collection path", async () => {
       const words = [{ term: "test", detail: "test detail" }];
       const userId = "test-user";
-
-      mockCollection.add = jest.fn().mockResolvedValue({ id: "doc1" });
 
       await service.saveVocabulary(userId, words);
 
@@ -64,15 +72,13 @@ describe("FirestoreService", () => {
       );
     });
 
-    it("should include createdAt timestamp", async () => {
+    it("should include a createdAt timestamp on each item", async () => {
       const words = [{ term: "test", detail: "test detail" }];
       const userId = "test-user";
 
-      mockCollection.add = jest.fn().mockResolvedValue({ id: "doc1" });
-
       await service.saveVocabulary(userId, words);
 
-      const addedData = mockCollection.add.mock.calls[0][0];
+      const addedData = mockBatch.set.mock.calls[0][1];
       expect(addedData).toHaveProperty("createdAt");
       expect(typeof addedData.createdAt).toBe("number");
     });
@@ -86,29 +92,25 @@ describe("FirestoreService", () => {
       ];
       const userId = "test-user";
 
-      // Mock successful saves
-      mockCollection.add = jest.fn()
-        .mockResolvedValueOnce({ id: "doc1" })
-        .mockResolvedValueOnce({ id: "doc2" });
-
       const saved = await service.saveGrammar(userId, grammars);
 
       expect(saved).toBe(2);
+      expect(mockBatch.set).toHaveBeenCalledTimes(2);
+      expect(mockBatch.commit).toHaveBeenCalledTimes(1);
     });
 
-    it("should handle empty grammars array", async () => {
+    it("should handle empty grammars array without writing", async () => {
       const userId = "test-user";
 
       const saved = await service.saveGrammar(userId, []);
 
       expect(saved).toBe(0);
+      expect(mockBatch.commit).not.toHaveBeenCalled();
     });
 
-    it("should include userId in collection path", async () => {
+    it("should use the per-user grammars collection path", async () => {
       const grammars = [{ point: "test", explanation: "test explanation" }];
       const userId = "test-user";
-
-      mockCollection.add = jest.fn().mockResolvedValue({ id: "doc1" });
 
       await service.saveGrammar(userId, grammars);
 
@@ -117,15 +119,13 @@ describe("FirestoreService", () => {
       );
     });
 
-    it("should include createdAt timestamp", async () => {
+    it("should include a createdAt timestamp on each item", async () => {
       const grammars = [{ point: "test", explanation: "test explanation" }];
       const userId = "test-user";
 
-      mockCollection.add = jest.fn().mockResolvedValue({ id: "doc1" });
-
       await service.saveGrammar(userId, grammars);
 
-      const addedData = mockCollection.add.mock.calls[0][0];
+      const addedData = mockBatch.set.mock.calls[0][1];
       expect(addedData).toHaveProperty("createdAt");
       expect(typeof addedData.createdAt).toBe("number");
     });

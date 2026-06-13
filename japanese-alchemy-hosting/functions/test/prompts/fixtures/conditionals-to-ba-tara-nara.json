@@ -1,0 +1,78 @@
+{
+  "id": "conditionals-to-ba-tara-nara",
+  "input": "春になると桜が咲き、天気がよければ散歩に出かけ、雨が降ったら家で本を読み、時間がないなら短編だけ読む。",
+  "difficulty": "N3–N2｜條件形 と／ば／たら／なら",
+  "expectedVocabulary": [
+    "咲く",
+    "出かける",
+    "降る",
+    "読む"
+  ],
+  "expectedGrammar": [
+    "〜と（恆常條件）（N3）",
+    "〜ば（假定條件）（N3）",
+    "〜たら（成立後條件）（N3）",
+    "〜なら（前提條件）（N3）"
+  ],
+  "expectedSections": [
+    "原句",
+    "單字分析",
+    "文法分析"
+  ],
+  "targetVersions": [
+    "v2"
+  ],
+  "structuralChecks": [
+    {
+      "name": "furiganaFormatValid",
+      "required": true,
+      "description": "All annotated kanji use {漢字|かな}. Reject HTML <ruby>, empty readings, malformed braces, and readings placed outside the braces.",
+      "patternHint": "\\{[^{}|]+\\|[ぁ-ゖー]+\\}"
+    },
+    {
+      "name": "requiredHeadingsPresent",
+      "required": true,
+      "description": "The response contains the Markdown headings `### 原句`, `### 單字分析`, and `### 文法分析` in that order."
+    },
+    {
+      "name": "translationInsideOriginalSection",
+      "required": true,
+      "description": "A line beginning with `翻譯：` appears inside `### 原句`, not as a separate top-level section."
+    },
+    {
+      "name": "vocabularyHeadingMatchesContent",
+      "required": true,
+      "description": "Every vocabulary entry starts with `#### <單字>` and contains analysis appropriate to its type: kanji/verb fields for Japanese words, or accent/English/explanation for katakana."
+    },
+    {
+      "name": "grammarHeadingMatchesContent",
+      "required": true,
+      "description": "Every grammar entry starts with `#### <文法>...（N1|N2|N3）`, and the named pattern matches the quoted evidence and explanation."
+    },
+    {
+      "name": "allOutputKanjiAnnotated",
+      "required": true,
+      "description": "Japanese kanji appearing in generated explanatory Japanese, examples, and quoted source fragments are annotated with `{漢字|かな}` except inside the raw input field."
+    },
+    {
+      "name": "expectedVocabularyCovered",
+      "required": true,
+      "description": "Every item in expectedVocabulary is represented by a matching `#### <單字>` entry or explicitly covered as a reading-disambiguation target."
+    },
+    {
+      "name": "expectedGrammarCovered",
+      "required": true,
+      "description": "Every required item in expectedGrammar appears as an identified grammar heading."
+    },
+    {
+      "name": "v2GrammarShape",
+      "required": true,
+      "description": "V2 contains 1–5 grammar entries. Each has `接續形式`, `元素分解`, `用法說明`, `母語者語感`, and `例句`; `相似文法比較` is included when pedagogically useful."
+    },
+    {
+      "name": "allFourConditionalsContrasted",
+      "required": true,
+      "description": "V2 identifies and distinguishes all four conditional forms. This fixture intentionally exceeds V1's 1–3 grammar-point limit."
+    }
+  ]
+}

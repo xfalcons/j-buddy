@@ -9,7 +9,8 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
   logger.setContext(request);
 
   const data = request.data as ExplainRequest;
-  const { content, prompt = "v1" } = data;
+  // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
+  const { content, prompt = "v2" } = data;
 
   if (!content) {
     logger.error("Invalid request: content is required");
