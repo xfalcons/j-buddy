@@ -15,7 +15,8 @@
     "compile": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "test:prompt-quality": "PROMPT_QUALITY_TEST=1 jest --config jest.prompt-quality.config.js"
   },
   "engines": {
     "node": "22"
