@@ -6,16 +6,37 @@ const systemPromptV1_1 = require("../models/systemPromptV1");
 const systemPromptV2_1 = require("../models/systemPromptV2");
 const llmService_1 = require("../services/llmService");
 const logger_1 = require("../utils/logger");
+const requestValidation_1 = require("./requestValidation");
+const rateLimiter_1 = require("./rateLimiter");
+// HMAC'd client identifier for rejection logs (abuse correlation): never the
+// raw IP, never request content.
+function clientTag(ip) {
+    return ip ? (0, rateLimiter_1.rateLimitKey)(ip) : "unknown";
+}
 async function explainStreamHandler(req, res) {
+    // Reject oversized bodies before any work or SSE headers.
+    if ((0, requestValidation_1.isBodyTooLarge)(req)) {
+        logger_1.logger.warn("Rejected oversized request body (413)", { client: clientTag(req.ip) });
+        res.status(413).json({ error: "Request too large" });
+        return;
+    }
+    // Server-authoritative input validation (content/context/prompt).
+    const validation = (0, requestValidation_1.validateExplainRequest)(req.body);
+    if (!validation.ok) {
+        logger_1.logger.warn(`Rejected invalid request: ${validation.error}`, {
+            client: clientTag(req.ip),
+        });
+        res.status(validation.status).json({ error: validation.error });
+        return;
+    }
+    // Per-IP rate limit (after validation, before the LLM call).
+    const rateLimit = await (0, rateLimiter_1.checkRateLimit)(req.ip);
+    if (!rateLimit.allowed) {
+        logger_1.logger.warn(`Rate limit denied (429)${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`, { client: clientTag(req.ip) });
+        res.status(429).json({ error: "Too many requests" });
+        return;
+    }
     const { content, prompt = "v2", context_before, context_after } = req.body || {};
-    if (!content) {
-        res.status(400).json({ error: "Content is required" });
-        return;
-    }
-    if (prompt !== "v1" && prompt !== "v2") {
-        res.status(400).json({ error: "Prompt must be 'v1' or 'v2'" });
-        return;
-    }
     logger_1.logger.info(`Streaming explain request with prompt version: ${prompt}`);
     logger_1.logger.info(`Content: ${content.substring(0, 100)}...`);
     if (context_before || context_after) {
