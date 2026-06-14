@@ -40,9 +40,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Background] request.action: ', request.action);
   console.log('[Background] request.data: ', request.data);
   if (request.action === 'textSelected') {
-    // Store selected text temporarily
-    chrome.storage.local.set({ 
-      selectedText: request.data
+    // Store selected text + surrounding context temporarily. Context fields are
+    // optional (older builds / selections with no neighbors send none) and default
+    // to empty so the sidepanel always has a defined shape to read.
+    chrome.storage.local.set({
+      selectedText: request.data,
+      contextBefore: request.contextBefore || '',
+      contextAfter: request.contextAfter || '',
     });
   }
   sendResponse({ status: 'success' });
