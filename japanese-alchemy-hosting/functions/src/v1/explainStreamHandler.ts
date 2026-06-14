@@ -5,12 +5,18 @@ import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
 import { isBodyTooLarge, validateExplainRequest } from "./requestValidation";
-import { checkRateLimit } from "./rateLimiter";
+import { checkRateLimit, rateLimitKey } from "./rateLimiter";
+
+// HMAC'd client identifier for rejection logs (abuse correlation): never the
+// raw IP, never request content.
+function clientTag(ip?: string): string {
+  return ip ? rateLimitKey(ip) : "unknown";
+}
 
 export async function explainStreamHandler(req: Request, res: Response): Promise<void> {
   // Reject oversized bodies before any work or SSE headers.
   if (isBodyTooLarge(req)) {
-    logger.warn("Rejected oversized request body (413)");
+    logger.warn("Rejected oversized request body (413)", { client: clientTag(req.ip) });
     res.status(413).json({ error: "Request too large" });
     return;
   }
@@ -18,7 +24,9 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
   // Server-authoritative input validation (content/context/prompt).
   const validation = validateExplainRequest(req.body);
   if (!validation.ok) {
-    logger.warn(`Rejected invalid request: ${validation.error}`);
+    logger.warn(`Rejected invalid request: ${validation.error}`, {
+      client: clientTag(req.ip),
+    });
     res.status(validation.status).json({ error: validation.error });
     return;
   }
@@ -26,7 +34,10 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
   // Per-IP rate limit (after validation, before the LLM call).
   const rateLimit = await checkRateLimit(req.ip);
   if (!rateLimit.allowed) {
-    logger.warn(`Rate limit denied (429)${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`);
+    logger.warn(
+      `Rate limit denied (429)${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`,
+      { client: clientTag(req.ip) }
+    );
     res.status(429).json({ error: "Too many requests" });
     return;
   }
