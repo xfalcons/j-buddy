@@ -74,3 +74,16 @@ export function isBodyTooLarge(req: {
   const cl = Number(req.header("content-length") ?? 0);
   return Number.isFinite(cl) && cl > MAX_REQUEST_BYTES;
 }
+
+/**
+ * Secondary body-size guard on the parsed body, for requests with an absent or
+ * under-reported Content-Length (e.g. chunked transfer). The header check alone
+ * is bypassable; this bounds the bytes actually buffered.
+ */
+export function isParsedBodyTooLarge(body: unknown): boolean {
+  try {
+    return JSON.stringify(body).length > MAX_REQUEST_BYTES;
+  } catch {
+    return false;
+  }
+}

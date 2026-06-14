@@ -4,7 +4,7 @@ import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
-import { isBodyTooLarge, validateExplainRequest } from "./requestValidation";
+import { isBodyTooLarge, isParsedBodyTooLarge, validateExplainRequest } from "./requestValidation";
 import { checkRateLimit, rateLimitKey } from "./rateLimiter";
 
 // HMAC'd client identifier for rejection logs (abuse correlation): never the
@@ -14,8 +14,10 @@ function clientTag(ip?: string): string {
 }
 
 export async function explainStreamHandler(req: Request, res: Response): Promise<void> {
-  // Reject oversized bodies before any work or SSE headers.
-  if (isBodyTooLarge(req)) {
+  // Reject oversized bodies before any work or SSE headers. Two checks: the
+  // Content-Length header (early) and the parsed body size (catches chunked /
+  // under-reported bodies the header check misses).
+  if (isBodyTooLarge(req) || isParsedBodyTooLarge(req.body)) {
     logger.warn("Rejected oversized request body (413)", { client: clientTag(req.ip) });
     res.status(413).json({ error: "Request too large" });
     return;
@@ -31,14 +33,21 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
     return;
   }
 
-  // Per-IP rate limit (after validation, before the LLM call).
+  // Per-IP rate limit (after validation, before the LLM call). A limiter error
+  // (Firestore down) fails closed as 503 so clients don't retry-loop into the
+  // failing dependency; a genuine per-IP exhaustion is 429.
   const rateLimit = await checkRateLimit(req.ip);
   if (!rateLimit.allowed) {
+    const isLimiterError = rateLimit.reason === "limiter-error";
+    const status = isLimiterError ? 503 : 429;
     logger.warn(
-      `Rate limit denied (429)${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`,
+      `Request denied (${status})${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`,
       { client: clientTag(req.ip) }
     );
-    res.status(429).json({ error: "Too many requests" });
+    if (isLimiterError) res.setHeader("Retry-After", "60");
+    res
+      .status(status)
+      .json({ error: isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests" });
     return;
   }
 

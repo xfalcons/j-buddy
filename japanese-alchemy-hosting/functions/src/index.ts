@@ -21,8 +21,12 @@ export const explain = onCall(
   explainHandler
 );
 
+// explainStream overrides timeoutSeconds to 120: an SSE stream can run longer
+// than the batch default (60s), and the platform killing it mid-flight would
+// truncate the stream with no SSE error event. maxInstances bounds the
+// concurrent-spend window regardless.
 export const explainStream = onRequest(
-  { ...explainRuntimeOptions, secrets: [configSecret], cors: true },
+  { ...explainRuntimeOptions, timeoutSeconds: 120, secrets: [configSecret], cors: true },
   explainStreamHandler
 );
 

@@ -10,8 +10,9 @@ import type { GlobalOptions } from "firebase-functions/v2/options";
  *
  * Tuned for a low-traffic extension. Raise `maxInstances` if legitimate
  * concurrency demands it; the product `maxInstances × concurrency` is the
- * worst-case concurrent-spend window, each stream running up to `timeoutSeconds`.
- * `minInstances` is deliberately unset (no idle cost on an abuse-prone surface).
+ * worst-case concurrent-spend window. `timeoutSeconds` is set per function
+ * (explainStream streams longer than explain) — see index.ts. `minInstances` is
+ * deliberately unset (no idle cost on an abuse-prone surface).
  */
 export const explainRuntimeOptions: GlobalOptions = {
   maxInstances: 10,
@@ -20,8 +21,3 @@ export const explainRuntimeOptions: GlobalOptions = {
   cpu: 1,
   timeoutSeconds: 60,
 };
-
-/** Worst-case concurrent LLM streams = maxInstances × concurrency. */
-export const MAX_CONCURRENT_STREAMS =
-  (explainRuntimeOptions.maxInstances as number) *
-  (explainRuntimeOptions.concurrency as number);

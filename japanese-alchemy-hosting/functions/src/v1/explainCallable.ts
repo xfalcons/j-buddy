@@ -6,6 +6,7 @@ import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
 import { validateExplainRequest } from "./requestValidation";
+import { checkRateLimit } from "./rateLimiter";
 
 export async function explainHandler(request: any): Promise<SuccessResponse> {
   logger.setContext(request);
@@ -23,6 +24,19 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
 
   // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
   const { content, prompt = "v2", context_before, context_after } = data;
+
+  // Per-IP rate limit (parity with explainStream). The callable's client IP is
+  // on the underlying Express request.
+  const rateLimit = await checkRateLimit(request.rawRequest?.ip);
+  if (!rateLimit.allowed) {
+    const isLimiterError = rateLimit.reason === "limiter-error";
+    const code = isLimiterError ? "unavailable" : "resource-exhausted";
+    logger.warn(`Request denied: ${rateLimit.reason ?? "rate-limited"}`);
+    throw new functions.https.HttpsError(
+      code,
+      isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests"
+    );
+  }
 
   logger.info(`Received explain request with prompt version: ${prompt}`);
   logger.info(`Content: ${content.substring(0, 100)}...`);

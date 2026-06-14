@@ -83,8 +83,14 @@ class JaAlchemyApiService {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Stream request failed: ${response.status} ${errorText}`);
+        let detail = await response.text();
+        try {
+          const parsed = JSON.parse(detail);
+          if (parsed && parsed.error) detail = parsed.error;
+        } catch {
+          // body wasn't JSON; keep the raw text
+        }
+        throw new Error(`Stream request failed: ${response.status} ${detail}`);
       }
 
       const reader = response.body.getReader();

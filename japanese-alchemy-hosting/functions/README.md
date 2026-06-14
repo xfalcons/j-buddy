@@ -153,10 +153,10 @@ firebase functions:log
 
 `explainStream` is an unauthenticated HTTP endpoint that calls an LLM per request. It is layered against abuse / denial-of-wallet, in order of execution:
 
-1. **Cost ceiling** (runtime options, `src/runtimeOptions.ts`) — `maxInstances × concurrency` bounds concurrent streams; `timeoutSeconds` bounds per-request stream duration. With `concurrency: 1`, `maxInstances` is a literal concurrent-stream cap.
-2. **Body-size guard** — requests over 16 KB (Content-Length) are rejected with `413` before any work.
-3. **Input validation** (`src/v1/requestValidation.ts`) — `content` 2–500 chars, `context_*` ≤ `MAX_CONTEXT_CHARS`, types, prompt version; invalid → `400`.
-4. **Per-IP rate limit** (`src/v1/rateLimiter.ts`) — Firestore token bucket keyed by an HMAC of the client IP; over-limit → `429`. Fails open on a missing IP, **fails closed on a Firestore error**.
+1. **Cost ceiling** (runtime options, `src/runtimeOptions.ts`) — `maxInstances × concurrency` bounds concurrent streams; `timeoutSeconds` bounds per-request stream duration (60s for `explain`, 120s for `explainStream` since SSE streams run longer). With `concurrency: 1`, `maxInstances` is a literal concurrent-stream cap.
+2. **Body-size guard** — requests over 16 KB are rejected with `413` before any work, on both the `Content-Length` header and the parsed body (so chunked / under-reported bodies can't bypass it).
+3. **Input validation** (`src/v1/requestValidation.ts`) — `content` 2–500 chars, `context_*` ≤ `MAX_CONTEXT_CHARS`, types, prompt version; invalid → `400`. Applied to both `explainStream` and `explain`.
+4. **Per-IP rate limit** (`src/v1/rateLimiter.ts`) — Firestore token bucket keyed by an HMAC of the client IP; over-limit → `429`. Capacity is kept ≤ the concurrent-stream ceiling so a single source can't saturate the deployment. Fails open on a missing IP, **fails closed as `503` (Retry-After) on a Firestore error** so clients don't retry-loop into the failing dependency. Applied to both endpoints.
 
 ### Alerting signal
 
@@ -164,7 +164,13 @@ The rate limiter's fail-closed path logs at **error** level: `"Rate limit: Fires
 
 ### Tuning
 
-`maxInstances`, `concurrency`, and `RATE_LIMIT_CAPACITY` / `RATE_LIMIT_REFILL_PER_MIN` are constants chosen for a low-traffic extension. Derive them from a worst-case daily-spend budget; raise `maxInstances` if legitimate concurrency demands it (the product `maxInstances × concurrency` is the worst-case concurrent-spend window). Per-IP limiting caps a single source; distributed/rotating-IP abuse is bounded only by `maxInstances` — Cloud Armor is the escalation path.
+`maxInstances`, `concurrency`, and `RATE_LIMIT_CAPACITY` / `RATE_LIMIT_REFILL_PER_MIN` are constants chosen for a low-traffic extension. Derive them from a worst-case daily-spend budget; raise `maxInstances` if legitimate concurrency demands it (the product `maxInstances × concurrency` is the worst-case concurrent-spend window). `RATE_LIMIT_CAPACITY` is kept ≤ that product so one source cannot admit more concurrent requests than the deployment can serve. Per-IP limiting caps a single source; distributed/rotating-IP abuse is bounded only by `maxInstances` — Cloud Armor is the escalation path.
+
+Rate-limit documents carry an `expireAt` field (1 hour). Reap them by enabling a Firestore TTL policy (one-time, via gcloud):
+
+```bash
+gcloud firestore fields ttls update expireAt --collection-group=rateLimits --enable-ttl
+```
 
 ### Post-deploy verification runbook
 

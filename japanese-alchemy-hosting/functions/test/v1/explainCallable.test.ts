@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { explainHandler } from "../../src/v1/explainCallable";
+import { checkRateLimit } from "../../src/v1/rateLimiter";
 import { SYSTEM_PROMPT_V1 } from "../../src/models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../../src/models/systemPromptV2";
 
@@ -11,6 +12,8 @@ jest.mock("../../src/services/llmService", () => ({
   createLlmService: () => ({ chatCompletion: mockChatCompletion }),
 }));
 
+jest.mock("../../src/v1/rateLimiter");
+
 describe("explainHandler", () => {
   beforeEach(() => {
     mockChatCompletion.mockReset();
@@ -19,6 +22,8 @@ describe("explainHandler", () => {
       data: "mocked analysis",
       timestamp: 0,
     });
+    jest.mocked(checkRateLimit).mockReset();
+    jest.mocked(checkRateLimit).mockResolvedValue({ allowed: true });
   });
 
   it("defaults to v2 when no prompt is provided", async () => {
@@ -53,6 +58,15 @@ describe("explainHandler", () => {
     await expect(
       explainHandler({ data: { content: "あ".repeat(501) } } as any)
     ).rejects.toThrow();
+
+    expect(mockChatCompletion).not.toHaveBeenCalled();
+  });
+
+  it("throws resource-exhausted when the rate limit denies, without calling the LLM", async () => {
+    jest.mocked(checkRateLimit).mockResolvedValueOnce({ allowed: false });
+    await expect(
+      explainHandler({ data: { content: "テストです" } } as any)
+    ).rejects.toMatchObject({ code: "resource-exhausted" });
 
     expect(mockChatCompletion).not.toHaveBeenCalled();
   });
