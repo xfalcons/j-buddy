@@ -4,19 +4,25 @@ import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
+import { isBodyTooLarge, validateExplainRequest } from "./requestValidation";
 
 export async function explainStreamHandler(req: Request, res: Response): Promise<void> {
+  // Reject oversized bodies before any work or SSE headers.
+  if (isBodyTooLarge(req)) {
+    logger.warn("Rejected oversized request body (413)");
+    res.status(413).json({ error: "Request too large" });
+    return;
+  }
+
+  // Server-authoritative input validation (content/context/prompt).
+  const validation = validateExplainRequest(req.body);
+  if (!validation.ok) {
+    logger.warn(`Rejected invalid request: ${validation.error}`);
+    res.status(validation.status).json({ error: validation.error });
+    return;
+  }
+
   const { content, prompt = "v2", context_before, context_after } = req.body || {};
-
-  if (!content) {
-    res.status(400).json({ error: "Content is required" });
-    return;
-  }
-
-  if (prompt !== "v1" && prompt !== "v2") {
-    res.status(400).json({ error: "Prompt must be 'v1' or 'v2'" });
-    return;
-  }
 
   logger.info(`Streaming explain request with prompt version: ${prompt}`);
   logger.info(`Content: ${content.substring(0, 100)}...`);

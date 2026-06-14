@@ -20,6 +20,17 @@ function mockRes() {
   return res;
 }
 
+// Minimal mock request with a header() function (isBodyTooLarge reads Content-Length).
+function mockReq(body: any, contentLength?: number) {
+  return {
+    body,
+    header: (name: string) =>
+      name === "content-length" && contentLength != null
+        ? String(contentLength)
+        : undefined,
+  } as any;
+}
+
 describe("explainStreamHandler", () => {
   beforeEach(() => {
     mockStreamCompletion.mockReset();
@@ -33,14 +44,14 @@ describe("explainStreamHandler", () => {
   });
 
   it("defaults to v2 when no prompt is provided", async () => {
-    await explainStreamHandler({ body: { content: "テストです" } } as any, mockRes());
+    await explainStreamHandler(mockReq({ content: "テストです" }), mockRes());
 
     expect(mockStreamCompletion).toHaveBeenCalledWith(SYSTEM_PROMPT_V2, "テストです");
   });
 
   it("selects v1 when prompt is v1", async () => {
     await explainStreamHandler(
-      { body: { content: "テストです", prompt: "v1" } } as any,
+      mockReq({ content: "テストです", prompt: "v1" }),
       mockRes()
     );
 
@@ -49,7 +60,7 @@ describe("explainStreamHandler", () => {
 
   it("rejects missing content with 400 before calling the LLM", async () => {
     const res = mockRes();
-    await explainStreamHandler({ body: {} } as any, res);
+    await explainStreamHandler(mockReq({}), res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(mockStreamCompletion).not.toHaveBeenCalled();
@@ -57,25 +68,36 @@ describe("explainStreamHandler", () => {
 
   it("rejects an invalid prompt version with 400 before calling the LLM", async () => {
     const res = mockRes();
-    await explainStreamHandler(
-      { body: { content: "テストです", prompt: "v3" } } as any,
-      res
-    );
+    await explainStreamHandler(mockReq({ content: "テストです", prompt: "v3" }), res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(mockStreamCompletion).not.toHaveBeenCalled();
   });
 
+  it("rejects oversized content with 400 before calling the LLM", async () => {
+    const res = mockRes();
+    await explainStreamHandler(mockReq({ content: "あ".repeat(501) }), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockStreamCompletion).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized body with 413 before calling the LLM", async () => {
+    const res = mockRes();
+    await explainStreamHandler(mockReq({ content: "テストです" }, 16 * 1024 + 1), res);
+
+    expect(res.status).toHaveBeenCalledWith(413);
+    expect(mockStreamCompletion).not.toHaveBeenCalled();
+  });
+
   it("wraps the user message with context blocks when context is provided", async () => {
     await explainStreamHandler(
-      {
-        body: {
-          content: "テストです",
-          prompt: "v2",
-          context_before: "前文",
-          context_after: "後文",
-        },
-      } as any,
+      mockReq({
+        content: "テストです",
+        prompt: "v2",
+        context_before: "前文",
+        context_after: "後文",
+      }),
       mockRes()
     );
 
@@ -88,7 +110,7 @@ describe("explainStreamHandler", () => {
 
   it("omits the after block when only context_before is present", async () => {
     await explainStreamHandler(
-      { body: { content: "テストです", context_before: "前文" } } as any,
+      mockReq({ content: "テストです", context_before: "前文" }),
       mockRes()
     );
 

@@ -5,29 +5,24 @@ import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
+import { validateExplainRequest } from "./requestValidation";
 
 export async function explainHandler(request: any): Promise<SuccessResponse> {
   logger.setContext(request);
 
   const data = request.data as ExplainRequest;
+  // Server-authoritative input validation (content/context/prompt).
+  const validation = validateExplainRequest(data);
+  if (!validation.ok) {
+    logger.error(`Invalid request: ${validation.error}`);
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      validation.error ?? "Invalid request"
+    );
+  }
+
   // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
   const { content, prompt = "v2", context_before, context_after } = data;
-
-  if (!content) {
-    logger.error("Invalid request: content is required");
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "Content is required"
-    );
-  }
-
-  if (prompt !== "v1" && prompt !== "v2") {
-    logger.error(`Invalid prompt version: ${prompt}`);
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "Prompt must be 'v1' or 'v2'"
-    );
-  }
 
   logger.info(`Received explain request with prompt version: ${prompt}`);
   logger.info(`Content: ${content.substring(0, 100)}...`);

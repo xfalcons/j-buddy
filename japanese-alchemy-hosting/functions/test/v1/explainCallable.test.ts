@@ -49,6 +49,14 @@ describe("explainHandler", () => {
     expect(mockChatCompletion).not.toHaveBeenCalled();
   });
 
+  it("rejects oversized content without calling the LLM (parity with stream)", async () => {
+    await expect(
+      explainHandler({ data: { content: "あ".repeat(501) } } as any)
+    ).rejects.toThrow();
+
+    expect(mockChatCompletion).not.toHaveBeenCalled();
+  });
+
   it("wraps the user message with context blocks when context is provided", async () => {
     await explainHandler({
       data: {
