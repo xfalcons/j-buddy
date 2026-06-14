@@ -48,4 +48,21 @@ describe("explainHandler", () => {
 
     expect(mockChatCompletion).not.toHaveBeenCalled();
   });
+
+  it("wraps the user message with context blocks when context is provided", async () => {
+    await explainHandler({
+      data: {
+        content: "テストです",
+        prompt: "v2",
+        context_before: "前文",
+        context_after: "後文",
+      },
+    } as any);
+
+    expect(mockChatCompletion).toHaveBeenCalledTimes(1);
+    const [, message] = mockChatCompletion.mock.calls[0];
+    expect(message).toContain("【前文】前文");
+    expect(message).toContain("【分析対象】テストです");
+    expect(message).toContain("【後文】後文");
+  });
 });

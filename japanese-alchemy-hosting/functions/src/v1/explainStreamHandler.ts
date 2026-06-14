@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
+import { buildAnalysisMessage } from "../models/analysisMessage";
 import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
 
 export async function explainStreamHandler(req: Request, res: Response): Promise<void> {
-  const { content, prompt = "v2" } = req.body || {};
+  const { content, prompt = "v2", context_before, context_after } = req.body || {};
 
   if (!content) {
     res.status(400).json({ error: "Content is required" });
@@ -19,6 +20,11 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
 
   logger.info(`Streaming explain request with prompt version: ${prompt}`);
   logger.info(`Content: ${content.substring(0, 100)}...`);
+  if (context_before || context_after) {
+    logger.info(
+      `Surrounding context present (before=${context_before ? context_before.length : 0} chars, after=${context_after ? context_after.length : 0} chars)`
+    );
+  }
 
   // Set SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -39,7 +45,10 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
     const t0 = Date.now();
     logger.info("LLM API request initiated");
 
-    const llmResponse = await llmService.streamCompletion(systemPrompt, content);
+    const llmResponse = await llmService.streamCompletion(
+      systemPrompt,
+      buildAnalysisMessage(content, { before: context_before, after: context_after })
+    );
 
     const ttfb = Date.now() - t0;
     logger.info(`LLM API headers received (TTFB): ${ttfb}ms`);

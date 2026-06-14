@@ -1,5 +1,6 @@
 import * as functions from "firebase-functions";
 import { ExplainRequest, SuccessResponse } from "../models/types";
+import { buildAnalysisMessage } from "../models/analysisMessage";
 import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
@@ -10,7 +11,7 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
 
   const data = request.data as ExplainRequest;
   // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
-  const { content, prompt = "v2" } = data;
+  const { content, prompt = "v2", context_before, context_after } = data;
 
   if (!content) {
     logger.error("Invalid request: content is required");
@@ -35,7 +36,10 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
 
   try {
     const llmService = createLlmService();
-    const result: SuccessResponse = await llmService.chatCompletion(systemPrompt, content);
+    const result: SuccessResponse = await llmService.chatCompletion(
+      systemPrompt,
+      buildAnalysisMessage(content, { before: context_before, after: context_after })
+    );
 
     logger.info("Explain request completed successfully");
     return result;

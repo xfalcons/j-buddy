@@ -65,4 +65,36 @@ describe("explainStreamHandler", () => {
     expect(res.status).toHaveBeenCalledWith(400);
     expect(mockStreamCompletion).not.toHaveBeenCalled();
   });
+
+  it("wraps the user message with context blocks when context is provided", async () => {
+    await explainStreamHandler(
+      {
+        body: {
+          content: "テストです",
+          prompt: "v2",
+          context_before: "前文",
+          context_after: "後文",
+        },
+      } as any,
+      mockRes()
+    );
+
+    expect(mockStreamCompletion).toHaveBeenCalledTimes(1);
+    const [, message] = mockStreamCompletion.mock.calls[0];
+    expect(message).toContain("【前文】前文");
+    expect(message).toContain("【分析対象】テストです");
+    expect(message).toContain("【後文】後文");
+  });
+
+  it("omits the after block when only context_before is present", async () => {
+    await explainStreamHandler(
+      { body: { content: "テストです", context_before: "前文" } } as any,
+      mockRes()
+    );
+
+    const [, message] = mockStreamCompletion.mock.calls[0];
+    expect(message).toContain("【前文】前文");
+    expect(message).toContain("【分析対象】テストです");
+    expect(message).not.toContain("【後文】");
+  });
 });

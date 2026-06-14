@@ -30,6 +30,8 @@ export interface GrammarItem {
 export interface ExplainRequest {
   content: string;
   prompt?: "v1" | "v2";
+  context_before?: string;
+  context_after?: string;
 }
 
 export interface SaveItemsRequest {
