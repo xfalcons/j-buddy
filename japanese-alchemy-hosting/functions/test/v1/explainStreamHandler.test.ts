@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { explainStreamHandler } from "../../src/v1/explainStreamHandler";
+import { checkRateLimit } from "../../src/v1/rateLimiter";
 import { SYSTEM_PROMPT_V1 } from "../../src/models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../../src/models/systemPromptV2";
 
@@ -7,6 +8,8 @@ const mockStreamCompletion = jest.fn() as any;
 jest.mock("../../src/services/llmService", () => ({
   createLlmService: () => ({ streamCompletion: mockStreamCompletion }),
 }));
+
+jest.mock("../../src/v1/rateLimiter");
 
 function mockRes() {
   const res: any = {
@@ -41,6 +44,9 @@ describe("explainStreamHandler", () => {
     mockStreamCompletion.mockResolvedValue({
       body: { getReader: () => reader },
     });
+    // Default: rate limiter allows.
+    jest.mocked(checkRateLimit).mockReset();
+    jest.mocked(checkRateLimit).mockResolvedValue({ allowed: true });
   });
 
   it("defaults to v2 when no prompt is provided", async () => {
@@ -87,6 +93,15 @@ describe("explainStreamHandler", () => {
     await explainStreamHandler(mockReq({ content: "テストです" }, 16 * 1024 + 1), res);
 
     expect(res.status).toHaveBeenCalledWith(413);
+    expect(mockStreamCompletion).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 when the rate limit denies, before calling the LLM", async () => {
+    jest.mocked(checkRateLimit).mockResolvedValueOnce({ allowed: false });
+    const res = mockRes();
+    await explainStreamHandler(mockReq({ content: "テストです" }), res);
+
+    expect(res.status).toHaveBeenCalledWith(429);
     expect(mockStreamCompletion).not.toHaveBeenCalled();
   });
 

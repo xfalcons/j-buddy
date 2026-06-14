@@ -5,6 +5,7 @@ import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
 import { isBodyTooLarge, validateExplainRequest } from "./requestValidation";
+import { checkRateLimit } from "./rateLimiter";
 
 export async function explainStreamHandler(req: Request, res: Response): Promise<void> {
   // Reject oversized bodies before any work or SSE headers.
@@ -19,6 +20,14 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
   if (!validation.ok) {
     logger.warn(`Rejected invalid request: ${validation.error}`);
     res.status(validation.status).json({ error: validation.error });
+    return;
+  }
+
+  // Per-IP rate limit (after validation, before the LLM call).
+  const rateLimit = await checkRateLimit(req.ip);
+  if (!rateLimit.allowed) {
+    logger.warn(`Rate limit denied (429)${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`);
+    res.status(429).json({ error: "Too many requests" });
     return;
   }
 
