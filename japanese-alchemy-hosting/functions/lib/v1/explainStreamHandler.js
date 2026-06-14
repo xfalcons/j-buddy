@@ -14,8 +14,10 @@ function clientTag(ip) {
     return ip ? (0, rateLimiter_1.rateLimitKey)(ip) : "unknown";
 }
 async function explainStreamHandler(req, res) {
-    // Reject oversized bodies before any work or SSE headers.
-    if ((0, requestValidation_1.isBodyTooLarge)(req)) {
+    // Reject oversized bodies before any work or SSE headers. Two checks: the
+    // Content-Length header (early) and the parsed body size (catches chunked /
+    // under-reported bodies the header check misses).
+    if ((0, requestValidation_1.isBodyTooLarge)(req) || (0, requestValidation_1.isParsedBodyTooLarge)(req.body)) {
         logger_1.logger.warn("Rejected oversized request body (413)", { client: clientTag(req.ip) });
         res.status(413).json({ error: "Request too large" });
         return;
@@ -29,11 +31,19 @@ async function explainStreamHandler(req, res) {
         res.status(validation.status).json({ error: validation.error });
         return;
     }
-    // Per-IP rate limit (after validation, before the LLM call).
+    // Per-IP rate limit (after validation, before the LLM call). A limiter error
+    // (Firestore down) fails closed as 503 so clients don't retry-loop into the
+    // failing dependency; a genuine per-IP exhaustion is 429.
     const rateLimit = await (0, rateLimiter_1.checkRateLimit)(req.ip);
     if (!rateLimit.allowed) {
-        logger_1.logger.warn(`Rate limit denied (429)${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`, { client: clientTag(req.ip) });
-        res.status(429).json({ error: "Too many requests" });
+        const isLimiterError = rateLimit.reason === "limiter-error";
+        const status = isLimiterError ? 503 : 429;
+        logger_1.logger.warn(`Request denied (${status})${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`, { client: clientTag(req.ip) });
+        if (isLimiterError)
+            res.setHeader("Retry-After", "60");
+        res
+            .status(status)
+            .json({ error: isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests" });
         return;
     }
     const { content, prompt = "v2", context_before, context_after } = req.body || {};

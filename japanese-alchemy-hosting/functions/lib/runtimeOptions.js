@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_CONCURRENT_STREAMS = exports.explainRuntimeOptions = void 0;
+exports.explainRuntimeOptions = void 0;
 /**
  * Cost-ceiling runtime options shared by the LLM-backed explain endpoints.
  *
@@ -11,8 +11,9 @@ exports.MAX_CONCURRENT_STREAMS = exports.explainRuntimeOptions = void 0;
  *
  * Tuned for a low-traffic extension. Raise `maxInstances` if legitimate
  * concurrency demands it; the product `maxInstances × concurrency` is the
- * worst-case concurrent-spend window, each stream running up to `timeoutSeconds`.
- * `minInstances` is deliberately unset (no idle cost on an abuse-prone surface).
+ * worst-case concurrent-spend window. `timeoutSeconds` is set per function
+ * (explainStream streams longer than explain) — see index.ts. `minInstances` is
+ * deliberately unset (no idle cost on an abuse-prone surface).
  */
 exports.explainRuntimeOptions = {
     maxInstances: 10,
@@ -21,7 +22,4 @@ exports.explainRuntimeOptions = {
     cpu: 1,
     timeoutSeconds: 60,
 };
-/** Worst-case concurrent LLM streams = maxInstances × concurrency. */
-exports.MAX_CONCURRENT_STREAMS = exports.explainRuntimeOptions.maxInstances *
-    exports.explainRuntimeOptions.concurrency;
 //# sourceMappingURL=runtimeOptions.js.map

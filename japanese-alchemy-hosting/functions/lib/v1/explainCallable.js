@@ -31,6 +31,7 @@ const systemPromptV2_1 = require("../models/systemPromptV2");
 const llmService_1 = require("../services/llmService");
 const logger_1 = require("../utils/logger");
 const requestValidation_1 = require("./requestValidation");
+const rateLimiter_1 = require("./rateLimiter");
 async function explainHandler(request) {
     logger_1.logger.setContext(request);
     const data = request.data;
@@ -42,6 +43,15 @@ async function explainHandler(request) {
     }
     // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
     const { content, prompt = "v2", context_before, context_after } = data;
+    // Per-IP rate limit (parity with explainStream). The callable's client IP is
+    // on the underlying Express request.
+    const rateLimit = await (0, rateLimiter_1.checkRateLimit)(request.rawRequest?.ip);
+    if (!rateLimit.allowed) {
+        const isLimiterError = rateLimit.reason === "limiter-error";
+        const code = isLimiterError ? "unavailable" : "resource-exhausted";
+        logger_1.logger.warn(`Request denied: ${rateLimit.reason ?? "rate-limited"}`);
+        throw new functions.https.HttpsError(code, isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests");
+    }
     logger_1.logger.info(`Received explain request with prompt version: ${prompt}`);
     logger_1.logger.info(`Content: ${content.substring(0, 100)}...`);
     const systemPrompt = prompt === "v2" ? systemPromptV2_1.SYSTEM_PROMPT_V2 : systemPromptV1_1.SYSTEM_PROMPT_V1;

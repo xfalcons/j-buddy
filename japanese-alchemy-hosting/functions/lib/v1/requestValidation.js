@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isBodyTooLarge = exports.validateExplainRequest = exports.MAX_REQUEST_BYTES = exports.MAX_CONTENT_LENGTH = exports.MIN_CONTENT_LENGTH = void 0;
+exports.isParsedBodyTooLarge = exports.isBodyTooLarge = exports.validateExplainRequest = exports.MAX_REQUEST_BYTES = exports.MAX_CONTENT_LENGTH = exports.MIN_CONTENT_LENGTH = void 0;
 const analysisMessage_1 = require("../models/analysisMessage");
 exports.MIN_CONTENT_LENGTH = 2;
 exports.MAX_CONTENT_LENGTH = 500;
@@ -62,4 +62,18 @@ function isBodyTooLarge(req) {
     return Number.isFinite(cl) && cl > exports.MAX_REQUEST_BYTES;
 }
 exports.isBodyTooLarge = isBodyTooLarge;
+/**
+ * Secondary body-size guard on the parsed body, for requests with an absent or
+ * under-reported Content-Length (e.g. chunked transfer). The header check alone
+ * is bypassable; this bounds the bytes actually buffered.
+ */
+function isParsedBodyTooLarge(body) {
+    try {
+        return JSON.stringify(body).length > exports.MAX_REQUEST_BYTES;
+    }
+    catch {
+        return false;
+    }
+}
+exports.isParsedBodyTooLarge = isParsedBodyTooLarge;
 //# sourceMappingURL=requestValidation.js.map

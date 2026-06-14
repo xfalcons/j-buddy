@@ -1,20 +1,25 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkRateLimit = exports.rateLimitKey = exports.RATE_LIMIT_REFILL_PER_MIN = exports.RATE_LIMIT_CAPACITY = void 0;
+exports.checkRateLimit = exports.rateLimitKey = exports.RATE_LIMIT_DOC_TTL_MS = exports.RATE_LIMIT_REFILL_PER_MIN = exports.RATE_LIMIT_CAPACITY = void 0;
 const crypto_1 = require("crypto");
 const firestore_1 = require("firebase-admin/firestore");
 const logger_1 = require("../utils/logger");
 // Token-bucket config per client IP. Tuned for a low-traffic extension; raise
-// if legitimate usage needs more headroom.
-exports.RATE_LIMIT_CAPACITY = 20;
+// if legitimate usage needs more headroom. RATE_LIMIT_CAPACITY is kept at or
+// below the deployment's concurrent-stream ceiling (maxInstances x concurrency)
+// so a single source cannot admit more concurrent requests than the whole
+// deployment can serve.
+exports.RATE_LIMIT_CAPACITY = 8;
 exports.RATE_LIMIT_REFILL_PER_MIN = 20;
 const RATE_LIMIT_COLLECTION = "rateLimits";
 const REFILL_INTERVAL_MS = (60 * 1000) / exports.RATE_LIMIT_REFILL_PER_MIN;
-// Server-side HMAC key. It lives in deployed source (not a rotated secret), so
-// it does not stop a GCP-insider threat — but the anonymous attacker this layer
-// defends against cannot read it, making the IP identifier non-trivially
-// reversible over the IPv4 space (unlike a bare hash). Rotate by changing the
-// salt and the collection name together.
+// Documents older than this are eligible for Firestore TTL-policy deletion.
+exports.RATE_LIMIT_DOC_TTL_MS = 60 * 60 * 1000; // 1 hour
+// Server-side HMAC key. This defends only against the anonymous attacker, who
+// cannot read deployed source — so while the repo is private and the deployed
+// source does not leak, the identifier is not trivially reversible over the IPv4
+// space. If the source becomes public, rotate the salt (and the collection name
+// together) or move the key into Secret Manager.
 const IP_HMAC_KEY = "j-buddy-ratelimit-ip-key-v1";
 /** Deterministic, non-reversible-at-rest identifier for a client IP. */
 function rateLimitKey(ip) {
@@ -51,7 +56,11 @@ async function checkRateLimit(ip) {
                 tokens = Math.min(exports.RATE_LIMIT_CAPACITY, (data.tokens ?? 0) + elapsed / REFILL_INTERVAL_MS);
             }
             if (tokens >= 1) {
-                tx.set(ref, { tokens: tokens - 1, updatedAt: now });
+                tx.set(ref, {
+                    tokens: tokens - 1,
+                    updatedAt: now,
+                    expireAt: now + exports.RATE_LIMIT_DOC_TTL_MS,
+                });
                 return true;
             }
             // Denied: no write (avoids write-amplification under abuse); the bucket

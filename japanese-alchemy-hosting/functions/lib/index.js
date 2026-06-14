@@ -40,6 +40,10 @@ const runtimeOptions_1 = require("./runtimeOptions");
 // runtimeOptions.ts); saveItems is auth-gated and not LLM-backed, so it is
 // left on defaults.
 exports.explain = (0, https_1.onCall)({ ...runtimeOptions_1.explainRuntimeOptions, secrets: [config_1.configSecret] }, explainCallable_1.explainHandler);
-exports.explainStream = (0, https_1.onRequest)({ ...runtimeOptions_1.explainRuntimeOptions, secrets: [config_1.configSecret], cors: true }, explainStreamHandler_1.explainStreamHandler);
+// explainStream overrides timeoutSeconds to 120: an SSE stream can run longer
+// than the batch default (60s), and the platform killing it mid-flight would
+// truncate the stream with no SSE error event. maxInstances bounds the
+// concurrent-spend window regardless.
+exports.explainStream = (0, https_1.onRequest)({ ...runtimeOptions_1.explainRuntimeOptions, timeoutSeconds: 120, secrets: [config_1.configSecret], cors: true }, explainStreamHandler_1.explainStreamHandler);
 exports.saveItems = (0, https_1.onCall)({ secrets: [config_1.configSecret] }, saveItemsCallable_1.saveItemsHandler);
 //# sourceMappingURL=index.js.map
