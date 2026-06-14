@@ -2,6 +2,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import firebaseConfig from './firebaseConfig.js';
+import { buildRequestBody } from './requestBody.js';
 
 class JaAlchemyApiService {
   constructor() {
@@ -23,9 +24,10 @@ class JaAlchemyApiService {
    * Generate response using Firebase callable function
    * @param {string} selectedText - The text to analyze
    * @param {string} promptVersion - The prompt version ("v1" or "v2")
+   * @param {{ before?: string, after?: string }} [context] - surrounding page context
    * @returns {Promise<Object>} Analysis result
    */
-  async generateResponse(selectedText, promptVersion = "v2") {
+  async generateResponse(selectedText, promptVersion = "v2", context) {
     try {
       console.log('[Firebase API] Calling explain function with:', {
         content: selectedText.substring(0, 100) + '...',
@@ -33,10 +35,9 @@ class JaAlchemyApiService {
       });
 
       const explainCallable = httpsCallable(this.functions, 'explain');
-      const result = await explainCallable({
-        content: selectedText,
-        prompt: promptVersion
-      });
+      const result = await explainCallable(
+        buildRequestBody(selectedText, promptVersion, context)
+      );
 
       /*
       result.data structure:
@@ -62,11 +63,12 @@ class JaAlchemyApiService {
    * Generate response using SSE streaming
    * @param {string} selectedText - The text to analyze
    * @param {string} promptVersion - The prompt version ("v1" or "v2")
+   * @param {{ before?: string, after?: string }} [context] - surrounding page context
    * @param {function} onChunk - Callback invoked with each text chunk
    * @param {function} onDone - Callback invoked with the full accumulated text when stream completes
    * @param {function} onError - Callback invoked with an error message on failure
    */
-  async generateResponseStream(selectedText, promptVersion, onChunk, onDone, onError) {
+  async generateResponseStream(selectedText, promptVersion, context, onChunk, onDone, onError) {
     let fullText = '';
     try {
       console.log('[Firebase API] Calling explainStream with:', {
@@ -77,10 +79,7 @@ class JaAlchemyApiService {
       const response = await fetch(this.streamUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: selectedText,
-          prompt: promptVersion || 'v2'
-        })
+        body: JSON.stringify(buildRequestBody(selectedText, promptVersion, context))
       });
 
       if (!response.ok) {

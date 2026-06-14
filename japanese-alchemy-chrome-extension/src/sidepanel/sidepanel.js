@@ -1,6 +1,7 @@
 import { marked } from 'marked';
 import authService from '../scripts/authService.js';
 import { getPromptVariant } from '../scripts/promptVariant.js';
+import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 
 // Configure marked.js to preserve ruby tags and add classes
 marked.setOptions({
@@ -130,23 +131,29 @@ function setLoadingState(loadingElement, show) {
 
 // Retrieve and display selected text
 async function loadSelectedText() {
-  const { selectedText } = await chrome.storage.local.get("selectedText");
+  const { selectedText, contextBefore = '', contextAfter = '' } =
+    await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
   // return selectedText;
-  await analizingSelectedText(selectedText);
+  await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
 }
 
 // Update when new selections arrive
 chrome.storage.onChanged.addListener(async (changes) => {
-  console.log('Storage changes...');  
-  if (changes.selectedText) {
-    await analizingSelectedText(changes.selectedText.newValue)
+  console.log('Storage changes...');
+  if (changes.selectedText || changes.contextBefore || changes.contextAfter) {
+    const { selectedText, contextBefore = '', contextAfter = '' } =
+      await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
+    await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
   }
 });
 
 // Handle messages from background scripts
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     if (request.action === 'textSelectedChanged') {
-      await analizingSelectedText(request.data)
+      await analizingSelectedText(request.data, {
+        before: request.contextBefore || '',
+        after: request.contextAfter || '',
+      });
     }
     sendResponse({ status: 'success' });
 });
@@ -165,7 +172,7 @@ function renderStreamingPreview(proseElement, accumulatedText) {
     }, 80);
 }
 
-async function analizingSelectedText(selectedText) {
+async function analizingSelectedText(selectedText, context = { before: '', after: '' }) {
     if (isAnalizing || !selectedText) return;
 
     const resultElement = document.getElementById('result');
@@ -179,18 +186,18 @@ async function analizingSelectedText(selectedText) {
     elements.alertMessage.classList.remove('show');
 
     try {
-        // Check if selected text equal last selected text (cache hit)
-        const storedLastSelectedText = localStorage.getItem('lastSelectedText');
-        if (selectedText === storedLastSelectedText) {
-            console.log('Selected text is same as last time');
+        // Cache hit when both the selected text and its surrounding context match
+        // the last analysis. A context change for the same selection is a miss.
+        const cacheKey = buildContextCacheKey({ selectedText, context });
+        const storedKey = localStorage.getItem('lastAnalysisKey');
+        if (cacheKey === storedKey) {
+            console.log('Selected text + context same as last time');
             const storedResponse = localStorage.getItem('lastResponse');
             const analysisResult = formatAnalysisResult(storedResponse);
             saveForLaterJson = analysisResult.json;
             proseElement.innerHTML = analysisResult.html;
             resultElement.classList.add('show');
         } else if (selectedText && selectedText.length >= 2 && selectedText.length < 500) {
-            localStorage.setItem('lastSelectedText', selectedText);
-
             // Show loading state
             setLoadingState(loadingElement, true);
 
@@ -207,6 +214,7 @@ async function analizingSelectedText(selectedText) {
                 await jaAlchemyApiService.generateResponseStream(
                     selectedText,
                     promptVariant,
+                    context,
                     // onChunk: progressively render each chunk
                     (chunk, fullText) => {
                         if (!firstChunkReceived) {
@@ -219,6 +227,11 @@ async function analizingSelectedText(selectedText) {
                     // onDone: finalize with full formatting (checkboxes, structured data)
                     (fullText) => {
                         localStorage.setItem('lastResponse', fullText);
+                        // Advance the cache key only after a completed stream so a
+                        // stream error/catch does not leave a key pointing at a
+                        // stale response.
+                        localStorage.setItem('lastAnalysisKey', cacheKey);
+                        localStorage.setItem('lastSelectedText', selectedText);
                         if (renderThrottleTimer) {
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;

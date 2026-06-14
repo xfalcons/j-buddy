@@ -25,6 +25,19 @@ describe("SYSTEM_PROMPT_V1", () => {
     expect(SYSTEM_PROMPT_V1).toMatch(/使用者輸入的文句|輸入的文句/);
   });
 
+  describe("surrounding-context disambiguation instruction", () => {
+    it("documents the optional before/after context blocks and the target block", () => {
+      expect(SYSTEM_PROMPT_V1).toContain("【前文】");
+      expect(SYSTEM_PROMPT_V1).toContain("【分析対象】");
+      expect(SYSTEM_PROMPT_V1).toContain("【後文】");
+    });
+
+    it("states context is for disambiguation only and must not enter the output", () => {
+      expect(SYSTEM_PROMPT_V1).toMatch(/消歧/);
+      expect(SYSTEM_PROMPT_V1).toMatch(/不可出現在/);
+    });
+  });
+
   describe("grammar example heading/content alignment (R3)", () => {
     const grammarSection =
       SYSTEM_PROMPT_V1.split("### 文法分析")[1] ?? "";
