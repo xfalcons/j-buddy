@@ -25,26 +25,20 @@ export const CONTEXT_AFTER_LABEL = "【後文】";
 // unauthenticated onRequest handler, so the server enforces its own ceiling.
 export const MAX_CONTEXT_CHARS = 500;
 
-const DELIMITER_TOKENS = [
-  CONTEXT_BEFORE_LABEL,
-  TARGET_LABEL,
-  CONTEXT_AFTER_LABEL,
-];
-
 export interface SurroundingContext {
   before?: string;
   after?: string;
 }
 
-/** Remove literal delimiter tokens from untrusted text (prompt-injection hardening). */
+// Matches a delimiter keyword wrapped in full-width (【】), half-width (［］), or
+// ASCII ([]) brackets, with optional internal whitespace. Exact-token stripping
+// alone was bypassable with visually-identical bracket variants (［分析対象］,
+// 【 分析対象 】) on the unauthenticated endpoint, so all lookalikes are stripped.
+const DELIMITER_PATTERN = /[\[【［]\s*(?:前文|分析対象|後文)\s*[\]】］]/g;
+
+/** Remove delimiter markers (and lookalike variants) from untrusted text. */
 function stripDelimiterTokens(text: string): string {
-  let out = text;
-  for (const token of DELIMITER_TOKENS) {
-    if (out.includes(token)) {
-      out = out.split(token).join("");
-    }
-  }
-  return out;
+  return text.replace(DELIMITER_PATTERN, "");
 }
 
 function clamp(text: string, max: number): string {

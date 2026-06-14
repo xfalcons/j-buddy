@@ -189,4 +189,33 @@ describe('extractSurroundingContext', () => {
     expect(before.length).toBeLessThanOrEqual(100);
     expect(after.length).toBeLessThanOrEqual(100);
   });
+
+  test('multi-block selection scopes each side to its own block (no sibling bleed)', () => {
+    const article = document.createElement('article');
+    const p1 = document.createElement('p');
+    p1.textContent = '前段落テキスト';
+    const p2 = document.createElement('p');
+    p2.textContent = '中段落テキスト';
+    const p3 = document.createElement('p');
+    p3.textContent = '後段落テキスト';
+    article.append(p1, p2, p3);
+    document.body.appendChild(article);
+
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    const range = document.createRange();
+    range.setStart(p1.firstChild, 3); // mid p1
+    range.setEnd(p3.firstChild, 2); // mid p3
+    sel.addRange(range);
+
+    const { before, after } = extractSurroundingContext(sel);
+    // before is bounded to p1 (start block): includes p1's leading text only.
+    expect(before).toContain('前段落');
+    expect(before).not.toContain('中段落');
+    expect(before).not.toContain('後段落');
+    // after is bounded to p3 (end block): includes p3's trailing text only.
+    expect(after).toContain('テキスト');
+    expect(after).not.toContain('前段落');
+    expect(after).not.toContain('中段落');
+  });
 });

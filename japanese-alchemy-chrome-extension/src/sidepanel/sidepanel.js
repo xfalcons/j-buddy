@@ -198,9 +198,6 @@ async function analizingSelectedText(selectedText, context = { before: '', after
             proseElement.innerHTML = analysisResult.html;
             resultElement.classList.add('show');
         } else if (selectedText && selectedText.length >= 2 && selectedText.length < 500) {
-            localStorage.setItem('lastAnalysisKey', cacheKey);
-            localStorage.setItem('lastSelectedText', selectedText);
-
             // Show loading state
             setLoadingState(loadingElement, true);
 
@@ -230,6 +227,11 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                     // onDone: finalize with full formatting (checkboxes, structured data)
                     (fullText) => {
                         localStorage.setItem('lastResponse', fullText);
+                        // Advance the cache key only after a completed stream so a
+                        // stream error/catch does not leave a key pointing at a
+                        // stale response.
+                        localStorage.setItem('lastAnalysisKey', cacheKey);
+                        localStorage.setItem('lastSelectedText', selectedText);
                         if (renderThrottleTimer) {
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;

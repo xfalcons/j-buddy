@@ -49,4 +49,20 @@ describe('buildContextCacheKey', () => {
     const b = buildContextCacheKey({ selectedText: 'x', context: { before: 'a', after: 'b' } });
     expect(a).not.toBe(b);
   });
+
+  test('a context-path key carries a NUL sentinel a real selectedText cannot contain', () => {
+    // A context key starts with NUL; real page selections (trimmed, no control
+    // bytes) can never equal it — so a no-context selection cannot collide with
+    // a context key and serve a stale analysis.
+    const withCtx = buildContextCacheKey({
+      selectedText: '猫',
+      context: { before: 'hello', after: 'world' },
+    });
+    expect(withCtx.charCodeAt(0)).toBe(0);
+    // A selectedText that literally resembles the serialized form still reduces
+    // to itself (no NUL) and does not equal the context key.
+    const lookalike = '猫 5|hello5|world';
+    expect(buildContextCacheKey({ selectedText: lookalike })).toBe(lookalike);
+    expect(buildContextCacheKey({ selectedText: lookalike })).not.toBe(withCtx);
+  });
 });
