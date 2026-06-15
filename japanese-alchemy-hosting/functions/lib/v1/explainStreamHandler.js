@@ -79,6 +79,7 @@ async function explainStreamHandler(req, res) {
         const reader = llmResponse.body.getReader();
         let buffer = "";
         let firstChunkSent = false;
+        // eslint-disable-next-line no-constant-condition -- intentional streaming loop, broken by `done`
         while (true) {
             const { done, value } = await reader.read();
             if (done)

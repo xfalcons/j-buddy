@@ -99,6 +99,7 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
     let buffer = "";
     let firstChunkSent = false;
 
+    // eslint-disable-next-line no-constant-condition -- intentional streaming loop, broken by `done`
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;

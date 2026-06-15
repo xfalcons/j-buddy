@@ -38,7 +38,8 @@ class AuthService {
 
   // Load user from chrome.storage.local
   async loadUserFromStorage() {
-    const { user } = await chrome.storage.local.get('user');
+    const result = await chrome.storage.local.get('user');
+    const user = result?.user;
     if (user) {
       this.user = user;
       this.isAuthenticated = true;
