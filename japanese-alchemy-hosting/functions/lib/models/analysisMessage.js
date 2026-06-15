@@ -29,7 +29,7 @@ exports.MAX_CONTEXT_CHARS = 500;
 // ASCII ([]) brackets, with optional internal whitespace. Exact-token stripping
 // alone was bypassable with visually-identical bracket variants (［分析対象］,
 // 【 分析対象 】) on the unauthenticated endpoint, so all lookalikes are stripped.
-const DELIMITER_PATTERN = /[\[【［]\s*(?:前文|分析対象|後文)\s*[\]】］]/g;
+const DELIMITER_PATTERN = /[[【［]\s*(?:前文|分析対象|後文)\s*[\]】］]/g;
 /** Remove delimiter markers (and lookalike variants) from untrusted text. */
 function stripDelimiterTokens(text) {
     return text.replace(DELIMITER_PATTERN, "");

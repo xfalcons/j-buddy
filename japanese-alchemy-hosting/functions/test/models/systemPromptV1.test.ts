@@ -12,7 +12,7 @@ describe("SYSTEM_PROMPT_V1", () => {
   });
 
   it("instructs a dynamic 1-3 grammar point range", () => {
-    expect(SYSTEM_PROMPT_V1).toMatch(/1\s*[〜~\-]\s*3/);
+    expect(SYSTEM_PROMPT_V1).toMatch(/1\s*[〜~-]\s*3/);
   });
 
   it("keeps the vocabulary section (script rules 1-4) intact", () => {

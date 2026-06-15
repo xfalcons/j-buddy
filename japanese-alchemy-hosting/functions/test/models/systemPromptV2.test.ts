@@ -12,7 +12,7 @@ describe("SYSTEM_PROMPT_V2", () => {
   });
 
   it("instructs a wider 1-5 grammar point range", () => {
-    expect(SYSTEM_PROMPT_V2).toMatch(/1\s*[〜~\-]\s*5/);
+    expect(SYSTEM_PROMPT_V2).toMatch(/1\s*[〜~-]\s*5/);
   });
 
   it("keeps the shared output structure (same as V1)", () => {
