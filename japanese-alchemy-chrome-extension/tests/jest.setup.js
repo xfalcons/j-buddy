@@ -1,9 +1,11 @@
-// Mock Chrome API for tests
+// Mock Chrome API for tests. chrome.storage.local.get returns a Promise of a
+// record (the real contract); returning undefined crashes modules that
+// destructure the awaited result (e.g. authService.loadUserFromStorage).
 global.chrome = {
   storage: {
     local: {
-      get: jest.fn(),
-      set: jest.fn()
+      get: jest.fn(async () => ({})),
+      set: jest.fn(async () => undefined)
     },
     onChanged: {
       addListener: jest.fn(),
