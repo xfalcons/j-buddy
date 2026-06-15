@@ -1,0 +1,13 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "There4099GG",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8010",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "Qwen3.6-35B-A3B-TurboQuant-MLX-8bit",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "Qwen3.6-35B-A3B-TurboQuant-MLX-8bit",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "Qwen3.6-35B-A3B-TurboQuant-MLX-8bit"
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark-daltonized"
+}

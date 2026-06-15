@@ -33,5 +33,12 @@ service cloud.firestore {
       allow write: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
+
+    // Rate-limit counters: written only by the Admin SDK (Cloud Functions).
+    // Explicitly deny client reads/writes as defense-in-depth against future
+    // rule drift (the Admin SDK bypasses rules, but that is safety-by-default).
+    match /rateLimits/{document=**} {
+      allow read, write: if false;
+    }
   }
 }

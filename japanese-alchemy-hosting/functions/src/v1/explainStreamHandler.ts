@@ -4,19 +4,54 @@ import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
+import { isBodyTooLarge, isParsedBodyTooLarge, validateExplainRequest } from "./requestValidation";
+import { checkRateLimit, rateLimitKey } from "./rateLimiter";
+
+// HMAC'd client identifier for rejection logs (abuse correlation): never the
+// raw IP, never request content.
+function clientTag(ip?: string): string {
+  return ip ? rateLimitKey(ip) : "unknown";
+}
 
 export async function explainStreamHandler(req: Request, res: Response): Promise<void> {
+  // Reject oversized bodies before any work or SSE headers. Two checks: the
+  // Content-Length header (early) and the parsed body size (catches chunked /
+  // under-reported bodies the header check misses).
+  if (isBodyTooLarge(req) || isParsedBodyTooLarge(req.body)) {
+    logger.warn("Rejected oversized request body (413)", { client: clientTag(req.ip) });
+    res.status(413).json({ error: "Request too large" });
+    return;
+  }
+
+  // Server-authoritative input validation (content/context/prompt).
+  const validation = validateExplainRequest(req.body);
+  if (!validation.ok) {
+    logger.warn(`Rejected invalid request: ${validation.error}`, {
+      client: clientTag(req.ip),
+    });
+    res.status(validation.status).json({ error: validation.error });
+    return;
+  }
+
+  // Per-IP rate limit (after validation, before the LLM call). A limiter error
+  // (Firestore down) fails closed as 503 so clients don't retry-loop into the
+  // failing dependency; a genuine per-IP exhaustion is 429.
+  const rateLimit = await checkRateLimit(req.ip);
+  if (!rateLimit.allowed) {
+    const isLimiterError = rateLimit.reason === "limiter-error";
+    const status = isLimiterError ? 503 : 429;
+    logger.warn(
+      `Request denied (${status})${rateLimit.reason ? `: ${rateLimit.reason}` : ""}`,
+      { client: clientTag(req.ip) }
+    );
+    if (isLimiterError) res.setHeader("Retry-After", "60");
+    res
+      .status(status)
+      .json({ error: isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests" });
+    return;
+  }
+
   const { content, prompt = "v2", context_before, context_after } = req.body || {};
-
-  if (!content) {
-    res.status(400).json({ error: "Content is required" });
-    return;
-  }
-
-  if (prompt !== "v1" && prompt !== "v2") {
-    res.status(400).json({ error: "Prompt must be 'v1' or 'v2'" });
-    return;
-  }
 
   logger.info(`Streaming explain request with prompt version: ${prompt}`);
   logger.info(`Content: ${content.substring(0, 100)}...`);

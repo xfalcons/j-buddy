@@ -5,27 +5,36 @@ import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
+import { validateExplainRequest } from "./requestValidation";
+import { checkRateLimit } from "./rateLimiter";
 
 export async function explainHandler(request: any): Promise<SuccessResponse> {
   logger.setContext(request);
 
   const data = request.data as ExplainRequest;
-  // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
-  const { content, prompt = "v2", context_before, context_after } = data;
-
-  if (!content) {
-    logger.error("Invalid request: content is required");
+  // Server-authoritative input validation (content/context/prompt).
+  const validation = validateExplainRequest(data);
+  if (!validation.ok) {
+    logger.error(`Invalid request: ${validation.error}`);
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "Content is required"
+      validation.error ?? "Invalid request"
     );
   }
 
-  if (prompt !== "v1" && prompt !== "v2") {
-    logger.error(`Invalid prompt version: ${prompt}`);
+  // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
+  const { content, prompt = "v2", context_before, context_after } = data;
+
+  // Per-IP rate limit (parity with explainStream). The callable's client IP is
+  // on the underlying Express request.
+  const rateLimit = await checkRateLimit(request.rawRequest?.ip);
+  if (!rateLimit.allowed) {
+    const isLimiterError = rateLimit.reason === "limiter-error";
+    const code = isLimiterError ? "unavailable" : "resource-exhausted";
+    logger.warn(`Request denied: ${rateLimit.reason ?? "rate-limited"}`);
     throw new functions.https.HttpsError(
-      "invalid-argument",
-      "Prompt must be 'v1' or 'v2'"
+      code,
+      isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests"
     );
   }
 

@@ -30,18 +30,27 @@ const systemPromptV1_1 = require("../models/systemPromptV1");
 const systemPromptV2_1 = require("../models/systemPromptV2");
 const llmService_1 = require("../services/llmService");
 const logger_1 = require("../utils/logger");
+const requestValidation_1 = require("./requestValidation");
+const rateLimiter_1 = require("./rateLimiter");
 async function explainHandler(request) {
     logger_1.logger.setContext(request);
     const data = request.data;
+    // Server-authoritative input validation (content/context/prompt).
+    const validation = (0, requestValidation_1.validateExplainRequest)(data);
+    if (!validation.ok) {
+        logger_1.logger.error(`Invalid request: ${validation.error}`);
+        throw new functions.https.HttpsError("invalid-argument", validation.error ?? "Invalid request");
+    }
     // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
     const { content, prompt = "v2", context_before, context_after } = data;
-    if (!content) {
-        logger_1.logger.error("Invalid request: content is required");
-        throw new functions.https.HttpsError("invalid-argument", "Content is required");
-    }
-    if (prompt !== "v1" && prompt !== "v2") {
-        logger_1.logger.error(`Invalid prompt version: ${prompt}`);
-        throw new functions.https.HttpsError("invalid-argument", "Prompt must be 'v1' or 'v2'");
+    // Per-IP rate limit (parity with explainStream). The callable's client IP is
+    // on the underlying Express request.
+    const rateLimit = await (0, rateLimiter_1.checkRateLimit)(request.rawRequest?.ip);
+    if (!rateLimit.allowed) {
+        const isLimiterError = rateLimit.reason === "limiter-error";
+        const code = isLimiterError ? "unavailable" : "resource-exhausted";
+        logger_1.logger.warn(`Request denied: ${rateLimit.reason ?? "rate-limited"}`);
+        throw new functions.https.HttpsError(code, isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests");
     }
     logger_1.logger.info(`Received explain request with prompt version: ${prompt}`);
     logger_1.logger.info(`Content: ${content.substring(0, 100)}...`);
