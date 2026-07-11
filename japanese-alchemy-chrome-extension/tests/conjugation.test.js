@@ -8,7 +8,11 @@
  * U2 (enrichment): enrichMarkdownWithConjugation(markdown) splices the generated
  * form lines into the 單字分析 section. (Covered by the second describe block.)
  */
-import { conjugate, normalizeVerbClass } from '../src/scripts/conjugation.js';
+import {
+  conjugate,
+  normalizeVerbClass,
+  enrichMarkdownWithConjugation,
+} from '../src/scripts/conjugation.js';
 
 // The nine generated forms, in the order the engine emits them.
 const FORMS = [
@@ -228,5 +232,209 @@ describe('conjugate — graceful degradation (KTD6)', () => {
     expect(conjugate(undefined, 'godan')).toBeNull();
     // A godan verb whose final kana is not one of the supported rows is skipped.
     expect(conjugate('foo', 'godan')).toBeNull();
+  });
+});
+
+describe('enrichMarkdownWithConjugation — U2 enrichment layer', () => {
+  // A post-redesign (U3) verb entry: the LLM emits 讀音/重音/動詞分類/解釋/辭書形
+  // and no conjugation forms. The engine supplies the forms.
+  const singleVerbSection = `### 原句
+  - 例文：{動|うご}く
+
+### 單字分析
+#### <單字>{動き|うごき}
+  - 讀音：うごく
+  - 重音：2
+  - 動詞分類：五段動詞
+  - 解釋：移動、活動
+  - 辭書形：{動|うご}く
+
+### 文法分析
+
+#### <文法>〜として（N3）
+- **接續形式**
+  - 名詞 + として
+`;
+
+  test('happy path: injects the nine form lines after 辭書形 in {kanji|reading} format', () => {
+    const result = enrichMarkdownWithConjugation(singleVerbSection);
+    // Form lines appear immediately after the 辭書形 line, ruby preserved.
+    expect(result).toContain('  - 辭書形：{動|うご}く\n  - ます形：{動|うご}きます');
+    expect(result).toContain('  - 使役受身形：{動|うご}かされる');
+    // Exactly one verb enriched → exactly one ます形 line.
+    expect(result.split('ます形：').length - 1).toBe(1);
+  });
+
+  test('katakana / non-verb entries and the 文法分析 section are untouched', () => {
+    const md = `### 單字分析
+#### <單字>パソコン
+  - 重音：1
+  - 英文：Personal Computer
+  - 解釋：電腦
+#### <單字>{動き|うごき}
+  - 動詞分類：五段動詞
+  - 辭書形：{動|うご}く
+
+### 文法分析
+#### <文法>〜として（N3）
+- 名詞 + として
+`;
+    const result = enrichMarkdownWithConjugation(md);
+    // Only the verb entry got forms.
+    expect(result.split('ます形：').length - 1).toBe(1);
+    expect(result).toContain('ます形：{動|うご}きます');
+    // The katakana entry is unchanged.
+    expect(result).toContain('英文：Personal Computer');
+    // The grammar section is unchanged.
+    expect(result).toContain('### 文法分析');
+    expect(result).toContain('名詞 + として');
+  });
+
+  test('ruby-prefixed 辭書形 preserves ruby across all emitted forms', () => {
+    const result = enrichMarkdownWithConjugation(singleVerbSection);
+    expect(result).toContain('ます形：{動|うご}きます');
+    expect(result).toContain('て形：{動|うご}いて');
+    expect(result).toContain('ない形：{動|うご}かない');
+    expect(result).toContain('意向形：{動|うご}こう');
+    expect(result).toContain('受身形：{動|うご}かれる');
+  });
+
+  test('term ≠ 辭書形: conjugates the 辭書形 verb, not the term heading', () => {
+    // term heading is {動き|うごき} (the noun); 辭書形 is {動|うご}く (the verb).
+    const result = enrichMarkdownWithConjugation(singleVerbSection);
+    expect(result).toContain('ます形：{動|うご}きます'); // from 辭書形
+    // The noun term must not have been conjugated.
+    expect(result).not.toContain('{動き|うごき}ます');
+    expect(result).not.toContain('{動き|うごき}きます');
+  });
+
+  test('idempotency: enriching already-enriched markdown does not duplicate forms', () => {
+    const once = enrichMarkdownWithConjugation(singleVerbSection);
+    const twice = enrichMarkdownWithConjugation(once);
+    expect(twice).toBe(once);
+    expect(twice.split('ます形：').length - 1).toBe(1);
+  });
+
+  test('old-shape output (LLM already emitted forms) is left untouched', () => {
+    const md = `### 單字分析
+#### <單字>{動き|うごき}
+  - 動詞分類：五段動詞
+  - 辭書形：{動|うご}く
+  - ます形：{動|うご}きます
+  - ない形：{動|うご}かない
+`;
+    const result = enrichMarkdownWithConjugation(md);
+    expect(result).toBe(md); // no re-injection, no duplication
+  });
+
+  test('missing 辭書形 (with 動詞分類 present) → entry skipped, no crash', () => {
+    const md = `### 單字分析
+#### <單字>何か
+  - 動詞分類：五段動詞
+  - 解釋：テスト
+`;
+    expect(enrichMarkdownWithConjugation(md)).toBe(md);
+  });
+
+  test('missing or unrecognized 動詞分類 → entry skipped', () => {
+    const md = `### 單字分析
+#### <單字>{本|ほん}
+  - 辭書形：{本|ほん}
+  - 動詞分類：名詞
+`;
+    expect(enrichMarkdownWithConjugation(md)).toBe(md);
+  });
+
+  test('verb-class label variants (五段 vs 五段動詞, サ變 vs サ變動詞) are both recognized', () => {
+    const md = `### 單字分析
+#### <單字>書く
+  - 動詞分類：五段
+  - 辭書形：書く
+#### <單字>{省人化|しょうじんか}する
+  - 動詞分類：サ變
+  - 辭書形：{省人化|しょうじんか}する
+`;
+    const result = enrichMarkdownWithConjugation(md);
+    expect(result).toContain('ます形：書きます');
+    expect(result).toContain('ます形：{省人化|しょうじんか}します');
+  });
+
+  test('partial / truncated entry (stream cut before 辭書形) → skipped', () => {
+    const md = `### 單字分析
+#### <單字>{動き|うご}
+  - 動詞分類：五段動詞
+`;
+    expect(enrichMarkdownWithConjugation(md)).toBe(md);
+  });
+
+  test('multiple verb entries in one section are all enriched', () => {
+    const md = `### 單字分析
+#### <單字>書く
+  - 動詞分類：五段動詞
+  - 辭書形：書く
+#### <單字>食べる
+  - 動詞分類：一段動詞
+  - 辭書形：食べる
+`;
+    const result = enrichMarkdownWithConjugation(md);
+    expect(result).toContain('ます形：書きます');
+    expect(result).toContain('ます形：食べます');
+    expect(result.split('ます形：').length - 1).toBe(2);
+  });
+
+  test('structural targeting: a verb term mentioned in another entry is not conjugated there', () => {
+    // Entry B's 解釈 mentions the verb 食べる in prose; entry A is the real verb.
+    const md = `### 單字分析
+#### <單字>書く
+  - 動詞分類：五段動詞
+  - 辭書形：書く
+  - 解釋：食べると対比される動詞
+#### <單字>{食|た}べる
+  - 動詞分類：一段動詞
+  - 辭書形：{食|た}べる
+`;
+    const result = enrichMarkdownWithConjugation(md);
+    // Both real verb entries enriched.
+    expect(result).toContain('ます形：書きます');
+    expect(result).toContain('ます形：{食|た}べます');
+    // No spurious third conjugation from the prose mention.
+    expect(result.split('ます形：').length - 1).toBe(2);
+  });
+
+  test('error containment: one malformed entry does not prevent the others from enriching', () => {
+    // Middle entry has an unparseable 辭書形 (empty value) → conjugate declines.
+    const md = `### 單字分析
+#### <單字>書く
+  - 動詞分類：五段動詞
+  - 辭書形：書く
+#### <單字>壞掉的
+  - 動詞分類：五段動詞
+  - 辭書形：
+#### <單字>食べる
+  - 動詞分類：一段動詞
+  - 辭書形：食べる
+`;
+    const result = enrichMarkdownWithConjugation(md);
+    expect(result).toContain('ます形：書きます');
+    expect(result).toContain('ます形：食べます');
+    // The broken middle entry contributed no form line.
+    expect(result.split('ます形：').length - 1).toBe(2);
+  });
+
+  test('no ### 單字分析 section → markdown returned byte-for-byte unchanged', () => {
+    const md = `### 原句
+  - 例文
+
+### 文法分析
+#### <文法>〜として（N3）
+- 名詞 + として
+`;
+    expect(enrichMarkdownWithConjugation(md)).toBe(md);
+  });
+
+  test('non-string / empty input is returned as-is (no throw)', () => {
+    expect(enrichMarkdownWithConjugation('')).toBe('');
+    expect(enrichMarkdownWithConjugation(null)).toBeNull();
+    expect(enrichMarkdownWithConjugation(undefined)).toBeUndefined();
   });
 });

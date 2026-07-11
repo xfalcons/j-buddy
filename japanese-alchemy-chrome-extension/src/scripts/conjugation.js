@@ -192,3 +192,134 @@ export function conjugate(dictionaryForm, verbClass) {
     causativePassive: rubyPrefix + stem + endings.causativePassive,
   };
 }
+
+// --- Markdown enrichment layer (U2) -----------------------------------------
+
+// Form labels in emission order. て形 / 否定形 are included in the
+// "already-present" check (not emitted by the engine) so that a non-verb
+// kanji entry the LLM filled per the prompt's unchanged line-14 rule — which
+// carries 動詞分類 + 辭書形 + its own て形/否定形 — is left untouched rather
+// than re-conjugated, and so that old-shape (pre-engine) output is skipped.
+const EMITTED_FORM_LABELS = [
+  'ます形', 'た形', 'ない形', 'て形',
+  '意向形', '命令形', '使役形', '受身形', '使役受身形', '否定形',
+];
+
+/**
+ * Parse one detail line into its indent/list-marker prefix, label, and value.
+ * Returns null for lines that are not a `label：value` field (headings, bare
+ * text, blank lines). The colon may be full-width (：) or half-width (:).
+ * @param {string} rawLine
+ * @returns {{prefix:string, label:string, value:string}|null}
+ */
+function parseDetailLine(rawLine) {
+  const m = rawLine.match(/^(\s*(?:[-*]\s+)?)([^：:\n]+)[：:]\s*(.*)$/);
+  if (!m) return null;
+  return { prefix: m[1], label: m[2].trim(), value: m[3].trim() };
+}
+
+/**
+ * Enrich a single `#### ` entry block with its conjugation table. Pure and
+ * contained: never throws — any parse/conjugation failure returns the block
+ * unchanged so one bad entry cannot abort the rest of the section.
+ * @param {string} entryBlock
+ * @returns {string}
+ */
+function enrichEntry(entryBlock) {
+  try {
+    const lines = entryBlock.split('\n');
+
+    let jishoIdx = -1;
+    let jishoValue = null;
+    let jishoPrefix = '  - ';
+    let classRaw = null;
+    let alreadyHasForms = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const parsed = parseDetailLine(lines[i]);
+      if (!parsed) continue;
+      if (parsed.label === '辭書形') {
+        jishoIdx = i;
+        jishoValue = parsed.value;
+        jishoPrefix = parsed.prefix || jishoPrefix;
+      } else if (parsed.label === '動詞分類') {
+        classRaw = parsed.value;
+      }
+      if (EMITTED_FORM_LABELS.includes(parsed.label)) {
+        alreadyHasForms = true;
+      }
+    }
+
+    // Already-enriched, or old-shape output the LLM filled with forms: leave
+    // the entry exactly as-is (idempotency + graceful degradation).
+    if (alreadyHasForms) return entryBlock;
+    // No 辭書形 line (or empty value): nothing to conjugate.
+    if (jishoIdx === -1 || !jishoValue) return entryBlock;
+    // No recognized verb class: not a verb entry, skip.
+    const verbClass = normalizeVerbClass(classRaw);
+    if (!verbClass) return entryBlock;
+
+    const forms = conjugate(jishoValue, verbClass);
+    if (!forms) return entryBlock; // engine declined (malformed dictionary form)
+
+    const formLines = [
+      `${jishoPrefix}ます形：${forms.masu}`,
+      `${jishoPrefix}た形：${forms.ta}`,
+      `${jishoPrefix}ない形：${forms.nai}`,
+      `${jishoPrefix}て形：${forms.te}`,
+      `${jishoPrefix}意向形：${forms.volitional}`,
+      `${jishoPrefix}命令形：${forms.imperative}`,
+      `${jishoPrefix}使役形：${forms.causative}`,
+      `${jishoPrefix}受身形：${forms.passive}`,
+      `${jishoPrefix}使役受身形：${forms.causativePassive}`,
+    ];
+
+    // Splice structurally: inject immediately after the 辭書形 line. No flat
+    // string-replacement, so a verb term that also appears in another entry's
+    // explanation or a grammar example is never mis-targeted.
+    const rebuilt = [
+      ...lines.slice(0, jishoIdx + 1),
+      ...formLines,
+      ...lines.slice(jishoIdx + 1),
+    ];
+    return rebuilt.join('\n');
+  } catch (_err) {
+    return entryBlock;
+  }
+}
+
+/**
+ * Enrich analysis markdown with engine-generated verb conjugation.
+ *
+ * Locates the `### 單字分析` section, iterates its `#### ` entries (the same
+ * split `formatAnalysisResult` uses), and — for each verb entry that carries a
+ * `辭書形` and a recognized `動詞分類` — splices the nine generated form lines
+ * in immediately after the `辭書形` line. Non-verb entries, entries missing the
+ * required fields, the `### 文法分析` section, and any content outside 單字分析
+ * are passed through unchanged. The result is the single enriched source that
+ * `onDone` writes to `lastResponse` and hands to `formatAnalysisResult`, so the
+ * side-panel render, the saved Firestore item, Copy, Save-As, and the webapp
+ * all carry the generated table from one pass.
+ *
+ * Pure and total: never throws; on any failure or absent 單字分析 section it
+ * returns the input unchanged. Re-running on already-enriched markdown is a
+ * no-op (idempotent).
+ * @param {string} markdown
+ * @returns {string}
+ */
+export function enrichMarkdownWithConjugation(markdown) {
+  if (typeof markdown !== 'string' || markdown.length === 0) return markdown;
+  try {
+    // Mirror formatAnalysisResult's section/entry split so enrichment targets
+    // the exact same structure the renderer parses.
+    const sections = markdown.split(/(?=^### )/gm);
+    return sections
+      .map((section) => {
+        if (!section.trimStart().startsWith('### 單字分析')) return section;
+        return section.split(/(?=^#### )/gm).map(enrichEntry).join('');
+      })
+      .join('');
+  } catch (_err) {
+    return markdown;
+  }
+}
