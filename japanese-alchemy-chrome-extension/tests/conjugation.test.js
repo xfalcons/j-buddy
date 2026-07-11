@@ -144,6 +144,22 @@ describe('conjugate — kuru (suppletive)', () => {
       causative: 'こさせる', passive: 'こられる', causativePassive: 'こさせられる',
     });
   });
+
+  test('ruby-bearing 来る ({来|く}る) emits per-form 来 readings (き/こ), not byte-for-byte ruby', () => {
+    // 来 is suppletive: its reading alternates き (ます/た/て) and こ (ない/意向/
+    // 命令/使役/受身/使役受身). The LLM ruby's every kanji, so {来|く}る is the
+    // expected input — it must conjugate (not decline) and the reading must change.
+    const result = conjugate('{来|く}る', 'kuru');
+    expect(result).toEqual({
+      masu: '{来|き}ます', ta: '{来|き}た', nai: '{来|こ}ない', te: '{来|き}て',
+      volitional: '{来|こ}よう', imperative: '{来|こ}い',
+      causative: '{来|こ}させる', passive: '{来|こ}られる', causativePassive: '{来|こ}させられる',
+    });
+  });
+
+  test('traditional kanji 來 also works for ruby kuru', () => {
+    expect(conjugate('{來|く}る', 'kuru').masu).toBe('{來|き}ます');
+  });
 });
 
 describe('conjugate — documented anomalies', () => {
@@ -164,6 +180,19 @@ describe('conjugate — documented anomalies', () => {
     expect(result.masu).toBe('行きます');
     expect(result.nai).toBe('行かない');
     expect(result.volitional).toBe('行こう');
+  });
+
+  test('行く exception covers the bare-kana (いく), literary (ゆく), and compound readings', () => {
+    // Bare kana.
+    expect(conjugate('いく', 'godan').te).toBe('いって');
+    expect(conjugate('いく', 'godan').ta).toBe('いった');
+    // Literary reading ゆく — ruby-bearing.
+    expect(conjugate('{行|ゆ}く', 'godan').te).toBe('{行|ゆ}って');
+    expect(conjugate('{行|ゆ}く', 'godan').ta).toBe('{行|ゆ}った');
+    // Compounds: していく, てゆく, 連れて行く (ruby).
+    expect(conjugate('していく', 'godan').te).toBe('していって');
+    expect(conjugate('てゆく', 'godan').te).toBe('てゆって');
+    expect(conjugate('{連|つ}れて{行|い}く', 'godan').te).toBe('{連|つ}れて{行|い}って');
   });
 
   test('honorific masu: る becomes い for the irregular set', () => {
@@ -232,6 +261,25 @@ describe('conjugate — graceful degradation (KTD6)', () => {
     expect(conjugate(undefined, 'godan')).toBeNull();
     // A godan verb whose final kana is not one of the supported rows is skipped.
     expect(conjugate('foo', 'godan')).toBeNull();
+  });
+
+  test('verb-class / ending mismatch returns null (LLM verb-class mislabel)', () => {
+    // 書く is godan; if the LLM labels it ichidan/suru/kuru, the ending disagrees
+    // with the class and the engine declines rather than emitting garbage.
+    expect(conjugate('書く', 'ichidan')).toBeNull(); // doesn't end in る
+    expect(conjugate('食べる', 'suru')).toBeNull(); // doesn't end in する
+    expect(conjugate('食べる', 'kuru')).toBeNull(); // doesn't end in くる
+  });
+
+  test('ruby-only 辭書形 with no trailing okurigana returns null', () => {
+    // {動|うご} has no kana after the ruby — there is no conjugational ending.
+    expect(conjugate('{動|うご}', 'godan')).toBeNull();
+  });
+
+  test('unbalanced ruby braces return null (no literal-brace garbage)', () => {
+    // An unclosed { must not become okurigana and emit garbage ruby.
+    expect(conjugate('書{く', 'godan')).toBeNull();
+    expect(conjugate('{動|うご}く', 'godan')).not.toBeNull(); // balanced still works
   });
 });
 
@@ -419,6 +467,24 @@ describe('enrichMarkdownWithConjugation — U2 enrichment layer', () => {
     expect(result).toContain('ます形：食べます');
     // The broken middle entry contributed no form line.
     expect(result.split('ます形：').length - 1).toBe(2);
+  });
+
+  test('engine-declined entry (non-empty 辭書形 conjugate rejects) is skipped via the !forms path', () => {
+    // {動|うご} is ruby-only with no trailing okurigana → conjugate() returns
+    // null via the !okurigana guard. This reaches enrichEntry's `if (!forms)`
+    // branch — distinct from the empty-辭書形 case above (caught by !jishoValue).
+    const md = `### 單字分析
+#### <單字>壞掉的
+  - 動詞分類：五段動詞
+  - 辭書形：{動|うご}
+#### <單字>書く
+  - 動詞分類：五段動詞
+  - 辭書形：書く
+`;
+    const result = enrichMarkdownWithConjugation(md);
+    expect(result).toContain('ます形：書きます'); // valid entry enriched
+    expect(result).not.toContain('ます形：{動|うご}'); // declined entry left alone
+    expect(result.split('ます形：').length - 1).toBe(1);
   });
 
   test('no ### 單字分析 section → markdown returned byte-for-byte unchanged', () => {

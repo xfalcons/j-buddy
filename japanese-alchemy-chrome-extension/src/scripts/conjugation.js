@@ -137,6 +137,14 @@ export function conjugate(dictionaryForm, verbClass) {
   if (!VALID_CLASSES.has(cls)) return null;
 
   const form = dictionaryForm.trim();
+  // Decline malformed ruby up front: { and } are exclusively ruby delimiters in
+  // this system, so an unbalanced brace is always malformed input. Without this
+  // guard a stray unclosed { would make lastIndexOf('}') return -1, turning the
+  // whole string into okurigana and emitting literal-brace garbage that persists
+  // into saved items.
+  const braceOpens = (form.match(/\{/g) || []).length;
+  const braceCloses = (form.match(/\}/g) || []).length;
+  if (braceOpens !== braceCloses) return null;
   // Split into a ruby prefix (rendered verbatim) and a trailing okurigana run
   // (the kana that carries the conjugational ending). Conjugation only ever
   // touches the tail; everything up to and including the last ruby segment,
@@ -157,8 +165,12 @@ export function conjugate(dictionaryForm, verbClass) {
     endings = GODAN[finalKana];
     if (!endings) return null; // unsupported final kana (e.g. archaic ふ/ゆ)
     stem = okurigana.slice(0, -1);
-    // 行く exception: te/た override the regular く onbin.
-    if (reading === '行く' || reading === 'いく') {
+    // 行く exception: te/た take っ-onbin (行って/行った) instead of the regular
+    // く い-onbin (行いて). Matches the verb in every shape the LLM emits — bare
+    // kanji (行く), bare kana (いく), the literary reading ゆく, and compounds
+    // (連れて行く, していく, てゆく). Safe to key on the suffix because godan
+    // verbs ending in 行く/いく/ゆく are all 行く-derived.
+    if (reading.endsWith('行く') || reading.endsWith('いく') || reading.endsWith('ゆく')) {
       endings = { ...endings, te: IKU_TE, ta: IKU_TA };
     }
     // Honorific masu: る → い instead of り.
@@ -175,6 +187,29 @@ export function conjugate(dictionaryForm, verbClass) {
     endings = SURU;
   } else {
     // kuru
+    // Suppletive 来る: when ruby-bearing ({来|く}る / {來|く}r) the kanji 来
+    // carries the conjugational kana, so its reading alternates き/こ across
+    // forms. The byte-for-byte ruby preservation used for the other classes
+    // would emit the wrong reading ({来|く}きます), so build per-form ruby
+    // explicitly. Bare くる and compound ...くる (e.g. 持ってくる) keep the
+    // standard path below.
+    const kuruRuby = form.match(/^\{([來来])\|く\}る$/);
+    if (kuruRuby) {
+      const kanji = kuruRuby[1];
+      const ki = `{${kanji}|き}`;
+      const ko = `{${kanji}|こ}`;
+      return {
+        masu: ki + 'ます',
+        ta: ki + 'た',
+        nai: ko + 'ない',
+        te: ki + 'て',
+        volitional: ko + 'よう',
+        imperative: ko + 'い',
+        causative: ko + 'させる',
+        passive: ko + 'られる',
+        causativePassive: ko + 'させられる',
+      };
+    }
     if (!okurigana.endsWith('くる')) return null;
     stem = okurigana.slice(0, -2);
     endings = KURU;
@@ -195,11 +230,14 @@ export function conjugate(dictionaryForm, verbClass) {
 
 // --- Markdown enrichment layer (U2) -----------------------------------------
 
-// Form labels in emission order. て形 / 否定形 are included in the
-// "already-present" check (not emitted by the engine) so that a non-verb
-// kanji entry the LLM filled per the prompt's unchanged line-14 rule — which
-// carries 動詞分類 + 辭書形 + its own て形/否定形 — is left untouched rather
-// than re-conjugated, and so that old-shape (pre-engine) output is skipped.
+// Form labels in emission order. The engine emits ます形..使役受身形; 否定形 is
+// the one label here the engine does NOT emit — it is the prompt's line-14 /
+// old-shape variant of ない形. It is kept in this "already-present" list (along
+// with て形, which the engine does emit but which also appears in line-14
+// entries) so the guard skips entries the LLM filled per the unchanged line-14
+// kanji-word rule (which carries 動詞分類 + 辭書形 + its own て形/否定形) and
+// old-shape (pre-engine) output — leaving those untouched rather than
+// re-conjugating over the LLM's forms.
 const EMITTED_FORM_LABELS = [
   'ます形', 'た形', 'ない形', 'て形',
   '意向形', '命令形', '使役形', '受身形', '使役受身形', '否定形',
@@ -310,8 +348,11 @@ function enrichEntry(entryBlock) {
 export function enrichMarkdownWithConjugation(markdown) {
   if (typeof markdown !== 'string' || markdown.length === 0) return markdown;
   try {
-    // Mirror formatAnalysisResult's section/entry split so enrichment targets
-    // the exact same structure the renderer parses.
+    // Use the same ### section boundary formatAnalysisResult parses so
+    // enrichment targets the same top-level structure. The per-entry #### split
+    // intentionally diverges from the renderer: a lookahead split that keeps
+    // each #### block intact for re-joining, where formatAnalysisResult consumes
+    // the #### prefix to extract the term.
     const sections = markdown.split(/(?=^### )/gm);
     return sections
       .map((section) => {
