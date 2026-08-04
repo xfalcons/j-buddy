@@ -93,3 +93,5 @@ npm run lint           # eslint
 - **Firestore security rules**: Users can only read/write their own data under `users/{userId}/`.
 - **Package command**: `npm run package` in the chrome extension builds and creates `release/ja-<version>.zip`.
 - **Functions runtime**: Node.js 22, deployed to `us-central1`, project ID: `japanese-alchemy`.
+- **Documented solutions**: `docs/solutions/` stores durable solutions to past problems and patterns, organized by category with YAML frontmatter (`module`, `problem_type`, `tags`). Relevant when implementing, debugging, or making decisions in documented areas.
+- **Shared vocabulary**: `CONCEPTS.md` defines project-specific domain terms used across plans, docs, and code discussions.

@@ -4,7 +4,14 @@
       "Bash(GIT_PAGER=cat git diff *)",
       "Bash(git add *)",
       "Bash(git commit -m 'docs: update CLAUDE.md for multi-provider LLM service layer' -m 'Document the Gemini + ZAI provider abstraction \\(both OpenAI-compatible *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git symbolic-ref *)",
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(git checkout *)"
     ]
+  },
+  "enabledPlugins": {
+    "aidd@aidd-plugin": true
   }
 }
