@@ -15,10 +15,14 @@ describe("SYSTEM_PROMPT_V1", () => {
     expect(SYSTEM_PROMPT_V1).toMatch(/1\s*[〜~-]\s*3/);
   });
 
-  it("keeps the vocabulary section (script rules 1-4) intact", () => {
+  it("keeps a compact vocabulary section for quick reading support", () => {
     expect(SYSTEM_PROMPT_V1).toContain("### 單字分析");
     expect(SYSTEM_PROMPT_V1).toContain("### 原句");
     expect(SYSTEM_PROMPT_V1).toContain("動詞分類");
+    expect(SYSTEM_PROMPT_V1).toContain("高價值詞");
+    expect(SYSTEM_PROMPT_V1).toContain("精簡");
+    expect(SYSTEM_PROMPT_V1).not.toContain("造句模板");
+    expect(SYSTEM_PROMPT_V1).not.toContain("回想題");
   });
 
   it("instructs grounding in the user's input sentence first", () => {
@@ -92,6 +96,14 @@ describe("SYSTEM_PROMPT_V1", () => {
       // The instruction now explicitly delegates forms to the system.
       expect(verbInstruction).toMatch(/由系統自動產生/);
       expect(verbInstruction).toMatch(/請勿輸出/);
+    });
+
+    it("the numbered vocabulary rules no longer request old conjugation fields", () => {
+      const scriptSection = (SYSTEM_PROMPT_V1.split("# 脚本")[1] ?? "").split(
+        "# 内容"
+      )[0];
+      expect(scriptSection).not.toContain("て形");
+      expect(scriptSection).not.toContain("否定形");
     });
 
     it("verb instruction still requires the engine-needed verb fields", () => {

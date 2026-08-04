@@ -15,11 +15,38 @@ describe("SYSTEM_PROMPT_V2", () => {
     expect(SYSTEM_PROMPT_V2).toMatch(/1\s*[〜~-]\s*5/);
   });
 
-  it("keeps the shared output structure (same as V1)", () => {
+  it("keeps the shared output section structure", () => {
     expect(SYSTEM_PROMPT_V2).toContain("### 原句");
     expect(SYSTEM_PROMPT_V2).toContain("### 單字分析");
     expect(SYSTEM_PROMPT_V2).toContain("### 文法分析");
     expect(SYSTEM_PROMPT_V2).toContain("動詞分類");
+  });
+
+  describe("usage-oriented vocabulary contract", () => {
+    it("limits V2 to at most four high-value vocabulary items", () => {
+      expect(SYSTEM_PROMPT_V2).toMatch(/最多\s*4\s*個高價值詞/);
+      expect(SYSTEM_PROMPT_V2).toContain("JLPT N1,N2,N3");
+      expect(SYSTEM_PROMPT_V2).toContain("不列 N4/N5 基礎詞");
+    });
+
+    it("allows high-value non-verb vocabulary categories", () => {
+      expect(SYSTEM_PROMPT_V2).toContain("サ變名詞");
+      expect(SYSTEM_PROMPT_V2).toContain("形容詞");
+      expect(SYSTEM_PROMPT_V2).toContain("副詞");
+      expect(SYSTEM_PROMPT_V2).toContain("重要複合名詞");
+      expect(SYSTEM_PROMPT_V2).toContain("片假名外來語");
+    });
+
+    it("requires sentence-production fields in V2 vocabulary entries", () => {
+      expect(SYSTEM_PROMPT_V2).toContain("原句中的意思");
+      expect(SYSTEM_PROMPT_V2).toContain("常見搭配／句型框架");
+      expect(SYSTEM_PROMPT_V2).toContain("自然例句");
+      expect(SYSTEM_PROMPT_V2).toContain("繁體中文翻譯");
+      expect(SYSTEM_PROMPT_V2).toContain("語感／語域");
+      expect(SYSTEM_PROMPT_V2).toContain("造句模板");
+      expect(SYSTEM_PROMPT_V2).toContain("回想題");
+      expect(SYSTEM_PROMPT_V2).toContain("易混淆比較");
+    });
   });
 
   it("instructs grounding in the user's input sentence first", () => {
@@ -109,6 +136,14 @@ describe("SYSTEM_PROMPT_V2", () => {
       // The instruction now explicitly delegates forms to the system.
       expect(verbInstruction).toMatch(/由系統自動產生/);
       expect(verbInstruction).toMatch(/請勿輸出/);
+    });
+
+    it("the numbered vocabulary rules no longer request old conjugation fields", () => {
+      const scriptSection = (SYSTEM_PROMPT_V2.split("# 脚本")[1] ?? "").split(
+        "# 内容"
+      )[0];
+      expect(scriptSection).not.toContain("て形");
+      expect(scriptSection).not.toContain("否定形");
     });
 
     it("verb instruction still requires the engine-needed verb fields", () => {

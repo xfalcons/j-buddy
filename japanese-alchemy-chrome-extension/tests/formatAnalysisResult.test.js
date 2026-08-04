@@ -127,6 +127,65 @@ describe('formatAnalysisResult', () => {
   });
 
   describe('Real-world Use Cases', () => {
+    test('preserves V2 usage-oriented vocabulary fields in saved detail and rendered ruby', () => {
+      const markdown = `
+### 原句
+  - {新|あたら}しい{制度|せいど}が{企業|きぎょう}の{成長|せいちょう}を{後押|あとお}ししている。
+  - 翻譯：新制度正在推動企業成長。
+
+### 單字分析
+#### <單字>{後押|あとお}しする
+  - 讀音：あとおしする
+  - 重音：2
+  - 動詞分類：サ變動詞
+  - 解釋：推動、支持某事往前進展
+  - 辭書形：{後押|あとお}しする
+  - 原句中的意思：在本句中表示制度幫助企業成長往前推進。
+  - 常見搭配／句型框架：〜を{後押|あとお}しする；{成長|せいちょう}を{後押|あとお}しする。
+  - 語感／語域：偏新聞、商務、正式書面語。
+  - 自然例句：{政府|せいふ}の{支援|しえん}が{地域経済|ちいきけいざい}の{成長|せいちょう}を{後押|あとお}ししている。（政府支援正在推動地方經濟成長。）
+  - 造句模板：A が B を{後押|あとお}しする。
+  - 回想題：「推動地方經濟成長」可說成「{地域経済|ちいきけいざい}の{成長|せいちょう}を＿＿する」。
+#### <單字>オンライン
+  - 重音：3
+  - 英文：online
+  - 解釋：線上、透過網路進行。
+  - 原句中的意思：在本句中表示制度透過網路支援企業。
+  - 常見搭配／句型框架：オンラインで{支援|しえん}する；オンライン{相談|そうだん}。
+  - 語感／語域：日常、商務、行政服務都常用。
+  - 自然例句：{専門家|せんもんか}がオンラインで{企業|きぎょう}を{支援|しえん}する。（專家在線上支援企業。）
+  - 造句模板：A がオンラインで B を{支援|しえん}する。
+  - 回想題：「線上支援企業」可說成「オンラインで{企業|きぎょう}を＿＿する」。
+
+### 文法分析
+`;
+
+      const result = formatAnalysisResult(markdown);
+      const word = result.json.words.find((w) => w.term.includes('後押'));
+      const loanword = result.json.words.find((w) => w.term === 'オンライン');
+
+      expect(word).toBeDefined();
+      expect(word.detail).toContain('原句中的意思：在本句中表示制度幫助企業成長往前推進。');
+      expect(word.detail).toContain('常見搭配／句型框架：〜を{後押|あとお}しする');
+      expect(word.detail).toContain('自然例句：{政府|せいふ}の{支援|しえん}');
+      expect(word.detail).toContain('語感／語域：偏新聞、商務、正式書面語。');
+      expect(word.detail).toContain('造句模板：A が B を{後押|あとお}しする。');
+      expect(word.detail).toContain('回想題：「推動地方經濟成長」');
+      expect(loanword).toBeDefined();
+      expect(loanword.detail).toContain('英文：online');
+      expect(loanword.detail).toContain('常見搭配／句型框架：オンラインで{支援|しえん}する');
+      expect(loanword.detail).toContain('造句模板：A がオンラインで B を{支援|しえん}する。');
+      expect(loanword.detail).not.toContain('辭書形');
+      expect(loanword.detail).not.toContain('動詞分類');
+
+      expect(result.html).toContain('<rb>後押</rb>');
+      expect(result.html).toContain('<rt>あとお</rt>');
+      expect(result.html).toContain('<rb>地域経済</rb>');
+      expect(result.html).toContain('<rb>専門家</rb>');
+      expect(result.html).toContain('造句模板');
+      expect(result.html).toContain('回想題');
+    });
+
     test('should handle typical Japanese learning content', () => {
       const markdown = `
 ### 原句：

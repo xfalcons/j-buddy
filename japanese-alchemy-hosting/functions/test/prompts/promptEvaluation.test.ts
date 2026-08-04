@@ -149,6 +149,8 @@ describe("checks have teeth — broken response is rejected", () => {
       { name: "furiganaFormatValid", required: true, description: "" },
       { name: "requiredHeadingsPresent", required: true, description: "" },
       { name: "grammarHeadingMatchesContent", required: true, description: "" },
+      { name: "noVocabularyConjugationForms", required: true, description: "" },
+      { name: "v2VocabularyUsageShape", required: true, description: "" },
     ],
   };
 
@@ -165,5 +167,94 @@ describe("checks have teeth — broken response is rejected", () => {
 
   it("rejects a grammar heading not reflected in its body", () => {
     expect(byName.get("grammarHeadingMatchesContent")!.pass).toBe(false);
+  });
+
+  it("rejects a V2 vocabulary entry missing usage-oriented fields", () => {
+    const v2Outcomes = runChecks(broken, probe, "v2");
+    const v2ByName = new Map(v2Outcomes.map((o) => [o.name, o]));
+    expect(v2ByName.get("v2VocabularyUsageShape")!.pass).toBe(false);
+  });
+
+  it("rejects generated conjugation labels even when the label is markdown-emphasized", () => {
+    const response = [
+      "### 原句",
+      "  - {屋上|おくじょう}に{上|あ}がる。",
+      "  - 翻譯：上屋頂。",
+      "",
+      "### 單字分析",
+      "#### <單字>{上|あ}がる",
+      "  - 讀音：あがる",
+      "  - 重音：0",
+      "  - 動詞分類：五段動詞",
+      "  - 解釋：上去",
+      "  - 辭書形：{上|あ}がる",
+      "  - **て形**：{上|あ}がって",
+      "",
+      "### 文法分析",
+      "#### <文法>〜に（N3）",
+      "- **接續形式**",
+      "  - 名詞 + に",
+    ].join("\n");
+
+    const outcomes = runChecks(response, probe, "v2");
+    const byName = new Map(outcomes.map((o) => [o.name, o]));
+    expect(byName.get("noVocabularyConjugationForms")!.pass).toBe(false);
+  });
+
+  it("rejects V2 vocabulary fields that are only mentioned in prose", () => {
+    const response = [
+      "### 原句",
+      "  - {制度|せいど}が{成長|せいちょう}を{後押|あとお}しする。",
+      "  - 翻譯：制度推動成長。",
+      "",
+      "### 單字分析",
+      "#### <單字>{後押|あとお}しする",
+      "  - 讀音：あとおしする",
+      "  - 重音：2",
+      "  - 動詞分類：サ變動詞",
+      "  - 解釋：推動",
+      "  - 辭書形：{後押|あとお}しする",
+      "  - 說明：原句中的意思、常見搭配／句型框架、語感／語域、自然例句、造句模板、回想題都很重要。",
+      "",
+      "### 文法分析",
+      "#### <文法>〜を（N3）",
+      "- **接續形式**",
+      "  - 名詞 + を",
+    ].join("\n");
+
+    const outcomes = runChecks(response, probe, "v2");
+    const byName = new Map(outcomes.map((o) => [o.name, o]));
+    expect(byName.get("v2VocabularyUsageShape")!.pass).toBe(false);
+  });
+
+  it("rejects an empty V2 usage field label", () => {
+    const response = [
+      "### 原句",
+      "  - {制度|せいど}が{成長|せいちょう}を{後押|あとお}しする。",
+      "  - 翻譯：制度推動成長。",
+      "",
+      "### 單字分析",
+      "#### <單字>{後押|あとお}しする",
+      "  - 讀音：あとおしする",
+      "  - 重音：2",
+      "  - 動詞分類：サ變動詞",
+      "  - 解釋：推動",
+      "  - 辭書形：{後押|あとお}しする",
+      "  - 原句中的意思：表示推動成長。",
+      "  - 常見搭配／句型框架：{成長|せいちょう}を{後押|あとお}しする。",
+      "  - 語感／語域：偏正式。",
+      "  - 自然例句：{制度|せいど}が{成長|せいちょう}を{後押|あとお}しする。（制度推動成長。）",
+      "  - 造句模板：A が B を{後押|あとお}しする。",
+      "  - 回想題：",
+      "",
+      "### 文法分析",
+      "#### <文法>〜を（N3）",
+      "- **接續形式**",
+      "  - 名詞 + を",
+    ].join("\n");
+
+    const outcomes = runChecks(response, probe, "v2");
+    const byName = new Map(outcomes.map((o) => [o.name, o]));
+    expect(byName.get("v2VocabularyUsageShape")!.pass).toBe(false);
   });
 });

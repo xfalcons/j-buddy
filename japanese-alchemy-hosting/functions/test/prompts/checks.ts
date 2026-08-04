@@ -166,6 +166,69 @@ function vocabularyHeadingMatchesContent(response: string): CheckResult {
   return { pass: true, detail: `${entries.filter((e) => e.includes("<單字>")).length} vocab entries` };
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function detailFieldValue(detail: string, field: string): string | null {
+  const pattern = new RegExp(
+    `^\\s*(?:[-*]\\s+)?(?:\\*\\*)?${escapeRegExp(field)}(?:\\*\\*)?\\s*[:：]\\s*(.*)$`,
+    "m"
+  );
+  const match = detail.match(pattern);
+  return match ? match[1].trim() : null;
+}
+
+function noVocabularyConjugationForms(response: string): CheckResult {
+  const ws = section(response, "單字分析");
+  const forbidden = [
+    "ます形",
+    "ない形",
+    "た形",
+    "て形",
+    "意向形",
+    "命令形",
+    "使役形",
+    "受身形",
+    "使役受身形",
+    "否定形",
+  ];
+  const found = forbidden.filter((label) => detailFieldValue(ws, label) !== null);
+  return {
+    pass: found.length === 0,
+    detail: found.length ? `vocabulary section has generated form labels: ${found.join(", ")}` : "no generated verb form labels in vocabulary",
+  };
+}
+
+function v2VocabularyUsageShape(response: string): CheckResult {
+  const parsed = parseAnalysis(response);
+  if (parsed.words.length < 1 || parsed.words.length > 4) {
+    return { pass: false, detail: `${parsed.words.length} vocabulary entries (expected 1-4 for v2)` };
+  }
+
+  const requiredFields = [
+    "原句中的意思",
+    "常見搭配／句型框架",
+    "語感／語域",
+    "自然例句",
+    "造句模板",
+    "回想題",
+  ];
+  for (const word of parsed.words) {
+    for (const field of requiredFields) {
+      const value = detailFieldValue(word.detail, field);
+      if (value === null || value.length === 0) {
+        return { pass: false, detail: `entry "${word.term}" missing V2 usage field ${field}` };
+      }
+    }
+    const naturalExample = detailFieldValue(word.detail, "自然例句") ?? "";
+    if (!/\{[^{}|]+\|[^{}]*\}/.test(naturalExample) || !/(?:（.+）|\(.+\))/.test(naturalExample)) {
+      return { pass: false, detail: `entry "${word.term}" natural example lacks ruby or translation` };
+    }
+  }
+  return { pass: true, detail: `${parsed.words.length} V2 usage-oriented entries` };
+}
+
 function grammarHeadingMatchesContent(response: string): CheckResult {
   const gs = section(response, "文法分析");
   const entries = gs.split(/^####\s+/gm).slice(1).map((e) => e.trim()).filter(Boolean);
@@ -297,6 +360,8 @@ const CHECKS: Record<string, (response: string, fixture: Fixture, version: Promp
   requiredHeadingsPresent: (r) => requiredHeadingsPresent(r),
   translationInsideOriginalSection: (r) => translationInsideOriginalSection(r),
   vocabularyHeadingMatchesContent: (r) => vocabularyHeadingMatchesContent(r),
+  noVocabularyConjugationForms: (r) => noVocabularyConjugationForms(r),
+  v2VocabularyUsageShape: (r, _f, v) => (v === "v2" ? v2VocabularyUsageShape(r) : { pass: true, detail: "n/a for v1" }),
   grammarHeadingMatchesContent: (r) => grammarHeadingMatchesContent(r),
   allOutputKanjiAnnotated: (r) => allOutputKanjiAnnotated(r),
   expectedVocabularyCovered: (r, f) => expectedVocabularyCovered(r, f),
@@ -314,6 +379,7 @@ const CHECKS: Record<string, (response: string, fixture: Fixture, version: Promp
 function appliesTo(name: string, version: PromptVersion): boolean {
   if (name === "v1GrammarShape") return version === "v1";
   if (name === "v2GrammarShape") return version === "v2";
+  if (name === "v2VocabularyUsageShape") return version === "v2";
   return true;
 }
 
@@ -353,4 +419,3 @@ export function coverage(response: string, fixture: Fixture): {
 
 /** All check names implemented by this runner. */
 export const CHECK_NAMES = Object.keys(CHECKS);
-
