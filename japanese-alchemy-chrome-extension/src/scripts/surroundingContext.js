@@ -120,20 +120,25 @@ const CACHE_VERSION = 'cgv1';
  * selection contains no control bytes, so a no-context selection whose text
  * happens to resemble a serialized context key cannot collide and serve a
  * stale analysis. Length prefixes keep before/after unambiguous.
- * @param {{ selectedText?: string, context?: { before?: string, after?: string } }} entry
+ * @param {{ selectedText?: string, promptVariant?: string, context?: { before?: string, after?: string } }} entry
  * @returns {string}
  */
-export function buildContextCacheKey({ selectedText, context } = {}) {
+export function buildContextCacheKey({ selectedText, context, promptVariant, ai } = {}) {
   const text = selectedText || '';
   const before = (context && context.before) || '';
   const after = (context && context.after) || '';
-  if (!before && !after) return CACHE_VERSION + text;
   // NUL sentinel + SOH separators - control bytes a real page selection cannot
   // contain, keeping the context key disjoint from the bare no-context form.
   const NUL = String.fromCharCode(0);
   const SOH = String.fromCharCode(1);
+  const variant = promptVariant || '';
+  const cachePrefix = variant
+    ? CACHE_VERSION + 'p' + variant.length + '|' + variant + SOH
+    : CACHE_VERSION;
+  const aiPrefix = ai ? cachePrefix + 'a' + ai.length + '|' + ai + SOH : cachePrefix;
+  if (!before && !after) return aiPrefix + text;
   return (
-    CACHE_VERSION +
+    aiPrefix +
     NUL + text.length + '|' + text +
     SOH + before.length + '|' + before +
     SOH + after.length + '|' + after

@@ -215,18 +215,78 @@
       margin: -16px -16px 24px -16px;
       display: flex;
       justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .controls-left {
       display: flex;
       gap: 8px;
       align-items: center;
+      flex-wrap: wrap;
     }
 
     .controls-right {
       display: flex;
       gap: 8px;
       align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      margin-left: auto;
+    }
+
+    .analysis-mode-toggle {
+      display: flex;
+      align-items: center;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--bg-primary);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .analysis-mode-option {
+      min-height: 34px;
+      padding: 0 10px;
+      border: none;
+      border-right: 1px solid var(--border-color);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+      transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    }
+
+    .analysis-mode-option:last-child {
+      border-right: none;
+    }
+
+    .analysis-mode-option:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+
+    .analysis-mode-option.selected {
+      background: var(--button-bg);
+      color: white;
+    }
+
+    @media (max-width: 420px) {
+      .controls-right {
+        width: 100%;
+      }
+
+      .analysis-mode-toggle {
+        flex: 1 1 auto;
+      }
+
+      .analysis-mode-option {
+        flex: 1 1 0;
+        padding: 0 8px;
+      }
     }
 
     .theme-toggle {
@@ -667,6 +727,10 @@
         </label>
       </div>
       <div class="controls-right">
+        <div class="analysis-mode-toggle" role="group" aria-label="Analysis mode">
+          <button class="analysis-mode-option" type="button" data-prompt-variant="v1" title="快速理解目前選取的日文" aria-pressed="false">精簡分析</button>
+          <button class="analysis-mode-option selected" type="button" data-prompt-variant="v2" title="重點放在搭配、例句和可重複使用的句型" aria-pressed="true">造句分析</button>
+        </div>
         <label for="aiPreference" class="visually-hidden">AI</label>
         <select id="aiPreference" class="form-select form-select-sm" title="Default AI">
           <option value="gemini">Gemini</option>
@@ -692,7 +756,7 @@
     <!-- Loading Indicator -->
     <div id="loading" class="loading">
       <div class="spinner"></div>
-      <span>AIによる分析中...</span>
+      <span class="loading-message">AIによる分析中です。しばらくお待ちください...</span>
     </div>
 
     <!-- Message -->

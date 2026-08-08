@@ -17,7 +17,8 @@ class JaAlchemyApiService {
 
     // Derive the streaming endpoint URL from the Firebase project config
     const projectId = firebaseConfig.projectId;
-    this.streamUrl = `https://us-central1-${projectId}.cloudfunctions.net/explainStream`;
+    // this.streamUrl = `https://us-central1-${projectId}.cloudfunctions.net/explainStream`;
+    this.streamUrl = `http://127.0.0.1:5001/japanese-alchemy/us-central1/explainStream`; // For local testing
   }
 
   /**

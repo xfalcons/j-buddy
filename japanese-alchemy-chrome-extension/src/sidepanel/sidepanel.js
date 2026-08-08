@@ -1,6 +1,9 @@
 import { marked } from 'marked';
 import authService from '../scripts/authService.js';
-import { getPromptVariant } from '../scripts/promptVariant.js';
+import {
+    getPromptVariant,
+    setPromptVariant,
+} from '../scripts/promptVariant.js';
 import { getAiPreference, setAiPreference } from '../scripts/aiPreference.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
@@ -131,6 +134,15 @@ function setLoadingState(loadingElement, show) {
     }
 }
 
+function setLoadingMessage(loadingElement, message) {
+    const messageElement = loadingElement.querySelector
+        ? loadingElement.querySelector('.loading-message')
+        : null;
+    if (messageElement) {
+        messageElement.textContent = message;
+    }
+}
+
 // Retrieve and display selected text
 async function loadSelectedText() {
   const { selectedText, contextBefore = '', contextAfter = '' } =
@@ -163,46 +175,97 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
 let isAnalizing = false;
 let saveForLaterJson = {};
 let renderThrottleTimer = null;
+let currentSelectedText = '';
+let currentContext = { before: '', after: '' };
+let analysisRequestId = 0;
+let activeAnalysisKey = null;
+let modeChangeRequestId = 0;
+
+function normalizeContext(context = {}) {
+    return {
+        before: context.before || '',
+        after: context.after || '',
+    };
+}
+
+function isValidSelection(selectedText) {
+    return !!selectedText && selectedText.length >= 2 && selectedText.length <= 500;
+}
+
+function isLatestAnalysis(requestId) {
+    return requestId === analysisRequestId;
+}
+
+function isLatestModeChange(requestId) {
+    return requestId === modeChangeRequestId;
+}
 
 // Throttled progressive render: re-parses accumulated markdown at most every 80ms
-function renderStreamingPreview(proseElement, accumulatedText) {
+function renderStreamingPreview(proseElement, accumulatedText, requestId) {
     if (renderThrottleTimer) return; // already scheduled
     renderThrottleTimer = setTimeout(() => {
         renderThrottleTimer = null;
+        if (!isLatestAnalysis(requestId)) return;
         const rubyConverted = convertToRuby(accumulatedText);
         proseElement.innerHTML = marked.parse(rubyConverted);
     }, 80);
 }
 
-async function analizingSelectedText(selectedText, context = { before: '', after: '' }) {
-    if (isAnalizing || !selectedText) return;
+export async function analizingSelectedText(selectedText, context = { before: '', after: '' }, options = {}) {
+    currentSelectedText = selectedText || '';
+    currentContext = normalizeContext(context);
 
     const resultElement = document.getElementById('result');
     const proseElement = resultElement.querySelector('.prose');
     const loadingElement = document.getElementById('loading');
+    const promptVariant = options.promptVariant || await getPromptVariant();
+    const ai = options.ai || await getAiPreference();
+    const cacheKey = currentSelectedText
+        ? buildContextCacheKey({
+            selectedText: currentSelectedText,
+            context: currentContext,
+            promptVariant,
+            ai,
+        })
+        : '';
+
+    if (!options.force && isAnalizing && cacheKey && cacheKey === activeAnalysisKey) {
+        return;
+    }
 
     console.log('Analizing Selected Text...');
+    const requestId = ++analysisRequestId;
     isAnalizing = true;
+    activeAnalysisKey = cacheKey;
+    if (renderThrottleTimer) {
+        clearTimeout(renderThrottleTimer);
+        renderThrottleTimer = null;
+    }
 
     // Clear previous alertMessage
     elements.alertMessage.classList.remove('show');
 
     try {
         // Cache hit when both the selected text and its surrounding context match
-        // the last analysis. A context change for the same selection is a miss.
-        const ai = await getAiPreference();
-        const cacheKey = `${ai}:${buildContextCacheKey({ selectedText, context })}`;
+        // the last analysis. The prompt variant is part of the key, so different
+        // analysis modes can have distinct results for the same selection.
         const storedKey = localStorage.getItem('lastAnalysisKey');
         if (cacheKey === storedKey) {
+            if (!isLatestAnalysis(requestId)) return;
             console.log('Selected text + context same as last time');
             const storedResponse = localStorage.getItem('lastResponse');
             const analysisResult = formatAnalysisResult(storedResponse);
             saveForLaterJson = analysisResult.json;
             proseElement.innerHTML = analysisResult.html;
             resultElement.classList.add('show');
-        } else if (selectedText && selectedText.length >= 2 && selectedText.length < 500) {
+            setLoadingState(loadingElement, false);
+        } else if (isValidSelection(currentSelectedText)) {
             // Show loading state
+            setLoadingMessage(loadingElement, 'AIによる分析中です。しばらくお待ちください...');
             setLoadingState(loadingElement, true);
+            proseElement.innerHTML = '';
+            resultElement.classList.remove('show');
+            saveForLaterJson = {};
 
             try {
                 console.log('Initializing API service...');
@@ -211,25 +274,24 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                 console.log('Generating response (streaming)...');
                 let firstChunkReceived = false;
 
-                // Resolve the A/B prompt variant from chrome.storage.local (defaults to "v2").
-                const promptVariant = await getPromptVariant();
-
                 await jaAlchemyApiService.generateResponseStream(
-                    selectedText,
+                    currentSelectedText,
                     promptVariant,
-                    context,
+                    currentContext,
                     ai,
                     // onChunk: progressively render each chunk
                     (chunk, fullText) => {
+                        if (!isLatestAnalysis(requestId)) return;
                         if (!firstChunkReceived) {
                             firstChunkReceived = true;
-                            setLoadingState(loadingElement, false);
+                            setLoadingMessage(loadingElement, '解析結果を受信しました。レイアウトを整えています...');
                             resultElement.classList.add('show');
                         }
-                        renderStreamingPreview(proseElement, fullText);
+                        renderStreamingPreview(proseElement, fullText, requestId);
                     },
                     // onDone: finalize with full formatting (checkboxes, structured data)
                     (fullText) => {
+                        if (!isLatestAnalysis(requestId)) return;
                         // Enrich the raw stream with engine-generated verb
                         // conjugation before any consumer reads it, so the
                         // rendered panel, the saved item, Copy, Save-As, and the
@@ -241,7 +303,7 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                         // stream error/catch does not leave a key pointing at a
                         // stale response.
                         localStorage.setItem('lastAnalysisKey', cacheKey);
-                        localStorage.setItem('lastSelectedText', selectedText);
+                        localStorage.setItem('lastSelectedText', currentSelectedText);
                         if (renderThrottleTimer) {
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
@@ -254,6 +316,7 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                     },
                     // onError
                     (errorMessage) => {
+                        if (!isLatestAnalysis(requestId)) return;
                         console.warn('Streaming API Error:', errorMessage);
                         if (renderThrottleTimer) {
                             clearTimeout(renderThrottleTimer);
@@ -267,24 +330,30 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                     }
                 );
             } catch (apiError) {
+                if (!isLatestAnalysis(requestId)) return;
                 console.warn('Calling API Error:', apiError);
                 alertMessage(elements.alertMessage, `Error calling API service: ${apiError.message}<br>`, 'error');
                 elements.alertMessage.classList.add('show');
                 setLoadingState(loadingElement, false);
             }
         } else {
-            alertMessage(elements.alertMessage, 'No text selected or text is too short(2) or too long(120). Please select some text on the page and open the sidepanel again.', 'info');
+            if (!isLatestAnalysis(requestId)) return;
+            alertMessage(elements.alertMessage, 'No text selected or text is too short or too long. Please select 2-500 characters on the page and open the sidepanel again.', 'info');
             elements.alertMessage.classList.add('show');
             elements.result.classList.remove('show');
         }
     } catch (error) {
+        if (!isLatestAnalysis(requestId)) return;
         console.error('General Error:', error);
         alertMessage(elements.alertMessage, 'Cannot access selected text on this page.', 'error');
         elements.alertMessage.classList.add('show');
         elements.result.classList.remove('show');
         setLoadingState(loadingElement, false);
     }
-    isAnalizing = false;
+    if (isLatestAnalysis(requestId)) {
+        isAnalizing = false;
+        activeAnalysisKey = null;
+    }
 }
 
 // Generate a filename using local datetime formatted as YYYY-MM-DD_HH:MM:SS.md
@@ -518,6 +587,54 @@ export function toggleFontSizeMenu(elements, show) {
     }
 }
 
+export function updateAnalysisModeUi(elements, selectedVariant) {
+    elements.analysisModeButtons?.forEach((button) => {
+        const isSelected = button.dataset.promptVariant === selectedVariant;
+        button.classList.toggle('selected', isSelected);
+        button.setAttribute('aria-pressed', String(isSelected));
+    });
+}
+
+export async function initializeAnalysisMode(elements) {
+    const selectedVariant = await getPromptVariant();
+    updateAnalysisModeUi(elements, selectedVariant);
+}
+
+export async function handleAnalysisModeChange(elements, variant) {
+    const requestId = ++modeChangeRequestId;
+    updateAnalysisModeUi(elements, variant);
+
+    try {
+        const currentVariant = await getPromptVariant();
+        if (!isLatestModeChange(requestId)) return;
+
+        if (variant === currentVariant) {
+            updateAnalysisModeUi(elements, variant);
+            return;
+        }
+
+        const selectedVariant = await setPromptVariant(variant);
+        if (!isLatestModeChange(requestId)) return;
+
+        updateAnalysisModeUi(elements, selectedVariant);
+        await analizingSelectedText(currentSelectedText, currentContext, {
+            force: true,
+            promptVariant: selectedVariant,
+        });
+    } catch (error) {
+        if (!isLatestModeChange(requestId)) return;
+        console.error('[Sidebar] Failed to change analysis mode:', error);
+        alertMessage(elements.alertMessage, `Failed to change analysis mode: ${error.message}`, 'error');
+        elements.alertMessage.classList.add('show');
+    }
+}
+
+export function setSidepanelElementsForTesting(testElements) {
+    elements = testElements;
+}
+
+export { isValidSelection };
+
 // DOM element references
 let elements = null;
 
@@ -534,6 +651,8 @@ async function initElements() {
     saveForLaterBtn: document.getElementById('saveForLaterBtn'),
     shareCheckbox: document.getElementById('shareCheckbox'),
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
+    analysisModeButtons: document.querySelectorAll('.analysis-mode-option'),
+    aiPreference: document.querySelector('#aiPreference'),
     result: document.getElementById('result'),
     // Auth elements
     authSection: document.querySelector('#authSection'),
@@ -544,11 +663,11 @@ async function initElements() {
     userPhoto: document.querySelector('#userPhoto'),
     userDisplayName: document.querySelector('#userDisplayName'),
     userEmail: document.querySelector('#userEmail')
-    ,aiPreference: document.querySelector('#aiPreference')
   };
 
   // Initialize font size
   await initializeFontSize(elements);
+  await initializeAnalysisMode(elements);
 
   return elements;
 }
@@ -668,6 +787,12 @@ async function setupEventListeners() {
 
     // Theme toggle
     elements.themeToggle?.addEventListener('click', () => handleThemeToggle(elements));
+
+    elements.analysisModeButtons?.forEach((button) => {
+      button.addEventListener('click', async () => {
+        await handleAnalysisModeChange(elements, button.dataset.promptVariant);
+      });
+    });
     const ai = await getAiPreference();
     if (elements.aiPreference) {
       elements.aiPreference.value = ai;
@@ -675,10 +800,7 @@ async function setupEventListeners() {
     }
     document.addEventListener('click', async event => {
       if (event.target.id !== 'retryWithZaiBtn') return;
-      const original = await getAiPreference();
-      await setAiPreference('zai');
-      await loadSelectedText();
-      await setAiPreference(original);
+      await analizingSelectedText(currentSelectedText, currentContext, { force: true, ai: 'zai' });
     });
   
     // Font size button

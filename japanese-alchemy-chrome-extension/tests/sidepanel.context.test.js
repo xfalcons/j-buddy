@@ -86,4 +86,28 @@ describe('buildContextCacheKey', () => {
     expect(withCtxNew.charCodeAt(0)).not.toBe(0); // old context form began with NUL
     expect(withCtxNew.startsWith('cgv1')).toBe(true);
   });
+
+  test('prompt variant separates cached results for the same selection and context', () => {
+    const compact = buildContextCacheKey({
+      selectedText: '成長を後押しする',
+      promptVariant: 'v1',
+      context: { before: '制度が', after: 'という。' },
+    });
+    const usage = buildContextCacheKey({
+      selectedText: '成長を後押しする',
+      promptVariant: 'v2',
+      context: { before: '制度が', after: 'という。' },
+    });
+
+    expect(compact).not.toBe(usage);
+    expect(compact).toContain('v1');
+    expect(usage).toContain('v2');
+  });
+
+  test('prompt variant preserves the old no-variant cache key when omitted', () => {
+    expect(buildContextCacheKey({ selectedText: 'テスト', promptVariant: 'v2' })).not.toBe(
+      buildContextCacheKey({ selectedText: 'テスト' })
+    );
+    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe('cgv1テスト');
+  });
 });
