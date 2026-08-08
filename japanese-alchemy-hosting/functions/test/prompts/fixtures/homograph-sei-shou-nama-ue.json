@@ -4,8 +4,6 @@
   "difficulty": "N3–N2｜同形漢字讀音消歧（生／上）",
   "expectedVocabulary": [
     "生ビール（なま）",
-    "学生（がくせい）",
-    "屋上（おくじょう）",
     "上がる（あがる）",
     "生け花（いけばな）",
     "生える（はえる）"
@@ -44,6 +42,16 @@
       "name": "vocabularyHeadingMatchesContent",
       "required": true,
       "description": "Every vocabulary entry starts with `#### <單字>` and contains analysis appropriate to its type: kanji/verb fields for Japanese words, or accent/English/explanation for katakana."
+    },
+    {
+      "name": "noVocabularyConjugationForms",
+      "required": true,
+      "description": "The raw LLM vocabulary section does not include generated conjugation-form labels; those are produced by the client-side engine."
+    },
+    {
+      "name": "v2VocabularyUsageShape",
+      "required": true,
+      "description": "V2 selects 1-4 vocabulary items and each selected entry contains source meaning, reusable sentence frame, usage/register note, natural example, sentence template, and recall prompt."
     },
     {
       "name": "grammarHeadingMatchesContent",

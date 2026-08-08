@@ -15,10 +15,14 @@ describe("SYSTEM_PROMPT_V1", () => {
     expect(SYSTEM_PROMPT_V1).toMatch(/1\s*[〜~-]\s*3/);
   });
 
-  it("keeps the vocabulary section (script rules 1-4) intact", () => {
+  it("keeps a compact vocabulary section for quick reading support", () => {
     expect(SYSTEM_PROMPT_V1).toContain("### 單字分析");
     expect(SYSTEM_PROMPT_V1).toContain("### 原句");
     expect(SYSTEM_PROMPT_V1).toContain("動詞分類");
+    expect(SYSTEM_PROMPT_V1).toContain("高價值詞");
+    expect(SYSTEM_PROMPT_V1).toContain("精簡");
+    expect(SYSTEM_PROMPT_V1).not.toContain("造句模板");
+    expect(SYSTEM_PROMPT_V1).not.toContain("回想題");
   });
 
   it("instructs grounding in the user's input sentence first", () => {
@@ -70,6 +74,65 @@ describe("SYSTEM_PROMPT_V1", () => {
           .replace(/\{([^|}|]+)\|[^}]*\}/g, "$1");
         expect(body).toContain(patternCore);
       }
+    });
+  });
+
+  describe("verb conjugation removed from prompt (U3)", () => {
+    // Item 2 is the verb instruction line within the numbered 脚本 list.
+    const verbInstruction =
+      SYSTEM_PROMPT_V1.split("\n").find((l) => /^2\.\s/.test(l)) ?? "";
+    // The worked examples live between the vocabulary and grammar headers.
+    const vocabSection = (SYSTEM_PROMPT_V1.split("### 單字分析")[1] ?? "").split(
+      "### 文法分析"
+    )[0];
+
+    it("verb instruction no longer demands conjugation forms", () => {
+      // The old comma-chained demand enumeration is gone from item 2.
+      expect(verbInstruction).not.toContain(
+        "ます形,た形,ない形,て形,意向形,命令形,使役形,受身形"
+      );
+      // 受身形(被動形) only ever appeared in the old demand list.
+      expect(verbInstruction).not.toContain("受身形(被動形)");
+      // The instruction now explicitly delegates forms to the system.
+      expect(verbInstruction).toMatch(/由系統自動產生/);
+      expect(verbInstruction).toMatch(/請勿輸出/);
+    });
+
+    it("the numbered vocabulary rules no longer request old conjugation fields", () => {
+      const scriptSection = (SYSTEM_PROMPT_V1.split("# 脚本")[1] ?? "").split(
+        "# 内容"
+      )[0];
+      expect(scriptSection).not.toContain("て形");
+      expect(scriptSection).not.toContain("否定形");
+    });
+
+    it("verb instruction still requires the engine-needed verb fields", () => {
+      // 讀音 is conveyed via the worked examples; item 2 enumerates the rest.
+      expect(verbInstruction).toContain("重音");
+      expect(verbInstruction).toContain("動詞分類");
+      expect(verbInstruction).toContain("解釋");
+      expect(verbInstruction).toContain("辭書形");
+    });
+
+    it("worked verb examples no longer list conjugation forms", () => {
+      expect(vocabSection).not.toContain("使役受身形");
+      expect(vocabSection).not.toContain("ます形");
+      expect(vocabSection).not.toContain("否定形");
+      expect(vocabSection).not.toContain("意向形");
+    });
+
+    it("worked verb examples still emit 讀音 and 辭書形", () => {
+      expect(vocabSection).toContain("讀音：");
+      expect(vocabSection).toContain("辭書形：");
+    });
+
+    it("辭書形 still appears in the prompt", () => {
+      expect(SYSTEM_PROMPT_V1).toContain("辭書形");
+    });
+
+    it("grammar section remains intact", () => {
+      expect(SYSTEM_PROMPT_V1).toContain("### 文法分析");
+      expect(SYSTEM_PROMPT_V1).toContain("#### <文法>〜として（N3）");
     });
   });
 });

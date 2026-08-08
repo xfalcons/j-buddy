@@ -2,6 +2,7 @@ import { marked } from 'marked';
 import authService from '../scripts/authService.js';
 import { getPromptVariant } from '../scripts/promptVariant.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
+import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
 
 // Configure marked.js to preserve ruby tags and add classes
 marked.setOptions({
@@ -226,7 +227,13 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                     },
                     // onDone: finalize with full formatting (checkboxes, structured data)
                     (fullText) => {
-                        localStorage.setItem('lastResponse', fullText);
+                        // Enrich the raw stream with engine-generated verb
+                        // conjugation before any consumer reads it, so the
+                        // rendered panel, the saved item, Copy, Save-As, and the
+                        // cached response all carry the generated table from one
+                        // pass (see KTD2).
+                        const enrichedText = enrichMarkdownWithConjugation(fullText);
+                        localStorage.setItem('lastResponse', enrichedText);
                         // Advance the cache key only after a completed stream so a
                         // stream error/catch does not leave a key pointing at a
                         // stale response.
@@ -236,7 +243,7 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
                         }
-                        const analysisResult = formatAnalysisResult(fullText);
+                        const analysisResult = formatAnalysisResult(enrichedText);
                         saveForLaterJson = analysisResult.json;
                         proseElement.innerHTML = analysisResult.html;
                         resultElement.classList.add('show');
