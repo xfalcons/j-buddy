@@ -26,14 +26,11 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('aria-pressed="true">造句分析</button>');
   });
 
-  test('renders AI choices as a segmented button group instead of a dropdown', () => {
-    expect(html).toContain('class="ai-selection-toggle"');
-    expect(html).toContain('data-ai-preference="gemini"');
-    expect(html).toContain('data-ai-preference="zai"');
-    expect(html).not.toContain('<select id="aiPreference"');
-    expect(html.indexOf('data-ai-preference="zai"')).toBeLessThan(
-      html.indexOf('data-ai-preference="gemini"')
-    );
+  test('does not render an AI provider selector', () => {
+    expect(html).not.toContain('ai-selection-toggle');
+    expect(html).not.toContain('data-ai-preference');
+    expect(html).not.toContain('aiPreference');
+    expect(html).not.toContain('>Zai<');
   });
 
   test('keeps the top controls in one horizontal row', () => {

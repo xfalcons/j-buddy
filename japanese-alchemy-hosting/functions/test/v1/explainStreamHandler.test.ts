@@ -5,8 +5,9 @@ import { SYSTEM_PROMPT_V1 } from "../../src/models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../../src/models/systemPromptV2";
 
 const mockStreamCompletion = jest.fn() as any;
+const mockCreateLlmService = jest.fn((..._args: unknown[]) => ({ streamCompletion: mockStreamCompletion }));
 jest.mock("../../src/services/llmService", () => ({
-  createLlmService: () => ({ streamCompletion: mockStreamCompletion }),
+  createLlmService: (...args: unknown[]) => mockCreateLlmService(...args),
 }));
 
 jest.mock("../../src/v1/rateLimiter");
@@ -37,6 +38,7 @@ function mockReq(body: any, contentLength?: number) {
 describe("explainStreamHandler", () => {
   beforeEach(() => {
     mockStreamCompletion.mockReset();
+    mockCreateLlmService.mockClear();
     // A response body that immediately signals "done" so the handler completes.
     const reader = {
       read: (jest.fn() as any).mockResolvedValue({ done: true, value: undefined }),
@@ -53,6 +55,12 @@ describe("explainStreamHandler", () => {
     await explainStreamHandler(mockReq({ content: "テストです" }), mockRes());
 
     expect(mockStreamCompletion).toHaveBeenCalledWith(SYSTEM_PROMPT_V2, "テストです");
+  });
+
+  it.each([undefined, "gemini", "zai"])("always selects Gemini for ai=%s", async (ai) => {
+    await explainStreamHandler(mockReq({ content: "テストです", ...(ai && { ai }) }), mockRes());
+
+    expect(mockCreateLlmService).toHaveBeenCalledWith("gemini");
   });
 
   it("selects v1 when prompt is v1", async () => {

@@ -104,9 +104,10 @@ export function extractSurroundingContext(selection, opts) {
  * 'lastResponse' changes - notably when the client-side conjugation engine
  * began enriching the stored markdown. An old key written under a prior
  * version no longer matches, so an upgraded client never serves a pre-engine
- * cached response.
+ * cached response. It also prevents provider-specific entries written before
+ * the Gemini-only client flow from being reused.
  */
-const CACHE_VERSION = 'cgv1';
+const CACHE_VERSION = 'cgv2';
 
 /**
  * Build a stable cache key for an analysis so the result cache invalidates when
@@ -123,7 +124,7 @@ const CACHE_VERSION = 'cgv1';
  * @param {{ selectedText?: string, promptVariant?: string, context?: { before?: string, after?: string } }} entry
  * @returns {string}
  */
-export function buildContextCacheKey({ selectedText, context, promptVariant, ai } = {}) {
+export function buildContextCacheKey({ selectedText, context, promptVariant } = {}) {
   const text = selectedText || '';
   const before = (context && context.before) || '';
   const after = (context && context.after) || '';
@@ -135,10 +136,9 @@ export function buildContextCacheKey({ selectedText, context, promptVariant, ai 
   const cachePrefix = variant
     ? CACHE_VERSION + 'p' + variant.length + '|' + variant + SOH
     : CACHE_VERSION;
-  const aiPrefix = ai ? cachePrefix + 'a' + ai.length + '|' + ai + SOH : cachePrefix;
-  if (!before && !after) return aiPrefix + text;
+  if (!before && !after) return cachePrefix + text;
   return (
-    aiPrefix +
+    cachePrefix +
     NUL + text.length + '|' + text +
     SOH + before.length + '|' + before +
     SOH + after.length + '|' + after

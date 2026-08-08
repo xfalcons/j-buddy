@@ -53,11 +53,10 @@ describe('buildRequestBody', () => {
     expect(buildRequestBody('テスト', 'v1')).toEqual({ content: 'テスト', prompt: 'v1' });
   });
 
-  test('includes the selected AI when supplied', () => {
+  test('never serializes a legacy provider argument', () => {
     expect(buildRequestBody('テスト', 'v2', undefined, 'zai')).toEqual({
       content: 'テスト',
       prompt: 'v2',
-      ai: 'zai',
     });
   });
 });

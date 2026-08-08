@@ -34,9 +34,9 @@ describe('buildContextCacheKey', () => {
   test('empty/absent context reduces to the version + bare selectedText', () => {
     // The version prefix (bumped when the conjugation engine shipped) is what
     // distinguishes a post-engine key from a pre-engine cached one.
-    expect(buildContextCacheKey({ selectedText: 'テスト', context: { before: '', after: '' } })).toBe('cgv1テスト');
-    expect(buildContextCacheKey({ selectedText: 'テスト', context: {} })).toBe('cgv1テスト');
-    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe('cgv1テスト');
+    expect(buildContextCacheKey({ selectedText: 'テスト', context: { before: '', after: '' } })).toBe('cgv2テスト');
+    expect(buildContextCacheKey({ selectedText: 'テスト', context: {} })).toBe('cgv2テスト');
+    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe('cgv2テスト');
     // Same selection with vs without context must NOT collide.
     expect(
       buildContextCacheKey({ selectedText: 'テスト', context: { before: '', after: '' } })
@@ -61,12 +61,12 @@ describe('buildContextCacheKey', () => {
       selectedText: '猫',
       context: { before: 'hello', after: 'world' },
     });
-    expect(withCtx.startsWith('cgv1')).toBe(true);
-    expect(withCtx.charCodeAt('cgv1'.length)).toBe(0); // NUL sentinel right after the version prefix
+    expect(withCtx.startsWith('cgv2')).toBe(true);
+    expect(withCtx.charCodeAt('cgv2'.length)).toBe(0); // NUL sentinel right after the version prefix
     // A selectedText that literally resembles the serialized form still reduces
     // to the version + itself (no NUL) and does not equal the context key.
     const lookalike = '猫 5|hello5|world';
-    expect(buildContextCacheKey({ selectedText: lookalike })).toBe('cgv1' + lookalike);
+    expect(buildContextCacheKey({ selectedText: lookalike })).toBe('cgv2' + lookalike);
     expect(buildContextCacheKey({ selectedText: lookalike })).not.toBe(withCtx);
   });
 
@@ -77,14 +77,14 @@ describe('buildContextCacheKey', () => {
     // never serve a stale pre-engine response.
     const noCtxNew = buildContextCacheKey({ selectedText: 'テスト' });
     expect(noCtxNew).not.toBe('テスト');
-    expect(noCtxNew.startsWith('cgv1')).toBe(true);
+    expect(noCtxNew.startsWith('cgv2')).toBe(true);
 
     const withCtxNew = buildContextCacheKey({
       selectedText: '猫',
       context: { before: 'hello', after: 'world' },
     });
     expect(withCtxNew.charCodeAt(0)).not.toBe(0); // old context form began with NUL
-    expect(withCtxNew.startsWith('cgv1')).toBe(true);
+    expect(withCtxNew.startsWith('cgv2')).toBe(true);
   });
 
   test('prompt variant separates cached results for the same selection and context', () => {
@@ -108,6 +108,15 @@ describe('buildContextCacheKey', () => {
     expect(buildContextCacheKey({ selectedText: 'テスト', promptVariant: 'v2' })).not.toBe(
       buildContextCacheKey({ selectedText: 'テスト' })
     );
-    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe('cgv1テスト');
+    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe('cgv2テスト');
+  });
+
+  test('ignores legacy provider values and cannot reuse a cgv1 key', () => {
+    const gemini = buildContextCacheKey({ selectedText: 'テスト', ai: 'gemini' });
+    const zai = buildContextCacheKey({ selectedText: 'テスト', ai: 'zai' });
+
+    expect(gemini).toBe(zai);
+    expect(gemini).toBe('cgv2テスト');
+    expect(gemini).not.toBe('cgv1a3|zai' + String.fromCharCode(1) + 'テスト');
   });
 });

@@ -82,6 +82,12 @@ describe("validateExplainRequest", () => {
     expect(validateExplainRequest({ content: "テスト", prompt: "v1" }).ok).toBe(true);
     expect(validateExplainRequest({ content: "テスト", prompt: "v2" }).ok).toBe(true);
   });
+
+  it("accepts legacy Gemini and ZAI provider values but rejects unknown values", () => {
+    expect(validateExplainRequest({ content: "テスト", ai: "gemini" }).ok).toBe(true);
+    expect(validateExplainRequest({ content: "テスト", ai: "zai" }).ok).toBe(true);
+    expect(validateExplainRequest({ content: "テスト", ai: "other" }).ok).toBe(false);
+  });
 });
 
 describe("isBodyTooLarge", () => {

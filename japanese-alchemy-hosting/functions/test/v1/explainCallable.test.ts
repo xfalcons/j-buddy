@@ -8,8 +8,9 @@ import { SYSTEM_PROMPT_V2 } from "../../src/models/systemPromptV2";
 // Cast as any: jest.fn() infers `never` under this global jest typing, which
 // would reject the mockResolvedValue payload.
 const mockChatCompletion = jest.fn() as any;
+const mockCreateLlmService = jest.fn((..._args: unknown[]) => ({ chatCompletion: mockChatCompletion }));
 jest.mock("../../src/services/llmService", () => ({
-  createLlmService: () => ({ chatCompletion: mockChatCompletion }),
+  createLlmService: (...args: unknown[]) => mockCreateLlmService(...args),
 }));
 
 jest.mock("../../src/v1/rateLimiter");
@@ -17,6 +18,7 @@ jest.mock("../../src/v1/rateLimiter");
 describe("explainHandler", () => {
   beforeEach(() => {
     mockChatCompletion.mockReset();
+    mockCreateLlmService.mockClear();
     mockChatCompletion.mockResolvedValue({
       success: true,
       data: "mocked analysis",
@@ -30,6 +32,12 @@ describe("explainHandler", () => {
     await explainHandler({ data: { content: "テストです" } } as any);
 
     expect(mockChatCompletion).toHaveBeenCalledWith(SYSTEM_PROMPT_V2, "テストです");
+  });
+
+  it.each([undefined, "gemini", "zai"])("always selects Gemini for ai=%s", async (ai) => {
+    await explainHandler({ data: { content: "テストです", ...(ai && { ai }) } } as any);
+
+    expect(mockCreateLlmService).toHaveBeenCalledWith("gemini");
   });
 
   it("selects v1 when prompt is v1", async () => {

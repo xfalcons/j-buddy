@@ -4,7 +4,6 @@ import {
     getPromptVariant,
     setPromptVariant,
 } from '../scripts/promptVariant.js';
-import { getAiPreference, setAiPreference } from '../scripts/aiPreference.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
 
@@ -179,7 +178,6 @@ let currentSelectedText = '';
 let currentContext = { before: '', after: '' };
 let analysisRequestId = 0;
 let activeAnalysisKey = null;
-let currentAiPreference = 'gemini';
 let modeChangeRequestId = 0;
 
 function normalizeContext(context = {}) {
@@ -220,13 +218,11 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     const proseElement = resultElement.querySelector('.prose');
     const loadingElement = document.getElementById('loading');
     const promptVariant = options.promptVariant || await getPromptVariant();
-    const ai = options.ai || currentAiPreference;
     const cacheKey = currentSelectedText
         ? buildContextCacheKey({
             selectedText: currentSelectedText,
             context: currentContext,
             promptVariant,
-            ai,
         })
         : '';
 
@@ -322,13 +318,10 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
                         }
-                        const retry = ai === 'gemini' && /429/.test(errorMessage)
-                          ? '<button type="button" id="retryWithZaiBtn">Retry with ZAI</button>' : '';
-                        alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}<br>${retry}`, 'error');
+                        alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}<br>`, 'error');
                         elements.alertMessage.classList.add('show');
                         setLoadingState(loadingElement, false);
-                    },
-                    ai
+                    }
                 );
             } catch (apiError) {
                 if (!isLatestAnalysis(requestId)) return;
@@ -601,35 +594,6 @@ export async function initializeAnalysisMode(elements) {
     updateAnalysisModeUi(elements, selectedVariant);
 }
 
-export function updateAiPreferenceUi(elements, selectedAi) {
-    elements.aiPreferenceButtons?.forEach((button) => {
-        const isSelected = button.dataset.aiPreference === selectedAi;
-        button.classList.toggle('selected', isSelected);
-        button.setAttribute('aria-pressed', String(isSelected));
-    });
-}
-
-export async function initializeAiPreference(elements) {
-    currentAiPreference = await getAiPreference();
-    updateAiPreferenceUi(elements, currentAiPreference);
-}
-
-export async function handleAiPreferenceChange(elements, ai) {
-    const previousAi = currentAiPreference;
-    currentAiPreference = ai;
-    updateAiPreferenceUi(elements, ai);
-
-    try {
-        await setAiPreference(ai);
-    } catch (error) {
-        currentAiPreference = previousAi;
-        updateAiPreferenceUi(elements, previousAi);
-        console.error('[Sidebar] Failed to change AI preference:', error);
-        alertMessage(elements.alertMessage, `Failed to change AI preference: ${error.message}`, 'error');
-        elements.alertMessage?.classList.add('show');
-    }
-}
-
 export async function handleAnalysisModeChange(elements, variant) {
     const requestId = ++modeChangeRequestId;
     updateAnalysisModeUi(elements, variant);
@@ -682,7 +646,6 @@ async function initElements() {
     shareCheckbox: document.getElementById('shareCheckbox'),
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
     analysisModeButtons: document.querySelectorAll('.analysis-mode-option'),
-    aiPreferenceButtons: document.querySelectorAll('.ai-selection-option'),
     result: document.getElementById('result'),
     // Auth elements
     authSection: document.querySelector('#authSection'),
@@ -698,7 +661,6 @@ async function initElements() {
   // Initialize font size
   await initializeFontSize(elements);
   await initializeAnalysisMode(elements);
-  await initializeAiPreference(elements);
 
   return elements;
 }
@@ -824,16 +786,6 @@ async function setupEventListeners() {
         await handleAnalysisModeChange(elements, button.dataset.promptVariant);
       });
     });
-    elements.aiPreferenceButtons?.forEach((button) => {
-      button.addEventListener('click', async () => {
-        await handleAiPreferenceChange(elements, button.dataset.aiPreference);
-      });
-    });
-    document.addEventListener('click', async event => {
-      if (event.target.id !== 'retryWithZaiBtn') return;
-      await analizingSelectedText(currentSelectedText, currentContext, { force: true, ai: 'zai' });
-    });
-  
     // Font size button
     elements.fontSizeBtn?.addEventListener('click', e => {
       e.stopPropagation();

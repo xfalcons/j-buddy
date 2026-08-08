@@ -239,8 +239,7 @@
       flex: 0 0 auto;
     }
 
-    .analysis-mode-toggle,
-    .ai-selection-toggle {
+    .analysis-mode-toggle {
       display: flex;
       align-items: center;
       border: 1px solid var(--border-color);
@@ -250,8 +249,7 @@
       flex-shrink: 0;
     }
 
-    .analysis-mode-option,
-    .ai-selection-option {
+    .analysis-mode-option {
       min-height: 34px;
       padding: 0 10px;
       border: none;
@@ -265,19 +263,16 @@
       transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
     }
 
-    .analysis-mode-option:last-child,
-    .ai-selection-option:last-child {
+    .analysis-mode-option:last-child {
       border-right: none;
     }
 
-    .analysis-mode-option:hover,
-    .ai-selection-option:hover {
+    .analysis-mode-option:hover {
       background: var(--bg-secondary);
       color: var(--text-primary);
     }
 
-    .analysis-mode-option.selected,
-    .ai-selection-option.selected {
+    .analysis-mode-option.selected {
       background: var(--button-bg);
       color: white;
     }
@@ -723,10 +718,6 @@
         <div class="analysis-mode-toggle" role="group" aria-label="Analysis mode">
           <button class="analysis-mode-option" type="button" data-prompt-variant="v1" title="快速理解目前選取的日文" aria-pressed="false">精簡分析</button>
           <button class="analysis-mode-option selected" type="button" data-prompt-variant="v2" title="重點放在搭配、例句和可重複使用的句型" aria-pressed="true">造句分析</button>
-        </div>
-        <div class="ai-selection-toggle" role="group" aria-label="AI">
-          <button class="ai-selection-option" type="button" data-ai-preference="zai" title="Use Zai" aria-pressed="false">Zai</button>
-          <button class="ai-selection-option selected" type="button" data-ai-preference="gemini" title="Use Gemini" aria-pressed="true">Gemini</button>
         </div>
         <button class="theme-toggle" id="themeToggle" title="Toggle theme">
           <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: block;">

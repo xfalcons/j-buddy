@@ -1,6 +1,5 @@
 import {
   analizingSelectedText,
-  handleAiPreferenceChange,
   handleAnalysisModeChange,
   isValidSelection,
   setSidepanelElementsForTesting,
@@ -32,17 +31,6 @@ function createClassList(initial = []) {
 function createButton(variant, selected = false) {
   return {
     dataset: { promptVariant: variant },
-    classList: createClassList(selected ? ['selected'] : []),
-    attributes: {},
-    setAttribute: jest.fn(function setAttribute(name, value) {
-      this.attributes[name] = value;
-    }),
-  };
-}
-
-function createAiButton(ai, selected = false) {
-  return {
-    dataset: { aiPreference: ai },
     classList: createClassList(selected ? ['selected'] : []),
     attributes: {},
     setAttribute: jest.fn(function setAttribute(name, value) {
@@ -95,7 +83,7 @@ function setupElements() {
 }
 
 function setupStorage(initial = {}) {
-  const store = { aiPreference: 'gemini', ...initial };
+  const store = { ...initial };
   global.chrome.storage.local.get = jest.fn(async (key) => {
     if (Array.isArray(key)) {
       return key.reduce((acc, item) => {
@@ -162,22 +150,6 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(isValidSelection('あ'.repeat(501))).toBe(false);
   });
 
-  test('AI switch persists the selected provider and updates the segmented control', async () => {
-    const geminiButton = createAiButton('gemini', true);
-    const zaiButton = createAiButton('zai');
-    const storage = setupStorage({ aiPreference: 'gemini' });
-
-    const elements = { aiPreferenceButtons: [geminiButton, zaiButton] };
-    await handleAiPreferenceChange(elements, 'zai');
-
-    expect(storage.aiPreference).toBe('zai');
-    expect(geminiButton.classList.contains('selected')).toBe(false);
-    expect(zaiButton.classList.contains('selected')).toBe(true);
-    expect(zaiButton.attributes['aria-pressed']).toBe('true');
-
-    await handleAiPreferenceChange(elements, 'gemini');
-  });
-
   test('mode switch persists v1 and starts re-analysis instead of rendering cached v2', async () => {
     const text = '成長を後押しする';
     const context = { before: '制度が', after: 'という。' };
@@ -185,7 +157,6 @@ describe('sidepanel analysis-mode behavior', () => {
       selectedText: text,
       context,
       promptVariant: 'v2',
-      ai: 'gemini',
     });
     setupLocalStorage({
       lastAnalysisKey: cachedV2Key,
@@ -273,6 +244,22 @@ describe('sidepanel analysis-mode behavior', () => {
     apiCalls[0].onDone('解析');
     apiCalls[0].resolve();
     await request;
+  });
+
+  test('a 429 resets loading and offers no alternate-provider retry', async () => {
+    const apiCalls = setupDeferredApi();
+    const { alertMessage, loading } = setupElements();
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[0].onError('Stream request failed: 429 Too many requests');
+    apiCalls[0].resolve();
+    await request;
+
+    expect(apiCalls).toHaveLength(1);
+    expect(loading.classList.contains('show')).toBe(false);
+    expect(alertMessage.innerHTML).not.toContain('Retry with ZAI');
+    expect(alertMessage.innerHTML).not.toContain('retryWithZaiBtn');
   });
 
   test('rapid mode clicks keep the last requested mode when storage reads finish out of order', async () => {

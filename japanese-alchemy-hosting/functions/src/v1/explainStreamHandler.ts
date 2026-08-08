@@ -51,9 +51,9 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
     return;
   }
 
-  const { content, prompt = "v2", context_before, context_after, ai = "gemini" } = req.body || {};
+  const { content, prompt = "v2", context_before, context_after } = req.body || {};
 
-  logger.info(`Streaming explain request with prompt version: ${prompt}, AI: ${ai}`);
+  logger.info(`Streaming explain request with prompt version: ${prompt}`);
   logger.info(`Content: ${content.substring(0, 100)}...`);
   if (context_before || context_after) {
     logger.info(
@@ -75,7 +75,7 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
 
   try {
     const systemPrompt = prompt === "v2" ? SYSTEM_PROMPT_V2 : SYSTEM_PROMPT_V1;
-    const llmService = createLlmService(ai);
+    const llmService = createLlmService("gemini");
 
     const t0 = Date.now();
     logger.info("LLM API request initiated");

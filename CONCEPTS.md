@@ -19,9 +19,6 @@ Analysis markdown after a deterministic client-side preprocessing pass has added
 ### Prompt variant
 A selectable prompt contract for analysis generation. Variants may ask for different explanation depth, but they should preserve the fields downstream parsers and enrichment passes depend on.
 
-### AI preference
-A user-selected default AI for an analysis request, independent of the prompt variant. The current supported choices are Gemini and ZAI; a one-time rate-limit retry does not change this saved preference.
-
 ### Analysis mode
 A learner-facing label for a prompt variant in the Chrome extension sidebar. Analysis modes describe the learning purpose, such as quick comprehension or sentence production, instead of exposing raw prompt version names.
 
