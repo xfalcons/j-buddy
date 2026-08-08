@@ -69,7 +69,7 @@ class JaAlchemyApiService {
    * @param {function} onDone - Callback invoked with the full accumulated text when stream completes
    * @param {function} onError - Callback invoked with an error message on failure
    */
-  async generateResponseStream(selectedText, promptVersion, context, ai, onChunk, onDone, onError) {
+  async generateResponseStream(selectedText, promptVersion, context, onChunk, onDone, onError, ai) {
     let fullText = '';
     try {
       console.log('[Firebase API] Calling explainStream with:', {

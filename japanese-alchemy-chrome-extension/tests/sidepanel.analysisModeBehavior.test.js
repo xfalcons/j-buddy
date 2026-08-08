@@ -83,7 +83,7 @@ function setupElements() {
 }
 
 function setupStorage(initial = {}) {
-  const store = { ...initial };
+  const store = { aiPreference: 'gemini', ...initial };
   global.chrome.storage.local.get = jest.fn(async (key) => {
     if (Array.isArray(key)) {
       return key.reduce((acc, item) => {
@@ -157,6 +157,7 @@ describe('sidepanel analysis-mode behavior', () => {
       selectedText: text,
       context,
       promptVariant: 'v2',
+      ai: 'gemini',
     });
     setupLocalStorage({
       lastAnalysisKey: cachedV2Key,
@@ -206,7 +207,7 @@ describe('sidepanel analysis-mode behavior', () => {
       force: true,
       promptVariant: 'v2',
     });
-    await Promise.resolve();
+    await flushMicrotasks();
     apiCalls[0].onChunk('', '# old preview');
 
     const newRequest = analizingSelectedText(text, context, {

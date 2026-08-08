@@ -179,6 +179,7 @@ let currentSelectedText = '';
 let currentContext = { before: '', after: '' };
 let analysisRequestId = 0;
 let activeAnalysisKey = null;
+let currentAiPreference = 'gemini';
 let modeChangeRequestId = 0;
 
 function normalizeContext(context = {}) {
@@ -219,7 +220,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     const proseElement = resultElement.querySelector('.prose');
     const loadingElement = document.getElementById('loading');
     const promptVariant = options.promptVariant || await getPromptVariant();
-    const ai = options.ai || await getAiPreference();
+    const ai = options.ai || currentAiPreference;
     const cacheKey = currentSelectedText
         ? buildContextCacheKey({
             selectedText: currentSelectedText,
@@ -278,7 +279,6 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                     currentSelectedText,
                     promptVariant,
                     currentContext,
-                    ai,
                     // onChunk: progressively render each chunk
                     (chunk, fullText) => {
                         if (!isLatestAnalysis(requestId)) return;
@@ -327,7 +327,8 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}<br>${retry}`, 'error');
                         elements.alertMessage.classList.add('show');
                         setLoadingState(loadingElement, false);
-                    }
+                    },
+                    ai
                 );
             } catch (apiError) {
                 if (!isLatestAnalysis(requestId)) return;
@@ -794,9 +795,13 @@ async function setupEventListeners() {
       });
     });
     const ai = await getAiPreference();
+    currentAiPreference = ai;
     if (elements.aiPreference) {
       elements.aiPreference.value = ai;
-      elements.aiPreference.addEventListener('change', event => setAiPreference(event.target.value));
+      elements.aiPreference.addEventListener('change', async event => {
+        currentAiPreference = event.target.value;
+        await setAiPreference(currentAiPreference);
+      });
     }
     document.addEventListener('click', async event => {
       if (event.target.id !== 'retryWithZaiBtn') return;
