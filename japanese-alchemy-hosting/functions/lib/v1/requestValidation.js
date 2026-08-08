@@ -50,6 +50,10 @@ function validateExplainRequest(body) {
     if (prompt !== undefined && prompt !== "v1" && prompt !== "v2") {
         return { ok: false, status: 400, error: "Prompt must be 'v1' or 'v2'" };
     }
+    const ai = body?.ai;
+    if (ai !== undefined && ai !== "gemini" && ai !== "zai") {
+        return { ok: false, status: 400, error: "AI must be 'gemini' or 'zai'" };
+    }
     return { ok: true, status: 200 };
 }
 exports.validateExplainRequest = validateExplainRequest;

@@ -12,8 +12,9 @@
  * @param {{ before?: string, after?: string }} [context]
  * @returns {{ content: string, prompt: string, context_before?: string, context_after?: string }}
  */
-export function buildRequestBody(content, promptVersion, context) {
+export function buildRequestBody(content, promptVersion, context, ai) {
   const body = { content, prompt: promptVersion || 'v2' };
+  if (ai) body.ai = ai;
   const before = context && context.before;
   const after = context && context.after;
   if (before) body.context_before = before;

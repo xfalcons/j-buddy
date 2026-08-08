@@ -22,8 +22,8 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
     );
   }
 
-  // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
-  const { content, prompt = "v2", context_before, context_after } = data;
+  // Defaults match the Chrome extension and streaming handler.
+  const { content, prompt = "v2", context_before, context_after, ai = "gemini" } = data;
 
   // Per-IP rate limit (parity with explainStream). The callable's client IP is
   // on the underlying Express request.
@@ -38,13 +38,13 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
     );
   }
 
-  logger.info(`Received explain request with prompt version: ${prompt}`);
+  logger.info(`Received explain request with prompt version: ${prompt}, AI: ${ai}`);
   logger.info(`Content: ${content.substring(0, 100)}...`);
 
   const systemPrompt = prompt === "v2" ? SYSTEM_PROMPT_V2 : SYSTEM_PROMPT_V1;
 
   try {
-    const llmService = createLlmService();
+    const llmService = createLlmService(ai);
     const result: SuccessResponse = await llmService.chatCompletion(
       systemPrompt,
       buildAnalysisMessage(content, { before: context_before, after: context_after })

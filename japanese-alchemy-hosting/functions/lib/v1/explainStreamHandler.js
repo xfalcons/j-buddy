@@ -46,8 +46,8 @@ async function explainStreamHandler(req, res) {
             .json({ error: isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests" });
         return;
     }
-    const { content, prompt = "v2", context_before, context_after } = req.body || {};
-    logger_1.logger.info(`Streaming explain request with prompt version: ${prompt}`);
+    const { content, prompt = "v2", context_before, context_after, ai = "gemini" } = req.body || {};
+    logger_1.logger.info(`Streaming explain request with prompt version: ${prompt}, AI: ${ai}`);
     logger_1.logger.info(`Content: ${content.substring(0, 100)}...`);
     if (context_before || context_after) {
         logger_1.logger.info(`Surrounding context present (before=${context_before ? context_before.length : 0} chars, after=${context_after ? context_after.length : 0} chars)`);
@@ -64,7 +64,7 @@ async function explainStreamHandler(req, res) {
     };
     try {
         const systemPrompt = prompt === "v2" ? systemPromptV2_1.SYSTEM_PROMPT_V2 : systemPromptV1_1.SYSTEM_PROMPT_V1;
-        const llmService = (0, llmService_1.createLlmService)();
+        const llmService = (0, llmService_1.createLlmService)(ai);
         const t0 = Date.now();
         logger_1.logger.info("LLM API request initiated");
         const llmResponse = await llmService.streamCompletion(systemPrompt, (0, analysisMessage_1.buildAnalysisMessage)(content, { before: context_before, after: context_after }));

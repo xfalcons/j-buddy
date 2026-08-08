@@ -52,4 +52,12 @@ describe('buildRequestBody', () => {
   test('preserves v1 when explicitly passed', () => {
     expect(buildRequestBody('テスト', 'v1')).toEqual({ content: 'テスト', prompt: 'v1' });
   });
+
+  test('includes the selected AI when supplied', () => {
+    expect(buildRequestBody('テスト', 'v2', undefined, 'zai')).toEqual({
+      content: 'テスト',
+      prompt: 'v2',
+      ai: 'zai',
+    });
+  });
 });

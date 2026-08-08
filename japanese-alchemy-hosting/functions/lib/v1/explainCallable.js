@@ -41,8 +41,8 @@ async function explainHandler(request) {
         logger_1.logger.error(`Invalid request: ${validation.error}`);
         throw new functions.https.HttpsError("invalid-argument", validation.error ?? "Invalid request");
     }
-    // Default to "v2" to match the Chrome extension and the streaming handler (KTD1).
-    const { content, prompt = "v2", context_before, context_after } = data;
+    // Defaults match the Chrome extension and streaming handler.
+    const { content, prompt = "v2", context_before, context_after, ai = "gemini" } = data;
     // Per-IP rate limit (parity with explainStream). The callable's client IP is
     // on the underlying Express request.
     const rateLimit = await (0, rateLimiter_1.checkRateLimit)(request.rawRequest?.ip);
@@ -52,11 +52,11 @@ async function explainHandler(request) {
         logger_1.logger.warn(`Request denied: ${rateLimit.reason ?? "rate-limited"}`);
         throw new functions.https.HttpsError(code, isLimiterError ? "Rate limiter temporarily unavailable" : "Too many requests");
     }
-    logger_1.logger.info(`Received explain request with prompt version: ${prompt}`);
+    logger_1.logger.info(`Received explain request with prompt version: ${prompt}, AI: ${ai}`);
     logger_1.logger.info(`Content: ${content.substring(0, 100)}...`);
     const systemPrompt = prompt === "v2" ? systemPromptV2_1.SYSTEM_PROMPT_V2 : systemPromptV1_1.SYSTEM_PROMPT_V1;
     try {
-        const llmService = (0, llmService_1.createLlmService)();
+        const llmService = (0, llmService_1.createLlmService)(ai);
         const result = await llmService.chatCompletion(systemPrompt, (0, analysisMessage_1.buildAnalysisMessage)(content, { before: context_before, after: context_after }));
         logger_1.logger.info("Explain request completed successfully");
         return result;

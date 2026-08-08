@@ -61,6 +61,11 @@ export function validateExplainRequest(body: unknown): ValidationResult {
     return { ok: false, status: 400, error: "Prompt must be 'v1' or 'v2'" };
   }
 
+  const ai = (body as any)?.ai;
+  if (ai !== undefined && ai !== "gemini" && ai !== "zai") {
+    return { ok: false, status: 400, error: "AI must be 'gemini' or 'zai'" };
+  }
+
   return { ok: true, status: 200 };
 }
 

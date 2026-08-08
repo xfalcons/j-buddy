@@ -27,11 +27,14 @@ export interface GrammarItem {
 }
 
 // API request types
+export type AiProvider = "gemini" | "zai";
+
 export interface ExplainRequest {
   content: string;
   prompt?: "v1" | "v2";
   context_before?: string;
   context_after?: string;
+  ai?: AiProvider;
 }
 
 export interface SaveItemsRequest {

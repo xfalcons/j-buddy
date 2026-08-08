@@ -1,6 +1,7 @@
 import { marked } from 'marked';
 import authService from '../scripts/authService.js';
 import { getPromptVariant } from '../scripts/promptVariant.js';
+import { getAiPreference, setAiPreference } from '../scripts/aiPreference.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
 
@@ -189,7 +190,8 @@ async function analizingSelectedText(selectedText, context = { before: '', after
     try {
         // Cache hit when both the selected text and its surrounding context match
         // the last analysis. A context change for the same selection is a miss.
-        const cacheKey = buildContextCacheKey({ selectedText, context });
+        const ai = await getAiPreference();
+        const cacheKey = `${ai}:${buildContextCacheKey({ selectedText, context })}`;
         const storedKey = localStorage.getItem('lastAnalysisKey');
         if (cacheKey === storedKey) {
             console.log('Selected text + context same as last time');
@@ -216,6 +218,7 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                     selectedText,
                     promptVariant,
                     context,
+                    ai,
                     // onChunk: progressively render each chunk
                     (chunk, fullText) => {
                         if (!firstChunkReceived) {
@@ -256,7 +259,9 @@ async function analizingSelectedText(selectedText, context = { before: '', after
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
                         }
-                        alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}<br>`, 'error');
+                        const retry = ai === 'gemini' && /429/.test(errorMessage)
+                          ? '<button type="button" id="retryWithZaiBtn">Retry with ZAI</button>' : '';
+                        alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}<br>${retry}`, 'error');
                         elements.alertMessage.classList.add('show');
                         setLoadingState(loadingElement, false);
                     }
@@ -539,6 +544,7 @@ async function initElements() {
     userPhoto: document.querySelector('#userPhoto'),
     userDisplayName: document.querySelector('#userDisplayName'),
     userEmail: document.querySelector('#userEmail')
+    ,aiPreference: document.querySelector('#aiPreference')
   };
 
   // Initialize font size
@@ -662,6 +668,18 @@ async function setupEventListeners() {
 
     // Theme toggle
     elements.themeToggle?.addEventListener('click', () => handleThemeToggle(elements));
+    const ai = await getAiPreference();
+    if (elements.aiPreference) {
+      elements.aiPreference.value = ai;
+      elements.aiPreference.addEventListener('change', event => setAiPreference(event.target.value));
+    }
+    document.addEventListener('click', async event => {
+      if (event.target.id !== 'retryWithZaiBtn') return;
+      const original = await getAiPreference();
+      await setAiPreference('zai');
+      await loadSelectedText();
+      await setAiPreference(original);
+    });
   
     // Font size button
     elements.fontSizeBtn?.addEventListener('click', e => {

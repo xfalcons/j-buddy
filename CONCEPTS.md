@@ -19,5 +19,8 @@ Analysis markdown after a deterministic client-side preprocessing pass has added
 ### Prompt variant
 A selectable prompt contract for analysis generation. Variants may ask for different explanation depth, but they should preserve the fields downstream parsers and enrichment passes depend on.
 
+### AI preference
+A user-selected default AI for an analysis request, independent of the prompt variant. The current supported choices are Gemini and ZAI; a one-time rate-limit retry does not change this saved preference.
+
 ### High-value vocabulary item
 A vocabulary item selected for analysis because it materially helps comprehension or later sentence production in the current source text. High-value items may include verbs, サ變 nouns, adjectives, adverbs, compound nouns, and katakana loanwords, and are preferred over exhaustive N1-N3 extraction.
