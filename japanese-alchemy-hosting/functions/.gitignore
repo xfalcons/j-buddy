@@ -1,0 +1,22 @@
+# TypeScript build output
+lib/
+*.tsbuildinfo
+
+# Dependencies and test output
+node_modules/
+coverage/
+.nyc_output/
+
+# Local Firebase state and runtime configuration
+.firebase/
+.runtimeconfig.json
+firebase-debug*.log
+
+# Local secrets and environment configuration
+.env
+.env.*
+secrets.*
+serviceAccountKey.json
+
+# Tool caches
+.eslintcache

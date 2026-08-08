@@ -133,6 +133,15 @@ function setLoadingState(loadingElement, show) {
     }
 }
 
+function setLoadingMessage(loadingElement, message) {
+    const messageElement = loadingElement.querySelector
+        ? loadingElement.querySelector('.loading-message')
+        : null;
+    if (messageElement) {
+        messageElement.textContent = message;
+    }
+}
+
 // Retrieve and display selected text
 async function loadSelectedText() {
   const { selectedText, contextBefore = '', contextAfter = '' } =
@@ -249,6 +258,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             setLoadingState(loadingElement, false);
         } else if (isValidSelection(currentSelectedText)) {
             // Show loading state
+            setLoadingMessage(loadingElement, 'AIによる分析中です。しばらくお待ちください...');
             setLoadingState(loadingElement, true);
             proseElement.innerHTML = '';
             resultElement.classList.remove('show');
@@ -270,7 +280,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         if (!isLatestAnalysis(requestId)) return;
                         if (!firstChunkReceived) {
                             firstChunkReceived = true;
-                            setLoadingState(loadingElement, false);
+                            setLoadingMessage(loadingElement, '解析結果を受信しました。レイアウトを整えています...');
                             resultElement.classList.add('show');
                         }
                         renderStreamingPreview(proseElement, fullText, requestId);

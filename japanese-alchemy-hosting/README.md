@@ -22,7 +22,7 @@ japanese-alchemy-hosting/
 │   │   ├── utils/          # Utilities
 │   │   └── v1/           # Callable functions
 │   ├── test/               # Unit tests
-│   ├── lib/                # Compiled output
+│   ├── lib/                # Generated TypeScript output (gitignored)
 │   ├── package.json
 │   └── tsconfig.json
 ├── CHROME_EXTENSION_UPDATE.md    # Chrome extension integration guide
@@ -82,7 +82,7 @@ cd ..
 # Start emulators
 firebase emulators:start
 
-# Deploy functions
+# Deploy functions (automatically runs `npm run build` first)
 firebase deploy --only functions
 
 # Deploy hosting
@@ -190,6 +190,10 @@ npm run test:coverage
 ## Deployment
 
 ### Production Deployment
+
+Functions are compiled automatically by Firebase's `predeploy` hook. Run
+`npm --prefix functions run build` directly when you need to validate a
+production build before deployment.
 
 ```bash
 # Deploy all Firebase resources

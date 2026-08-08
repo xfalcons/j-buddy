@@ -41,11 +41,15 @@ function createButton(variant, selected = false) {
 
 function setupElements() {
   const prose = { innerHTML: 'stale result' };
+  const loadingMessage = { textContent: 'AIによる分析中です。しばらくお待ちください...' };
   const result = {
     classList: createClassList(['show']),
     querySelector: jest.fn(() => prose),
   };
-  const loading = { classList: createClassList() };
+  const loading = {
+    classList: createClassList(),
+    querySelector: jest.fn((selector) => (selector === '.loading-message' ? loadingMessage : null)),
+  };
   const alertMessage = {
     innerHTML: '',
     classList: createClassList(),
@@ -66,7 +70,16 @@ function setupElements() {
   });
 
   setSidepanelElementsForTesting(elements);
-  return { alertMessage, compactButton, elements, loading, prose, result, usageButton };
+  return {
+    alertMessage,
+    compactButton,
+    elements,
+    loading,
+    loadingMessage,
+    prose,
+    result,
+    usageButton,
+  };
 }
 
 function setupStorage(initial = {}) {
@@ -214,6 +227,23 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(prose.innerHTML).not.toContain('old preview');
     expect(prose.innerHTML).not.toContain('stale v2 response');
     expect(global.localStorage.getItem('lastResponse')).toContain('latest v1 response');
+  });
+
+  test('updates the loading message after receiving the first response chunk', async () => {
+    const text = '成長を後押しする';
+    const apiCalls = setupDeferredApi();
+    const { loading, loadingMessage } = setupElements();
+
+    const request = analizingSelectedText(text, {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[0].onChunk('解析', '解析');
+
+    expect(loadingMessage.textContent).toBe('解析結果を受信しました。レイアウトを整えています...');
+    expect(loading.classList.contains('show')).toBe(true);
+
+    apiCalls[0].onDone('解析');
+    apiCalls[0].resolve();
+    await request;
   });
 
   test('rapid mode clicks keep the last requested mode when storage reads finish out of order', async () => {
