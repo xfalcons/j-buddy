@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "7ba17d236ce1951e4fa8ea11be8def4006896fbe",
-    "indexed_at": "2026-08-08T14:20:11Z",
+    "commit": "64ab77987f44d64b90bb349615324ca4fd49b980",
+    "indexed_at": "2026-08-08T14:45:43Z",
     "project": "Users-xfalcons-dev-xfalcons-j-buddy",
-    "nodes": 2218,
-    "edges": 4034,
-    "original_size": 7536640,
-    "compressed_size": 1131058,
+    "nodes": 2294,
+    "edges": 4096,
+    "original_size": 7602176,
+    "compressed_size": 1152065,
     "compression_level": 3
 }
