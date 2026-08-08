@@ -11,7 +11,5 @@
       "Bash(git checkout *)"
     ]
   },
-  "enabledPlugins": {
-    "aidd@aidd-plugin": true
-  }
+  "enabledPlugins": {}
 }
