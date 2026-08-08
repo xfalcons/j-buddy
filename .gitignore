@@ -40,3 +40,6 @@ release-package/
 
 # Secret files
 **/*/secrets.*
+
+# Codebase Memory
+.codebase-memory/
