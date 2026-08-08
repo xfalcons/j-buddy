@@ -1,5 +1,6 @@
 import {
   analizingSelectedText,
+  handleAiPreferenceChange,
   handleAnalysisModeChange,
   isValidSelection,
   setSidepanelElementsForTesting,
@@ -31,6 +32,17 @@ function createClassList(initial = []) {
 function createButton(variant, selected = false) {
   return {
     dataset: { promptVariant: variant },
+    classList: createClassList(selected ? ['selected'] : []),
+    attributes: {},
+    setAttribute: jest.fn(function setAttribute(name, value) {
+      this.attributes[name] = value;
+    }),
+  };
+}
+
+function createAiButton(ai, selected = false) {
+  return {
+    dataset: { aiPreference: ai },
     classList: createClassList(selected ? ['selected'] : []),
     attributes: {},
     setAttribute: jest.fn(function setAttribute(name, value) {
@@ -148,6 +160,22 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(isValidSelection('あい')).toBe(true);
     expect(isValidSelection('あ'.repeat(500))).toBe(true);
     expect(isValidSelection('あ'.repeat(501))).toBe(false);
+  });
+
+  test('AI switch persists the selected provider and updates the segmented control', async () => {
+    const geminiButton = createAiButton('gemini', true);
+    const zaiButton = createAiButton('zai');
+    const storage = setupStorage({ aiPreference: 'gemini' });
+
+    const elements = { aiPreferenceButtons: [geminiButton, zaiButton] };
+    await handleAiPreferenceChange(elements, 'zai');
+
+    expect(storage.aiPreference).toBe('zai');
+    expect(geminiButton.classList.contains('selected')).toBe(false);
+    expect(zaiButton.classList.contains('selected')).toBe(true);
+    expect(zaiButton.attributes['aria-pressed']).toBe('true');
+
+    await handleAiPreferenceChange(elements, 'gemini');
   });
 
   test('mode switch persists v1 and starts re-analysis instead of rendering cached v2', async () => {

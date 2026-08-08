@@ -601,6 +601,35 @@ export async function initializeAnalysisMode(elements) {
     updateAnalysisModeUi(elements, selectedVariant);
 }
 
+export function updateAiPreferenceUi(elements, selectedAi) {
+    elements.aiPreferenceButtons?.forEach((button) => {
+        const isSelected = button.dataset.aiPreference === selectedAi;
+        button.classList.toggle('selected', isSelected);
+        button.setAttribute('aria-pressed', String(isSelected));
+    });
+}
+
+export async function initializeAiPreference(elements) {
+    currentAiPreference = await getAiPreference();
+    updateAiPreferenceUi(elements, currentAiPreference);
+}
+
+export async function handleAiPreferenceChange(elements, ai) {
+    const previousAi = currentAiPreference;
+    currentAiPreference = ai;
+    updateAiPreferenceUi(elements, ai);
+
+    try {
+        await setAiPreference(ai);
+    } catch (error) {
+        currentAiPreference = previousAi;
+        updateAiPreferenceUi(elements, previousAi);
+        console.error('[Sidebar] Failed to change AI preference:', error);
+        alertMessage(elements.alertMessage, `Failed to change AI preference: ${error.message}`, 'error');
+        elements.alertMessage?.classList.add('show');
+    }
+}
+
 export async function handleAnalysisModeChange(elements, variant) {
     const requestId = ++modeChangeRequestId;
     updateAnalysisModeUi(elements, variant);
@@ -653,7 +682,7 @@ async function initElements() {
     shareCheckbox: document.getElementById('shareCheckbox'),
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
     analysisModeButtons: document.querySelectorAll('.analysis-mode-option'),
-    aiPreference: document.querySelector('#aiPreference'),
+    aiPreferenceButtons: document.querySelectorAll('.ai-selection-option'),
     result: document.getElementById('result'),
     // Auth elements
     authSection: document.querySelector('#authSection'),
@@ -669,6 +698,7 @@ async function initElements() {
   // Initialize font size
   await initializeFontSize(elements);
   await initializeAnalysisMode(elements);
+  await initializeAiPreference(elements);
 
   return elements;
 }
@@ -794,15 +824,11 @@ async function setupEventListeners() {
         await handleAnalysisModeChange(elements, button.dataset.promptVariant);
       });
     });
-    const ai = await getAiPreference();
-    currentAiPreference = ai;
-    if (elements.aiPreference) {
-      elements.aiPreference.value = ai;
-      elements.aiPreference.addEventListener('change', async event => {
-        currentAiPreference = event.target.value;
-        await setAiPreference(currentAiPreference);
+    elements.aiPreferenceButtons?.forEach((button) => {
+      button.addEventListener('click', async () => {
+        await handleAiPreferenceChange(elements, button.dataset.aiPreference);
       });
-    }
+    });
     document.addEventListener('click', async event => {
       if (event.target.id !== 'retryWithZaiBtn') return;
       await analizingSelectedText(currentSelectedText, currentContext, { force: true, ai: 'zai' });
