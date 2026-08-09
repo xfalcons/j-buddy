@@ -44,8 +44,8 @@ function responseError(response, body) {
   const isUnsupportedStream = status >= 400 && status < 500 && UNSUPPORTED_STREAMING.test(detail);
   return new DirectLlmApiError(
     isUnsupportedStream
-      ? 'This provider does not support streaming responses.'
-      : `Your personal provider could not complete this request${status ? ` (HTTP ${status})` : ''}. Check its settings and try again.`,
+      ? '此提供者不支援串流回應。'
+      : `個人提供者無法完成此要求${status ? `（HTTP ${status}）` : ''}。請檢查設定後再試一次。`,
     isUnsupportedStream ? 'streaming_unsupported' : 'personal_provider_http_error',
     status
   );
@@ -72,7 +72,7 @@ function completeResponseContent(payload) {
   const content = payload?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !hasTerminalFinishReason(payload)) {
     throw new DirectLlmApiError(
-      'Your personal provider returned an unsupported response format.',
+      '個人提供者回傳了不支援的回應格式。',
       'personal_provider_invalid_response'
     );
   }
@@ -92,7 +92,7 @@ function parseSsePayload(data) {
     return JSON.parse(data);
   } catch {
     throw new DirectLlmApiError(
-      'Your personal provider returned an unsupported streaming response.',
+      '個人提供者回傳了不支援的串流回應。',
       'personal_provider_invalid_response'
     );
   }
@@ -101,7 +101,7 @@ function parseSsePayload(data) {
 async function consumeOpenAiSse(response, onChunk, signal) {
   if (!response.body?.getReader) {
     throw new DirectLlmApiError(
-      'Your personal provider did not return a readable streaming response.',
+      '個人提供者未回傳可讀取的串流回應。',
       'personal_provider_invalid_response'
     );
   }
@@ -128,7 +128,7 @@ async function consumeOpenAiSse(response, onChunk, signal) {
     const payload = parseSsePayload(data);
     if (payload?.error) {
       throw new DirectLlmApiError(
-        'Your personal provider returned an error while streaming the analysis.',
+        '個人提供者在串流分析時回傳錯誤。',
         'personal_provider_stream_error'
       );
     }
@@ -163,7 +163,7 @@ async function consumeOpenAiSse(response, onChunk, signal) {
     if (!terminal && buffer) consumeFrame(buffer);
     if (!terminal) {
       throw new DirectLlmApiError(
-        'Your personal provider ended the stream before completing the analysis.',
+        '個人提供者在完成分析前中斷了串流。',
         'personal_provider_incomplete_stream'
       );
     }
@@ -186,7 +186,7 @@ function responseIsJson(response) {
 export class DirectLlmApiService {
   constructor(fetchImpl = globalThis.fetch) {
     if (typeof fetchImpl !== 'function') {
-      throw new DirectLlmApiError('Network requests are unavailable in this extension context.', 'fetch_unavailable');
+      throw new DirectLlmApiError('此擴充功能環境無法使用網路請求。', 'fetch_unavailable');
     }
     // Window.fetch is receiver-sensitive in Chromium. Keep the injected
     // transport testable while always invoking it with the extension global.
@@ -214,7 +214,7 @@ export class DirectLlmApiService {
     } catch (error) {
       if (isAbortError(error, signal)) throw error;
       throw new DirectLlmApiError(
-        'Could not reach your personal provider. Check the URL, permission, and network connection.',
+        '無法連線至個人提供者。請檢查網址、權限與網路連線。',
         'personal_provider_network_error'
       );
     }
@@ -257,7 +257,7 @@ export class DirectLlmApiService {
       if (isAbortError(error, signal)) return null;
       const message = error instanceof DirectLlmApiError
         ? error.message
-        : 'Your personal provider could not complete this request. Check its settings and try again.';
+        : '個人提供者無法完成此要求。請檢查設定後再試一次。';
       onError(message);
       return null;
     }

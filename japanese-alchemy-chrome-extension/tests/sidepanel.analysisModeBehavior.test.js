@@ -238,7 +238,7 @@ describe('sidepanel analysis-mode behavior', () => {
     await flushMicrotasks();
     apiCalls[0].onChunk('解析', '解析');
 
-    expect(loadingMessage.textContent).toBe('解析結果を受信しました。レイアウトを整えています...');
+    expect(loadingMessage.textContent).toBe('已收到分析結果，正在整理版面…');
     expect(loading.classList.contains('show')).toBe(true);
 
     apiCalls[0].onDone('解析');
@@ -361,7 +361,7 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(global.fetch).not.toHaveBeenCalled();
     expect(prose.innerHTML).toBe('');
     expect(result.classList.contains('show')).toBe(false);
-    expect(alertMessage.textContent).toContain('Allow access to this provider');
+    expect(alertMessage.textContent).toContain('請先允許存取此提供者');
   });
 
   test('a personal-provider failure stays personal and never caches a partial result', async () => {
@@ -387,7 +387,7 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(storage.analysisProviderMode).toBe('personal');
     expect(global.localStorage.getItem('lastAnalysisKey')).toBeNull();
     expect(global.localStorage.getItem('lastResponse')).toBeNull();
-    expect(alertMessage.textContent).toContain('personal provider');
+    expect(alertMessage.textContent).toContain('個人提供者');
     expect(alertMessage.textContent).not.toContain('<b>');
     expect(prose.innerHTML).toBe('');
   });

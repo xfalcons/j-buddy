@@ -22,5 +22,11 @@ A selectable prompt contract for analysis generation. Variants may ask for diffe
 ### Analysis mode
 A learner-facing label for a prompt variant in the Chrome extension sidebar. Analysis modes describe the learning purpose, such as quick comprehension or sentence production, instead of exposing raw prompt version names.
 
+### Managed provider
+The J-Buddy-operated analysis route, selected when a learner uses the service's shared provider configuration rather than their own provider profile.
+
+### Personal provider
+A learner's own configured LLM provider profile, selected to analyze text directly from the extension instead of using the managed provider.
+
 ### High-value vocabulary item
 A vocabulary item selected for analysis because it materially helps comprehension or later sentence production in the current source text. High-value items may include verbs, サ變 nouns, adjectives, adverbs, compound nouns, and katakana loanwords, and are preferred over exhaustive N1-N3 extraction.

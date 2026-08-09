@@ -28,8 +28,8 @@ describe('sidepanel analysis-mode markup', () => {
 
   test('renders separate provider settings without repurposing prompt variants', () => {
     expect(html).toContain('id="personalProviderSettings"');
-    expect(html).toContain('<span>Analysis provider</span>');
-    expect(html).toContain('id="personalProviderSummary" class="provider-summary">Managed</span>');
+    expect(html).toContain('<span>分析提供者</span>');
+    expect(html).toContain('id="personalProviderSummary" class="provider-summary">代管</span>');
     expect(html).toContain('class="provider-mode-toggle"');
     expect(html).toContain('data-provider-mode="managed"');
     expect(html).toContain('data-provider-mode="personal"');
@@ -37,8 +37,10 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('id="personalProviderApiKey"');
     expect(html).toContain('id="personalProviderModel"');
     expect(html).toContain('<form id="personalProviderForm" novalidate hidden>');
-    expect(html).toContain('Save and use personal');
-    expect(html).toContain('Clear personal settings');
+    expect(html).toContain('儲存並使用個人提供者');
+    expect(html).toContain('清除個人設定');
+    expect(html).toContain('登入即可私密儲存項目；不登入也可儲存至共享收藏。');
+    expect(html).toContain('API 金鑰 — 金鑰僅儲存在本機並於本機使用，不會經過代理或伺服器。');
     expect(html).not.toContain('data-ai-preference');
     expect(html).not.toContain('aiPreference');
   });

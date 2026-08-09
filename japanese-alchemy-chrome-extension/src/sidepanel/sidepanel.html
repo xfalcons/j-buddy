@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Japanese Language Analysis</title>
+  <title>日文分析</title>
   <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
@@ -798,7 +798,7 @@
     <!-- Auth Section -->
     <div id="authSection" class="auth-section">
       <div id="authSignedOut" class="auth-signed-out">
-        <p class="auth-message">Sign in to save items privately, or save as shared collection without signing in</p>
+        <p class="auth-message">登入即可私密儲存項目；不登入也可儲存至共享收藏。</p>
         <button class="auth-button" id="signInBtn">
           <svg class="google-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -806,49 +806,49 @@
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
           </svg>
-          <span>Sign in with Google</span>
+          <span>使用 Google 登入</span>
         </button>
       </div>
       <div id="authSignedIn" class="auth-signed-in" style="display: none;">
         <div class="user-info">
-          <img id="userPhoto" class="user-photo" src="" alt="User photo">
+          <img id="userPhoto" class="user-photo" src="" alt="使用者頭像">
           <div class="user-details">
             <div id="userDisplayName" class="user-name"></div>
             <div id="userEmail" class="user-email"></div>
           </div>
         </div>
-        <button class="sign-out-button" id="signOutBtn">Sign Out</button>
+        <button class="sign-out-button" id="signOutBtn">登出</button>
       </div>
     </div>
 
     <details class="provider-settings" id="personalProviderSettings">
       <summary>
-        <span>Analysis provider</span>
-        <span id="personalProviderSummary" class="provider-summary">Managed</span>
+        <span>分析提供者</span>
+        <span id="personalProviderSummary" class="provider-summary">代管</span>
       </summary>
       <div class="provider-settings-content">
-        <div class="provider-mode-toggle" role="group" aria-label="Analysis provider">
-          <button class="provider-mode-option selected" type="button" data-provider-mode="managed" aria-pressed="true">Managed</button>
-          <button class="provider-mode-option" type="button" data-provider-mode="personal" aria-pressed="false" aria-describedby="personalProviderStatus personalProviderError">Personal</button>
+        <div class="provider-mode-toggle" role="group" aria-label="分析提供者">
+          <button class="provider-mode-option selected" type="button" data-provider-mode="managed" aria-pressed="true">代管</button>
+          <button class="provider-mode-option" type="button" data-provider-mode="personal" aria-pressed="false" aria-describedby="personalProviderStatus personalProviderError">個人</button>
         </div>
         <p id="personalProviderStatus" class="provider-message" aria-live="polite" tabindex="-1"></p>
         <p id="personalProviderError" class="provider-message error" role="alert" tabindex="-1" hidden></p>
         <form id="personalProviderForm" novalidate hidden>
           <label class="provider-form-field" for="personalProviderApiUrl">
-            API base URL
+            API 基礎網址
             <input id="personalProviderApiUrl" name="apiUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com/v1" aria-describedby="personalProviderError" required>
           </label>
           <label class="provider-form-field" for="personalProviderApiKey">
-                API key — Your key is saved and used locally. Never go through proxy or server.
-            <input id="personalProviderApiKey" name="apiKey" type="password" autocomplete="off" placeholder="Enter to save or replace" aria-describedby="personalProviderError" required>
+            API 金鑰 — 金鑰僅儲存在本機並於本機使用，不會經過代理或伺服器。
+            <input id="personalProviderApiKey" name="apiKey" type="password" autocomplete="off" placeholder="輸入以儲存或更換" aria-describedby="personalProviderError" required>
           </label>
           <label class="provider-form-field" for="personalProviderModel">
-            Model
+            模型
             <input id="personalProviderModel" name="model" type="text" autocomplete="off" placeholder="gemini-2.5-flash" aria-describedby="personalProviderError" required>
           </label>
           <div class="provider-actions">
-            <button id="savePersonalProviderButton" class="provider-action primary" type="submit">Save and use personal</button>
-            <button id="clearPersonalProviderButton" class="provider-action danger" type="button">Clear personal settings</button>
+            <button id="savePersonalProviderButton" class="provider-action primary" type="submit">儲存並使用個人提供者</button>
+            <button id="clearPersonalProviderButton" class="provider-action danger" type="button">清除個人設定</button>
           </div>
         </form>
       </div>
@@ -856,26 +856,26 @@
 
     <div class="controls">
       <div class="controls-left">
-        <button class="save-for-later-btn" id="saveForLaterBtn" title="Save selected items for later">
+        <button class="save-for-later-btn" id="saveForLaterBtn" title="稍後儲存已選項目">
           <span class="default">
-            <span>Save For Later</span>
+            <span>稍後儲存</span>
           </span>
           <span class="saving">
             <span class="spinner-small"></span>
-            <span>Saving...</span>
+            <span>儲存中…</span>
           </span>
         </button>
         <label class="share-checkbox-container" id="shareCheckboxContainer">
           <input type="checkbox" id="shareCheckbox" class="share-checkbox">
-          <span class="share-label">Share with others</span>
+          <span class="share-label">與他人分享</span>
         </label>
       </div>
       <div class="controls-right">
-        <div class="analysis-mode-toggle" role="group" aria-label="Analysis mode">
+        <div class="analysis-mode-toggle" role="group" aria-label="分析模式">
           <button class="analysis-mode-option" type="button" data-prompt-variant="v1" title="快速理解目前選取的日文" aria-pressed="false">精簡分析</button>
           <button class="analysis-mode-option selected" type="button" data-prompt-variant="v2" title="重點放在搭配、例句和可重複使用的句型" aria-pressed="true">造句分析</button>
         </div>
-        <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+        <button class="theme-toggle" id="themeToggle" title="切換主題">
           <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: block;">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
           </svg>
@@ -895,22 +895,22 @@
     <!-- Loading Indicator -->
     <div id="loading" class="loading">
       <div class="spinner"></div>
-      <span class="loading-message">AIによる分析中です。しばらくお待ちください...</span>
+      <span class="loading-message">AI 正在分析，請稍候…</span>
     </div>
 
     <!-- Message -->
-    <div id="alertMessage" class="alert-message">No text selected or text is too short(2) or too long(120). Please select some text on the page and open the sidepanel again.</div>
+    <div id="alertMessage" class="alert-message">尚未選取文字，或文字長度不符。請在頁面選取 2–500 個字元後重新開啟側邊欄。</div>
 
     <!-- Analysis Result -->
     <div id="result" class="result">
       <div class="prose-toolbar visible">
-        <button class="font-size-button" id="fontSizeBtn" title="Adjust font size">
+        <button class="font-size-button" id="fontSizeBtn" title="調整字級">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path d="m22 6-3-4-3 4h2v4h-2l3 4 3-4h-2V6zM9.307 4l-6 16h2.137l1.875-5h6.363l1.875 5h2.137l-6-16H9.307zm-1.239 9L10.5 6.515 12.932 13H8.068z"></path>
           </svg>
           <div class="font-size-menu" id="fontSizeMenu"><div class="font-size-option">12px</div><div class="font-size-option selected">14px</div><div class="font-size-option">16px</div><div class="font-size-option">18px</div><div class="font-size-option">20px</div></div>
         </button>
-        <button class="copy-button" title="Copy markdown">
+        <button class="copy-button" title="複製 Markdown">
           <svg class="copy-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path fill-rule="evenodd" clip-rule="evenodd" d="M7 5C7 3.34315 8.34315 2 10 2H19C20.6569 2 22 3.34315 22 5V14C22 15.6569 20.6569 17 19 17H17V19C17 20.6569 15.6569 22 14 22H5C3.34315 22 2 20.6569 2 19V10C2 8.34315 3.34315 7 5 7H7V5ZM9 7H14C15.6569 7 17 8.34315 17 10V15H19C19.5523 15 20 14.5523 20 14V5C20 4.44772 19.5523 4 19 4H10C9.44772 4 9 4.44772 9 5V7ZM5 9C4.44772 9 4 9.44772 4 10V19C4 19.5523 4.44772 20 5 20H14C14.5523 20 15 19.5523 15 19V10C15 9.44772 14.5523 9 14 9H5Z" fill="currentColor"/>
           </svg>
@@ -918,7 +918,7 @@
             <path fill-rule="nonzero" d="M9.38 212.26l91.05-1.2c1.9-.01 3.69.53 5.19 1.49 32.96 19.01 62.2 42.95 87.35 71.5 33.32-54.09 68.94-103.63 106.55-149.04C339.7 86.5 382.32 42.5 426.98 2.46a9.464 9.464 0 016.33-2.41L502.67 0c8.53 0 12.23 9.31 6.73 16.26-61.47 68.29-117.32 139.05-167.78 212a2075.014 2075.014 0 00-135.99 226.12c-2.4 4.65-8.14 6.49-12.79 4.09a9.476 9.476 0 01-4.35-4.63C146.26 363.35 86.92 286.45 4.14 229.6c-7.67-5.25-3.96-17.2 5.24-17.34z" fill="currentColor"/>
           </svg>
         </button>
-        <button class="save-as-button" id="saveAsBtn" title="Save markdown">
+        <button class="save-as-button" id="saveAsBtn" title="儲存 Markdown">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
             <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
             <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>

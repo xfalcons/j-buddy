@@ -72,7 +72,7 @@ describe('personal provider state', () => {
       'https://api.example.test/v1?key=nope',
       'https://api.example.test/v1#fragment',
     ]) {
-      expect(() => normalizeApiBaseUrl(unsafeUrl)).toThrow('API URL');
+      expect(() => normalizeApiBaseUrl(unsafeUrl)).toThrow('API 網址');
     }
   });
 

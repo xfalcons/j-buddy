@@ -103,8 +103,8 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.providerModeButtons[0].classList.contains('selected')).toBe(true);
     expect(elements.providerModeButtons[1].classList.contains('selected')).toBe(false);
     expect(elements.personalProviderForm.hidden).toBe(true);
-    expect(elements.personalProviderSummary.textContent).toBe('Managed');
-    expect(elements.personalProviderStatus.textContent).toContain('Configure one OpenAI-compatible provider');
+    expect(elements.personalProviderSummary.textContent).toBe('代管');
+    expect(elements.personalProviderStatus.textContent).toContain('設定一個相容於 OpenAI 的提供者');
   });
 
   test('saving a ready personal provider shows its active model without exposing its key', async () => {
@@ -122,11 +122,11 @@ describe('sidepanel personal-provider settings', () => {
       [PERSONAL_PROVIDER_PROFILE_KEY]: expect.objectContaining({ apiKey: 'personal-secret-key' }),
       [PERSONAL_PROVIDER_REVISION_KEY]: 1,
     }));
-    expect(elements.personalProviderSummary.textContent).toBe('Personal · example-model');
+    expect(elements.personalProviderSummary.textContent).toBe('個人 · example-model');
     expect(elements.personalProviderForm.hidden).toBe(false);
     expect(elements.personalProviderSummary.textContent).not.toContain('personal-secret-key');
     expect(elements.personalProviderApiKey.value).toBe('');
-    expect(elements.personalProviderStatus.textContent).toContain('sent directly');
+    expect(elements.personalProviderStatus.textContent).toContain('直接傳送至此提供者');
   });
 
   test('invalid setup remains managed, reports the issue, and moves focus to the missing field', async () => {
@@ -136,7 +136,7 @@ describe('sidepanel personal-provider settings', () => {
     await handlePersonalProviderSave(elements);
 
     expect(store[ANALYSIS_PROVIDER_MODE_KEY]).toBeUndefined();
-    expect(elements.personalProviderError.textContent).toContain('API key');
+    expect(elements.personalProviderError.textContent).toContain('API 金鑰');
     expect(elements.personalProviderApiKey.focus).toHaveBeenCalled();
   });
 
@@ -155,7 +155,7 @@ describe('sidepanel personal-provider settings', () => {
     await initializePersonalProviderSettings(elements);
 
     expect(elements.providerModeButtons[1].classList.contains('selected')).toBe(true);
-    expect(elements.personalProviderError.textContent).toContain('Personal analysis is selected but unavailable');
+    expect(elements.personalProviderError.textContent).toContain('已選取個人分析，但目前無法使用');
   });
 
   test('clear requires confirmation and returns the route to managed when confirmed', async () => {
@@ -176,7 +176,7 @@ describe('sidepanel personal-provider settings', () => {
     expect(await handlePersonalProviderClear(elements, () => true)).toBe(true);
     expect(store).toEqual({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE });
     expect(elements.personalProviderForm.hidden).toBe(true);
-    expect(elements.personalProviderStatus.textContent).toContain('cleared');
+    expect(elements.personalProviderStatus.textContent).toContain('已清除');
   });
 
   test('personal route cannot be selected until its provider is ready and does not start analysis', async () => {
@@ -185,7 +185,7 @@ describe('sidepanel personal-provider settings', () => {
 
     await handlePersonalProviderModeChange(elements, PERSONAL_PROVIDER_MODE);
 
-    expect(elements.personalProviderError.textContent).toContain('Personal provider setup is incomplete');
+    expect(elements.personalProviderError.textContent).toContain('個人提供者設定不完整');
     expect(elements.providerModeButtons[0].classList.contains('selected')).toBe(true);
   });
 

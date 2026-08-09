@@ -371,7 +371,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         alertMessage(
             elements.alertMessage,
             providerState.personalError?.message
-                || 'Personal analysis is selected but the provider setup is unavailable.',
+                || '已選取個人分析，但提供者設定無法使用。',
             'error'
         );
         elements.alertMessage.classList.add('show');
@@ -416,7 +416,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             setCompletedAnalysisAvailable(true);
         } else if (isValidSelection(currentSelectedText)) {
             // Show loading state
-            setLoadingMessage(loadingElement, 'AIによる分析中です。しばらくお待ちください...');
+            setLoadingMessage(loadingElement, 'AI 正在分析，請稍候…');
             setLoadingState(loadingElement, true);
             proseElement.innerHTML = '';
             resultElement.classList.remove('show');
@@ -424,7 +424,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
 
             if (providerState.mode === PERSONAL_PROVIDER_MODE && !providerState.isPersonalReady) {
                 const errorMessage = providerState.personalError?.message
-                    || 'Personal analysis is selected but the provider setup is unavailable.';
+                    || '已選取個人分析，但提供者設定無法使用。';
                 alertMessage(elements.alertMessage, errorMessage, 'error');
                 elements.alertMessage.classList.add('show');
                 setLoadingState(loadingElement, false);
@@ -454,7 +454,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         if (!isLatestAnalysis(requestId)) return;
                         if (!firstChunkReceived) {
                             firstChunkReceived = true;
-                            setLoadingMessage(loadingElement, '解析結果を受信しました。レイアウトを整えています...');
+                            setLoadingMessage(loadingElement, '已收到分析結果，正在整理版面…');
                             resultElement.classList.add('show');
                         }
                         renderStreamingPreview(proseElement, fullText, requestId);
@@ -493,7 +493,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
                         }
-                        alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}`, 'error');
+                        alertMessage(elements.alertMessage, `呼叫分析服務時發生錯誤：${errorMessage}`, 'error');
                         elements.alertMessage.classList.add('show');
                         setLoadingState(loadingElement, false);
                         setCompletedAnalysisAvailable(false);
@@ -503,21 +503,21 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             } catch (apiError) {
                 if (!isLatestAnalysis(requestId)) return;
                 console.warn('Calling API Error:', apiError);
-                alertMessage(elements.alertMessage, `Error calling API service: ${apiError.message}`, 'error');
+                alertMessage(elements.alertMessage, `呼叫分析服務時發生錯誤：${apiError.message}`, 'error');
                 elements.alertMessage.classList.add('show');
                 setLoadingState(loadingElement, false);
                 setCompletedAnalysisAvailable(false);
             }
         } else {
             if (!isLatestAnalysis(requestId)) return;
-            alertMessage(elements.alertMessage, 'No text selected or text is too short or too long. Please select 2-500 characters on the page and open the sidepanel again.', 'info');
+            alertMessage(elements.alertMessage, '尚未選取文字，或文字長度不符。請在頁面選取 2–500 個字元後重新開啟側邊欄。', 'info');
             elements.alertMessage.classList.add('show');
             elements.result.classList.remove('show');
         }
     } catch (error) {
         if (!isLatestAnalysis(requestId)) return;
         console.error('General Error:', error);
-        alertMessage(elements.alertMessage, 'Cannot access selected text on this page.', 'error');
+        alertMessage(elements.alertMessage, '無法讀取此頁面上的選取文字。', 'error');
         elements.alertMessage.classList.add('show');
         elements.result.classList.remove('show');
         setLoadingState(loadingElement, false);
@@ -550,7 +550,7 @@ function generateFilenameAndHeading() {
 // Function to handle the "Save As" functionality
 async function saveAsFile() {
   if (!hasCompletedAnalysis) {
-    alertMessage(elements?.alertMessage, 'Wait for a completed analysis before exporting.', 'info');
+    alertMessage(elements?.alertMessage, '請等待分析完成後再匯出。', 'info');
     elements?.alertMessage?.classList.add('show');
     return;
   }
@@ -565,7 +565,7 @@ async function saveAsFile() {
       suggestedName: suggestedName.filename,
       startIn: 'documents',
       types: [{
-        description: 'Markdown file',
+        description: 'Markdown 檔案',
         accept: {
           'text/markdown': ['.md']
         }
@@ -585,7 +585,7 @@ async function saveAsFile() {
 async function handleSaveForLater() {
     if (!elements?.saveForLaterBtn) return;
     if (!hasCompletedAnalysis) {
-        alertMessage(elements.alertMessage, 'Wait for a completed analysis before saving.', 'info');
+        alertMessage(elements.alertMessage, '請等待分析完成後再儲存。', 'info');
         elements.alertMessage.classList.add('show');
         return;
     }
@@ -599,7 +599,7 @@ async function handleSaveForLater() {
 
     // Validate that at least one item is checked
     if (checkedWords.length === 0 && checkedGrammars.length === 0) {
-        alertMessage(elements.alertMessage, 'Please select at least one word or grammar point to save.', 'info');
+        alertMessage(elements.alertMessage, '請至少選取一個單字或文法重點再儲存。', 'info');
         elements.alertMessage.classList.add('show');
         return;
     }
@@ -660,8 +660,8 @@ async function handleSaveForLater() {
 
         // Show success message
         const message = isShared 
-            ? `Successfully saved ${result.words_count} vocabulary item(s) and ${result.grammars_count} grammar point(s) to shared collections!`
-            : `Successfully saved ${result.words_count} vocabulary item(s) and ${result.grammars_count} grammar point(s)!`;
+            ? `已成功儲存 ${result.words_count} 個單字與 ${result.grammars_count} 個文法重點至共享收藏！`
+            : `已成功儲存 ${result.words_count} 個單字與 ${result.grammars_count} 個文法重點！`;
         alertMessage(elements.alertMessage, message, 'info');
         elements.alertMessage.classList.add('show');
         // Scroll to top to see the message
@@ -673,7 +673,7 @@ async function handleSaveForLater() {
         console.log('[Save For Later] Save successful:', result);
     } catch (error) {
         console.error('[Save For Later] Save error:', error);
-        alertMessage(elements.alertMessage, `Error saving items: ${error.message}`, 'error');
+        alertMessage(elements.alertMessage, `儲存項目時發生錯誤：${error.message}`, 'error');
         elements.alertMessage.classList.add('show');
     } finally {
         // Hide loading state
@@ -824,9 +824,9 @@ export function renderPersonalProviderState(elements, state) {
     if (elements.personalProviderSummary) {
         elements.personalProviderSummary.textContent = mode === PERSONAL_PROVIDER_MODE
             ? (profile
-                ? `Personal · ${profile.model}${isPersonalReady ? '' : ' · unavailable'}`
-                : 'Personal · setup required')
-            : 'Managed';
+                ? `個人 · ${profile.model}${isPersonalReady ? '' : ' · 無法使用'}`
+                : '個人 · 尚未完成設定')
+            : '代管';
     }
 
     if (elements.personalProviderApiUrl) {
@@ -844,7 +844,7 @@ export function renderPersonalProviderState(elements, state) {
     }
 
     const unavailableMessage = mode === PERSONAL_PROVIDER_MODE && !isPersonalReady
-        ? `Personal analysis is selected but unavailable: ${personalError?.message || 'complete provider setup first.'}`
+        ? `已選取個人分析，但目前無法使用：${personalError?.message || '請先完成提供者設定。'}`
         : '';
     setPersonalProviderFeedback(elements, unavailableMessage, 'error');
     if (!unavailableMessage) {
@@ -852,9 +852,9 @@ export function renderPersonalProviderState(elements, state) {
             elements,
             profile
                 ? (isPersonalReady
-                    ? 'Personal provider is ready. Select Managed to use the J-Buddy service instead.'
-                    : 'Personal provider is saved, but access must be allowed before it can be used.')
-                : 'Configure one OpenAI-compatible provider to analyze text directly from this extension.',
+                    ? '個人提供者已就緒。選取「代管」即可改用 J-Buddy 服務。'
+                    : '個人提供者已儲存，但必須授權存取後才能使用。')
+                : '設定一個相容於 OpenAI 的提供者，直接由此擴充功能分析文字。',
             'status'
         );
     }
@@ -869,7 +869,7 @@ export async function initializePersonalProviderSettings(elements) {
         updatePersonalProviderModeUi(elements, MANAGED_PROVIDER_MODE, false);
         setPersonalProviderFeedback(
             elements,
-            `Personal provider settings are unavailable: ${error.message}`,
+            `個人提供者設定無法使用：${error.message}`,
             'error'
         );
         return null;
@@ -895,7 +895,7 @@ export async function handlePersonalProviderSave(elements) {
     if (!values.apiUrl.trim() || !values.apiKey.trim() || !values.model.trim()) {
         setPersonalProviderFeedback(
             elements,
-            'Enter an HTTPS API URL, API key, and model before saving.',
+            '請先輸入 HTTPS API 網址、API 金鑰與模型，再進行儲存。',
             'error',
             true
         );
@@ -916,7 +916,7 @@ export async function handlePersonalProviderSave(elements) {
 
     if (elements.savePersonalProviderButton) elements.savePersonalProviderButton.disabled = true;
     setPersonalProviderFeedback(elements, '', 'error');
-    setPersonalProviderFeedback(elements, 'Requesting provider access…', 'status');
+    setPersonalProviderFeedback(elements, '正在要求提供者存取權…', 'status');
     try {
         await savePersonalProvider(values, pendingPermission);
         await setAnalysisProviderMode(PERSONAL_PROVIDER_MODE);
@@ -924,7 +924,7 @@ export async function handlePersonalProviderSave(elements) {
         renderPersonalProviderState(elements, state);
         setPersonalProviderFeedback(
             elements,
-            'Personal provider saved and selected. Future analyses will be sent directly to this provider.',
+            '個人提供者已儲存並選取。之後的分析會直接傳送至此提供者。',
             'status',
             true
         );
@@ -945,8 +945,8 @@ export async function handlePersonalProviderModeChange(elements, mode) {
         setPersonalProviderFeedback(
             elements,
             mode === PERSONAL_PROVIDER_MODE
-                ? 'Personal provider selected. Future analyses will be sent directly to it.'
-                : 'Managed provider selected. Future analyses will use the J-Buddy service.',
+                ? '已選取個人提供者。之後的分析會直接傳送至此提供者。'
+                : '已選取代管提供者。之後的分析會使用 J-Buddy 服務。',
             'status',
             true
         );
@@ -960,7 +960,7 @@ export async function handlePersonalProviderModeChange(elements, mode) {
 
 export async function handlePersonalProviderClear(elements, confirmClear = globalThis.confirm) {
     const confirmed = typeof confirmClear === 'function' && confirmClear(
-        'Clear the saved API URL, API key, model, and provider access? Future analyses will use the managed provider.'
+        '要清除已儲存的 API 網址、API 金鑰、模型與提供者存取權嗎？之後的分析將使用代管提供者。'
     );
     if (!confirmed) return false;
 
@@ -969,7 +969,7 @@ export async function handlePersonalProviderClear(elements, confirmClear = globa
         await clearPersonalProvider();
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
-        setPersonalProviderFeedback(elements, 'Personal provider settings cleared. Managed analysis is selected.', 'status', true);
+        setPersonalProviderFeedback(elements, '個人提供者設定已清除，並已選取代管分析。', 'status', true);
         return true;
     } catch (error) {
         setPersonalProviderFeedback(elements, error.message, 'error', true);
@@ -1008,7 +1008,7 @@ export async function handleAnalysisModeChange(elements, variant) {
     } catch (error) {
         if (!isLatestModeChange(requestId)) return;
         console.error('[Sidebar] Failed to change analysis mode:', error);
-        alertMessage(elements.alertMessage, `Failed to change analysis mode: ${error.message}`, 'error');
+        alertMessage(elements.alertMessage, `切換分析模式失敗：${error.message}`, 'error');
         elements.alertMessage.classList.add('show');
     }
 }
@@ -1131,7 +1131,7 @@ async function handleSignIn() {
         updateAuthUI();
         
         // Show success message
-        alertMessage(elements.alertMessage, `Welcome, ${user.displayName}!`, 'info');
+        alertMessage(elements.alertMessage, `歡迎回來，${user.displayName}！`, 'info');
         elements.alertMessage.classList.add('show');
         
         setTimeout(() => {
@@ -1139,7 +1139,7 @@ async function handleSignIn() {
         }, 3000);
     } catch (error) {
         console.error('[Sidepanel] Sign-in error:', error);
-        alertMessage(elements.alertMessage, `Sign-in failed: ${error.message}`, 'error');
+        alertMessage(elements.alertMessage, `登入失敗：${error.message}`, 'error');
         elements.alertMessage.classList.add('show');
     } finally {
         elements.signInBtn.disabled = false;
@@ -1160,7 +1160,7 @@ async function handleSignOut() {
         updateAuthUI();
         
         // Show info message
-        alertMessage(elements.alertMessage, 'You have been signed out.', 'info');
+        alertMessage(elements.alertMessage, '您已登出。', 'info');
         elements.alertMessage.classList.add('show');
         
         setTimeout(() => {
@@ -1168,7 +1168,7 @@ async function handleSignOut() {
         }, 3000);
     } catch (error) {
         console.error('[Auth] Sign-out error:', error);
-        alertMessage(elements.alertMessage, `Sign-out failed: ${error.message}`, 'error');
+        alertMessage(elements.alertMessage, `登出失敗：${error.message}`, 'error');
         elements.alertMessage.classList.add('show');
     } finally {
         elements.signOutBtn.disabled = false;
@@ -1218,7 +1218,7 @@ async function setupEventListeners() {
     // Copy button for prose
     elements.copyButton?.addEventListener('click', async () => {
         if (!hasCompletedAnalysis) {
-            alertMessage(elements.alertMessage, 'Wait for a completed analysis before copying.', 'info');
+            alertMessage(elements.alertMessage, '請等待分析完成後再複製。', 'info');
             elements.alertMessage.classList.add('show');
             return;
         }

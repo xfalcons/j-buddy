@@ -13,6 +13,11 @@
   - Save For Later, which can review in Japanese Alchemy Web Site
   - Vocabulary, add additional verb variants (完整動詞變化)
 
+# Release Notes for Ja Alchemy v1.2.0
+  - 自訂 AI Model (API Url, Key, Model)，直連 AI Provider
+  - 解析分成「簡易分析」，「造句分析」，讓學習更容易
+  - 主要介面改為繁體中文
+
 title: J-Buddy Learn Japanese
 summary: 你的 AI 日文隨身家教，查單字、看語法一氣呵成；點擊之間，讓日文閱讀從「阻礙」變成「享受」！
 description:

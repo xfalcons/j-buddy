@@ -183,7 +183,7 @@ describe('DirectLlmApiService', () => {
 
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(done).not.toHaveBeenCalled();
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('ended the stream'));
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('中斷了串流'));
   });
 
   test('silently aborts a superseded request and forwards its signal to fetch', async () => {

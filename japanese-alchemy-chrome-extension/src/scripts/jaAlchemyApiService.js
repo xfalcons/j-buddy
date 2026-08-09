@@ -55,7 +55,7 @@ class JaAlchemyApiService {
       
       // Extract error details from Firebase error
       const errorMessage = error.message || error.code || 'Unknown error occurred';
-      throw new Error(`Firebase explain function failed: ${errorMessage}`);
+      throw new Error(`Firebase explain 函式失敗：${errorMessage}`);
     }
   }
 
@@ -90,7 +90,7 @@ class JaAlchemyApiService {
         } catch {
           // body wasn't JSON; keep the raw text
         }
-        throw new Error(`Stream request failed: ${response.status} ${detail}`);
+        throw new Error(`串流請求失敗：${response.status} ${detail}`);
       }
 
       const reader = response.body.getReader();
@@ -131,7 +131,7 @@ class JaAlchemyApiService {
             } else if (currentEvent === 'error') {
               try {
                 const parsed = JSON.parse(dataStr);
-                onError(parsed.error || 'Unknown streaming error');
+                onError(parsed.error || '未知的串流錯誤');
                 return;
               } catch {
                 onError(dataStr);
@@ -153,7 +153,7 @@ class JaAlchemyApiService {
         console.warn('[Firebase API] Stream interrupted, delivering partial results');
         onDone(fullText);
       } else {
-        onError(error.message || 'Stream request failed');
+        onError(error.message || '串流請求失敗');
       }
     }
   }
@@ -182,7 +182,7 @@ class JaAlchemyApiService {
       console.log('[Firebase API] SaveItems function response:', result.data);
 
       if (!result.data || !result.data.success) {
-        throw new Error(result.data?.message || 'Save operation failed');
+        throw new Error(result.data?.message || '儲存操作失敗');
       }
 
       return {
@@ -197,12 +197,12 @@ class JaAlchemyApiService {
       // Handle specific Firebase errors
       // Handle specific authentication errors (only for private collections)
       if (!analysis.is_shared && (error.code === 'unauthenticated' || error.message?.includes('unauthenticated'))) {
-        throw new Error('You must be signed in to save items to your private collection. Please sign in first.');
+        throw new Error('您必須先登入，才能將項目儲存至私人收藏。');
       }
       
       // Extract error details
       const errorMessage = error.message || error.code || 'Unknown error occurred';
-      throw new Error(`Firebase saveItems function failed: ${errorMessage}`);
+      throw new Error(`Firebase saveItems 函式失敗：${errorMessage}`);
     }
   }
 }

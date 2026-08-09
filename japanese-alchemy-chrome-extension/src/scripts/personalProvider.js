@@ -34,7 +34,7 @@ export function isValidProviderMode(mode) {
 function requireLocalStorage() {
   const local = globalThis.chrome?.storage?.local;
   if (!local) {
-    throw new PersonalProviderError('Chrome local storage is unavailable.', 'storage_unavailable');
+    throw new PersonalProviderError('Chrome 本機儲存空間無法使用。', 'storage_unavailable');
   }
   return local;
 }
@@ -42,7 +42,7 @@ function requireLocalStorage() {
 function requirePermissions() {
   const permissions = globalThis.chrome?.permissions;
   if (!permissions?.contains || !permissions?.request || !permissions?.remove) {
-    throw new PersonalProviderError('Chrome host permissions are unavailable.', 'permissions_unavailable');
+    throw new PersonalProviderError('Chrome 主機權限無法使用。', 'permissions_unavailable');
   }
   return permissions;
 }
@@ -55,7 +55,7 @@ export async function restrictLocalStorageToTrustedContexts() {
   const local = requireLocalStorage();
   if (typeof local.setAccessLevel !== 'function') {
     throw new PersonalProviderError(
-      'This Chrome version cannot protect personal provider settings.',
+      '此 Chrome 版本無法保護個人提供者設定。',
       'storage_access_control_unavailable'
     );
   }
@@ -64,22 +64,22 @@ export async function restrictLocalStorageToTrustedContexts() {
 
 export function normalizeApiBaseUrl(value) {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new PersonalProviderError('API URL is required.', 'invalid_api_url');
+    throw new PersonalProviderError('必須填寫 API 網址。', 'invalid_api_url');
   }
 
   let url;
   try {
     url = new URL(value.trim());
   } catch {
-    throw new PersonalProviderError('API URL must be a valid HTTPS URL.', 'invalid_api_url');
+    throw new PersonalProviderError('API 網址必須是有效的 HTTPS 網址。', 'invalid_api_url');
   }
 
   if (url.protocol !== 'https:' || !url.hostname) {
-    throw new PersonalProviderError('API URL must use HTTPS.', 'invalid_api_url');
+    throw new PersonalProviderError('API 網址必須使用 HTTPS。', 'invalid_api_url');
   }
   if (url.username || url.password || url.search || url.hash) {
     throw new PersonalProviderError(
-      'API URL cannot include credentials, a query string, or a fragment.',
+      'API 網址不可包含帳密、查詢字串或片段識別碼。',
       'invalid_api_url'
     );
   }
@@ -100,13 +100,13 @@ export function getOriginPermission(apiUrl) {
 
 export function normalizePersonalProviderProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
-    throw new PersonalProviderError('Personal provider setup is incomplete.', 'invalid_profile');
+    throw new PersonalProviderError('個人提供者設定不完整。', 'invalid_profile');
   }
 
   const apiKey = typeof profile.apiKey === 'string' ? profile.apiKey.trim() : '';
   const model = typeof profile.model === 'string' ? profile.model.trim() : '';
   if (!apiKey || !model) {
-    throw new PersonalProviderError('API key and model are required.', 'invalid_profile');
+    throw new PersonalProviderError('必須填寫 API 金鑰與模型。', 'invalid_profile');
   }
 
   return Object.freeze({
@@ -139,7 +139,7 @@ async function readProfileReadiness(profile) {
       permission,
       ready: Boolean(hasOriginPermission),
       error: hasOriginPermission ? null : new PersonalProviderError(
-        'Allow access to this provider before using personal analysis.',
+        '使用個人分析前，請先允許存取此提供者。',
         'origin_permission_missing'
       ),
     };
@@ -150,7 +150,7 @@ async function readProfileReadiness(profile) {
       ready: false,
       error: error instanceof PersonalProviderError
         ? error
-        : new PersonalProviderError('Personal provider setup is unavailable.', 'invalid_profile'),
+        : new PersonalProviderError('個人提供者設定無法使用。', 'invalid_profile'),
     };
   }
 }
@@ -184,13 +184,13 @@ export async function getPersonalProviderState() {
 
 export async function setAnalysisProviderMode(mode) {
   if (!isValidProviderMode(mode)) {
-    throw new PersonalProviderError('Invalid analysis provider mode.', 'invalid_mode');
+    throw new PersonalProviderError('分析提供者模式無效。', 'invalid_mode');
   }
 
   const state = await getPersonalProviderState();
   if (mode === PERSONAL_PROVIDER_MODE && !state.isPersonalReady) {
     throw state.personalError || new PersonalProviderError(
-      'Complete personal provider setup before selecting personal analysis.',
+      '選取個人分析前，請先完成個人提供者設定。',
       'personal_provider_unavailable'
     );
   }
@@ -232,7 +232,7 @@ export async function savePersonalProvider(profile, pendingPermission = null) {
     || permissions.request({ origins: [nextPermission] }));
   if (!granted) {
     throw new PersonalProviderError(
-      'Provider access was not granted. Personal settings were not saved.',
+      '未取得提供者存取權，個人設定未儲存。',
       'origin_permission_denied'
     );
   }
