@@ -188,7 +188,9 @@ export class DirectLlmApiService {
     if (typeof fetchImpl !== 'function') {
       throw new DirectLlmApiError('Network requests are unavailable in this extension context.', 'fetch_unavailable');
     }
-    this.fetch = fetchImpl;
+    // Window.fetch is receiver-sensitive in Chromium. Keep the injected
+    // transport testable while always invoking it with the extension global.
+    this.fetch = (...args) => fetchImpl.call(globalThis, ...args);
   }
 
   async request(profile, selectedText, promptVariant, context, stream, signal) {

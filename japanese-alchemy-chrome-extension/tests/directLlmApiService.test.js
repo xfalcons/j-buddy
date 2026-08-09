@@ -59,6 +59,27 @@ function errorResponse(status, body) {
 }
 
 describe('DirectLlmApiService', () => {
+  test('calls a receiver-sensitive fetch implementation with the extension global', async () => {
+    const fetch = jest.fn(function receiverSensitiveFetch() {
+      if (this !== globalThis) {
+        throw new TypeError('fetch requires the extension global receiver');
+      }
+      return jsonResponse({
+        choices: [{ message: { content: 'bound response' }, finish_reason: 'stop' }],
+      });
+    });
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      profile, '日本語', 'v2', undefined, jest.fn(), done, onError
+    );
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(done).toHaveBeenCalledWith('bound response');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   test('emits OpenAI SSE deltas then exactly one completed result', async () => {
     const fetch = jest.fn(async () => sseResponse([
       'data: {"choices":[{"delta":{"content":"分"},"finish_reason":null}]}\n\n',

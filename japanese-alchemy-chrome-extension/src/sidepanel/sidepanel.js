@@ -817,10 +817,16 @@ export function renderPersonalProviderState(elements, state) {
     const { mode, profile, isPersonalReady, personalError } = state;
     updatePersonalProviderModeUi(elements, mode, isPersonalReady);
 
+    if (elements.personalProviderForm) {
+        elements.personalProviderForm.hidden = mode !== PERSONAL_PROVIDER_MODE;
+    }
+
     if (elements.personalProviderSummary) {
-        elements.personalProviderSummary.textContent = profile
-            ? `Saved provider: ${profile.apiUrl} · ${profile.model} · key ${redactPersonalProviderApiKey(profile.apiKey)}`
-            : 'No personal provider is configured. Managed analysis is selected.';
+        elements.personalProviderSummary.textContent = mode === PERSONAL_PROVIDER_MODE
+            ? (profile
+                ? `Personal · ${profile.model}${isPersonalReady ? '' : ' · unavailable'}`
+                : 'Personal · setup required')
+            : 'Managed';
     }
 
     if (elements.personalProviderApiUrl) {

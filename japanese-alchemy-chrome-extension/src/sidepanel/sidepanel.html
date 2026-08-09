@@ -678,6 +678,10 @@
       color: var(--text-primary);
       cursor: pointer;
       font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
 
     .provider-settings-content {
@@ -743,6 +747,11 @@
       padding: 8px;
     }
 
+    #personalProviderForm {
+      display: grid;
+      gap: 14px;
+    }
+
     .provider-hint,
     .provider-summary,
     .provider-message {
@@ -754,6 +763,7 @@
     .provider-summary {
       color: var(--text-secondary);
       overflow-wrap: anywhere;
+      font-weight: 400;
     }
 
     .provider-message.error {
@@ -764,6 +774,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+      margin-top: 4px;
     }
 
     .provider-action.danger {
@@ -811,23 +822,24 @@
     </div>
 
     <details class="provider-settings" id="personalProviderSettings">
-      <summary>Analysis provider</summary>
+      <summary>
+        <span>Analysis provider</span>
+        <span id="personalProviderSummary" class="provider-summary">Managed</span>
+      </summary>
       <div class="provider-settings-content">
         <div class="provider-mode-toggle" role="group" aria-label="Analysis provider">
           <button class="provider-mode-option selected" type="button" data-provider-mode="managed" aria-pressed="true">Managed</button>
           <button class="provider-mode-option" type="button" data-provider-mode="personal" aria-pressed="false" aria-describedby="personalProviderStatus personalProviderError">Personal</button>
         </div>
-        <p id="personalProviderSummary" class="provider-summary"></p>
         <p id="personalProviderStatus" class="provider-message" aria-live="polite" tabindex="-1"></p>
         <p id="personalProviderError" class="provider-message error" role="alert" tabindex="-1" hidden></p>
-        <p class="provider-hint">Personal analysis sends selected text and surrounding context directly to your provider. Your provider may charge for requests.</p>
-        <form id="personalProviderForm" novalidate>
+        <form id="personalProviderForm" novalidate hidden>
           <label class="provider-form-field" for="personalProviderApiUrl">
             API base URL
             <input id="personalProviderApiUrl" name="apiUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com/v1" aria-describedby="personalProviderError" required>
           </label>
           <label class="provider-form-field" for="personalProviderApiKey">
-            API key
+                API key — Your key is saved and used locally. Never go through proxy or server.
             <input id="personalProviderApiKey" name="apiKey" type="password" autocomplete="off" placeholder="Enter to save or replace" aria-describedby="personalProviderError" required>
           </label>
           <label class="provider-form-field" for="personalProviderModel">

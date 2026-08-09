@@ -28,21 +28,22 @@ describe('sidepanel analysis-mode markup', () => {
 
   test('renders separate provider settings without repurposing prompt variants', () => {
     expect(html).toContain('id="personalProviderSettings"');
+    expect(html).toContain('<span>Analysis provider</span>');
+    expect(html).toContain('id="personalProviderSummary" class="provider-summary">Managed</span>');
     expect(html).toContain('class="provider-mode-toggle"');
     expect(html).toContain('data-provider-mode="managed"');
     expect(html).toContain('data-provider-mode="personal"');
     expect(html).toContain('id="personalProviderApiUrl"');
     expect(html).toContain('id="personalProviderApiKey"');
     expect(html).toContain('id="personalProviderModel"');
+    expect(html).toContain('<form id="personalProviderForm" novalidate hidden>');
     expect(html).toContain('Save and use personal');
     expect(html).toContain('Clear personal settings');
     expect(html).not.toContain('data-ai-preference');
     expect(html).not.toContain('aiPreference');
   });
 
-  test('discloses personal-provider data sharing and charges accessibly', () => {
-    expect(html).toContain('selected text and surrounding context directly to your provider');
-    expect(html).toContain('may charge for requests');
+  test('exposes personal-provider status accessibly', () => {
     expect(html).toContain('id="personalProviderStatus"');
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('id="personalProviderError"');

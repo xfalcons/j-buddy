@@ -78,6 +78,7 @@ function createElements(values = {}) {
     personalProviderApiUrl: createField(values.apiUrl || ''),
     personalProviderApiKey: createField(values.apiKey || ''),
     personalProviderModel: createField(values.model || ''),
+    personalProviderForm: { hidden: true },
     personalProviderSummary: { textContent: '' },
     personalProviderStatus: { textContent: '', hidden: false, focus: jest.fn() },
     personalProviderError: { textContent: '', hidden: true, focus: jest.fn() },
@@ -101,11 +102,12 @@ describe('sidepanel personal-provider settings', () => {
 
     expect(elements.providerModeButtons[0].classList.contains('selected')).toBe(true);
     expect(elements.providerModeButtons[1].classList.contains('selected')).toBe(false);
-    expect(elements.personalProviderSummary.textContent).toContain('No personal provider');
+    expect(elements.personalProviderForm.hidden).toBe(true);
+    expect(elements.personalProviderSummary.textContent).toBe('Managed');
     expect(elements.personalProviderStatus.textContent).toContain('Configure one OpenAI-compatible provider');
   });
 
-  test('saving a ready personal provider redacts its key and persistently selects it without analysis', async () => {
+  test('saving a ready personal provider shows its active model without exposing its key', async () => {
     const { store } = setupChrome();
     const elements = createElements({
       apiUrl: 'https://api.example.test/v1/',
@@ -120,7 +122,8 @@ describe('sidepanel personal-provider settings', () => {
       [PERSONAL_PROVIDER_PROFILE_KEY]: expect.objectContaining({ apiKey: 'personal-secret-key' }),
       [PERSONAL_PROVIDER_REVISION_KEY]: 1,
     }));
-    expect(elements.personalProviderSummary.textContent).toContain('••••-key');
+    expect(elements.personalProviderSummary.textContent).toBe('Personal · example-model');
+    expect(elements.personalProviderForm.hidden).toBe(false);
     expect(elements.personalProviderSummary.textContent).not.toContain('personal-secret-key');
     expect(elements.personalProviderApiKey.value).toBe('');
     expect(elements.personalProviderStatus.textContent).toContain('sent directly');
@@ -172,6 +175,7 @@ describe('sidepanel personal-provider settings', () => {
 
     expect(await handlePersonalProviderClear(elements, () => true)).toBe(true);
     expect(store).toEqual({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE });
+    expect(elements.personalProviderForm.hidden).toBe(true);
     expect(elements.personalProviderStatus.textContent).toContain('cleared');
   });
 
