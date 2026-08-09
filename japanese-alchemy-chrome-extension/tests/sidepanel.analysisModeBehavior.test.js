@@ -128,7 +128,7 @@ function setupDeferredApi() {
   return calls;
 }
 
-async function flushMicrotasks(cycles = 3) {
+async function flushMicrotasks(cycles = 10) {
   for (let index = 0; index < cycles; index += 1) {
     await Promise.resolve();
   }
@@ -213,7 +213,7 @@ describe('sidepanel analysis-mode behavior', () => {
       force: true,
       promptVariant: 'v1',
     });
-    await Promise.resolve();
+    await flushMicrotasks();
     apiCalls[1].onDone('# latest v1 response');
     apiCalls[1].resolve();
     await newRequest;
@@ -260,6 +260,68 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(loading.classList.contains('show')).toBe(false);
     expect(alertMessage.innerHTML).not.toContain('Retry with ZAI');
     expect(alertMessage.innerHTML).not.toContain('retryWithZaiBtn');
+  });
+
+  test('personal mode calls the configured provider directly and keeps its cache separate', async () => {
+    const text = '成長を後押しする';
+    const storage = setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1',
+        apiKey: 'personal-secret-key',
+        model: 'learner-model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({
+        choices: [{ message: { content: '### 單字分析\n#### <單字>成長' }, finish_reason: 'stop' }],
+      }),
+    }));
+    const { prose } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://llm.example/v1/chat/completions',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer personal-secret-key' }) })
+    );
+    expect(prose.innerHTML).toContain('成長');
+    expect(global.localStorage.getItem('lastAnalysisKey')).toContain('personal:4');
+    expect(global.localStorage.getItem('lastAnalysisKey')).not.toContain('personal-secret-key');
+    expect(storage.analysisProviderMode).toBe('personal');
+  });
+
+  test('a personal-provider failure stays personal and never caches a partial result', async () => {
+    const storage = setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 2,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 429,
+      text: async () => '<b>rate limited</b>',
+    }));
+    const { alertMessage, prose } = setupElements();
+
+    await analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(storage.analysisProviderMode).toBe('personal');
+    expect(global.localStorage.getItem('lastAnalysisKey')).toBeNull();
+    expect(global.localStorage.getItem('lastResponse')).toBeNull();
+    expect(alertMessage.textContent).toContain('personal provider');
+    expect(alertMessage.textContent).not.toContain('<b>');
+    expect(prose.innerHTML).toBe('');
   });
 
   test('rapid mode clicks keep the last requested mode when storage reads finish out of order', async () => {

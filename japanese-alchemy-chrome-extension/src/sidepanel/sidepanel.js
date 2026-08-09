@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import createDOMPurify from 'dompurify';
 import authService from '../scripts/authService.js';
 import {
     getPromptVariant,
@@ -12,6 +13,7 @@ import {
     savePersonalProvider,
     setAnalysisProviderMode,
 } from '../scripts/personalProvider.js';
+import { DirectLlmApiService } from '../scripts/directLlmApiService.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
 
@@ -22,6 +24,76 @@ marked.setOptions({
   xhtml: true,
   headerIds: false,
 });
+
+const ANALYSIS_ALLOWED_TAGS = [
+    'a', 'blockquote', 'br', 'code', 'del', 'em', 'h1', 'h2', 'h3', 'h4',
+    'h5', 'h6', 'hr', 'li', 'ol', 'p', 'pre', 'ruby', 'rb', 'rt', 'strong',
+    'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul',
+];
+const ANALYSIS_ALLOWED_ATTR = ['colspan', 'href', 'rowspan', 'title'];
+
+function getDomPurify() {
+    // The production side panel always has a real browser window. The guarded
+    // fallback keeps the pure Node test environment deterministic without
+    // weakening the browser rendering path.
+    if (typeof createDOMPurify?.sanitize === 'function') return createDOMPurify;
+    if (globalThis.window?.document?.createElement) return createDOMPurify(globalThis.window);
+    return null;
+}
+
+function fallbackSanitizeHtml(html) {
+    return String(html || '')
+        .replace(/<\/?(?:script|style|iframe|object|embed|form|input|button|svg|math)[^>]*>/gi, '')
+        .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+        .replace(/\s(?:href|src)\s*=\s*(?:"\s*(?:javascript|data):[^"]*"|'\s*(?:javascript|data):[^']*'|\s*(?:javascript|data):[^\s>]*)/gi, '');
+}
+
+/**
+ * Sanitize the final HTML immediately before it enters the side panel DOM.
+ * In particular, raw provider `<input>`/`<form>` markup cannot forge save
+ * controls; controlled checkboxes are appended only afterwards.
+ */
+export function sanitizeAnalysisHtml(html) {
+    const purifier = getDomPurify();
+    if (!purifier) return fallbackSanitizeHtml(html);
+    return purifier.sanitize(html, {
+        ALLOWED_TAGS: ANALYSIS_ALLOWED_TAGS,
+        ALLOWED_ATTR: ANALYSIS_ALLOWED_ATTR,
+        ALLOW_DATA_ATTR: false,
+    });
+}
+
+function escapeHtmlAttribute(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+export function renderAnalysisMarkdown(markdown, { includeCheckboxes = false } = {}) {
+    const rubyConverted = convertToRuby(markdown);
+    let html = sanitizeAnalysisHtml(marked.parse(rubyConverted));
+    if (!includeCheckboxes) return html;
+
+    // Only the prescribed analysis headings generate save controls. A raw
+    // provider-supplied input was removed above and a generic h4 cannot create
+    // a checkbox by itself.
+    return html.replace(/<h4>([\s\S]*?)<\/h4>/g, (match, headingText) => {
+        let typename = null;
+        if (headingText.includes('&lt;文法&gt;')) {
+            headingText = headingText.replace('&lt;文法&gt;', '').trim();
+            typename = 'grammars';
+        } else if (headingText.includes('&lt;單字&gt;')) {
+            headingText = headingText.replace('&lt;單字&gt;', '').trim();
+            typename = 'words';
+        }
+        if (!typename) return `<h4>${headingText}</h4>`;
+        const convertedHeading = escapeHtmlAttribute(convertFromRuby(headingText));
+        return `<h4><input type="checkbox" name="${typename}" value="${convertedHeading}">${headingText}</h4>`;
+    });
+}
 
 // Function to convert Japanese text with readings in square brackets to HTML with ruby tags
 export function convertToRuby(text) {
@@ -101,27 +173,7 @@ export function formatAnalysisResult(markdown) {
     // console.log('jsonData after word section:', jsonData);
     resultData.json = jsonData;
 
-    // First convert ruby tags
-    const rubyConverted = convertToRuby(markdown);
-    // Then parse markdown
-    resultData.html = marked.parse(rubyConverted);
-
-    // Add "checkbox" html for "<h4>" headings, with value of "convertFromRuby(heading text)"
-    resultData.html = resultData.html.replace(/<h4>(.*?)<\/h4>/g, (match, headingText) => {
-        var typename = 'words';
-        // check if headingText includes "<文法>" or "<單字>"
-        if (headingText.includes('&lt;文法&gt;')) {
-            // remove the "<文法>" part
-            headingText = headingText.replace('&lt;文法&gt;', '').trim();
-            typename = 'grammars';
-        } else if (headingText.includes('&lt;單字&gt;')) {
-            // remove the "<單字>" part
-            headingText = headingText.replace('&lt;單字&gt;', '').trim();
-            typename = 'words';
-        }
-        const convertedHeading = convertFromRuby(headingText);
-        return `<h4><input type="checkbox" name="${typename}" value="${convertedHeading}">${headingText}</h4>`;
-    });
+    resultData.html = renderAnalysisMarkdown(markdown, { includeCheckboxes: true });
     // console.log('Formatted HTML:', resultData.html);
 
     return resultData;
@@ -129,7 +181,10 @@ export function formatAnalysisResult(markdown) {
 
 // Function to show error message
 function alertMessage(element, message, type = 'error') {
-    element.innerHTML = `<p>${message}</p>`;
+    if (!element) return;
+    // Error strings originate from Firebase or a learner-configured provider.
+    // Render them as text so a remote error cannot execute markup in the panel.
+    element.textContent = String(message || '');
 }
 
 // Function to show loading state
@@ -160,7 +215,16 @@ async function loadSelectedText() {
 
 // Update when new selections arrive
 chrome.storage.onChanged.addListener(async (changes) => {
-  console.log('Storage changes...');
+    console.log('Storage changes...');
+  if (changes.personalProviderProfile || changes.analysisProviderMode || changes.personalProviderRevision) {
+    // A profile, permission route, or revision changed while a request was in
+    // flight. Invalidate its callbacks before it can overwrite the panel or
+    // cache a response under the wrong provider identity.
+    analysisRequestId += 1;
+    isAnalizing = false;
+    activeAnalysisKey = null;
+    setCompletedAnalysisAvailable(false);
+  }
   if (changes.selectedText || changes.contextBefore || changes.contextAfter) {
     const { selectedText, contextBefore = '', contextAfter = '' } =
       await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
@@ -187,6 +251,7 @@ let currentContext = { before: '', after: '' };
 let analysisRequestId = 0;
 let activeAnalysisKey = null;
 let modeChangeRequestId = 0;
+let hasCompletedAnalysis = false;
 
 function normalizeContext(context = {}) {
     return {
@@ -203,6 +268,19 @@ function isLatestAnalysis(requestId) {
     return requestId === analysisRequestId;
 }
 
+function analysisSourceIdentity(providerState) {
+    return providerState?.mode === PERSONAL_PROVIDER_MODE
+        ? `${PERSONAL_PROVIDER_MODE}:${providerState.revision || 0}`
+        : `${MANAGED_PROVIDER_MODE}:0`;
+}
+
+function setCompletedAnalysisAvailable(available) {
+    hasCompletedAnalysis = available;
+    [elements?.copyButton, elements?.saveAsBtn, elements?.saveForLaterBtn]
+        .filter(Boolean)
+        .forEach((button) => { button.disabled = !available; });
+}
+
 function isLatestModeChange(requestId) {
     return requestId === modeChangeRequestId;
 }
@@ -213,8 +291,7 @@ function renderStreamingPreview(proseElement, accumulatedText, requestId) {
     renderThrottleTimer = setTimeout(() => {
         renderThrottleTimer = null;
         if (!isLatestAnalysis(requestId)) return;
-        const rubyConverted = convertToRuby(accumulatedText);
-        proseElement.innerHTML = marked.parse(rubyConverted);
+        proseElement.innerHTML = renderAnalysisMarkdown(accumulatedText);
     }, 80);
 }
 
@@ -225,12 +302,17 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     const resultElement = document.getElementById('result');
     const proseElement = resultElement.querySelector('.prose');
     const loadingElement = document.getElementById('loading');
+    const requestEpoch = analysisRequestId;
     const promptVariant = options.promptVariant || await getPromptVariant();
+    const providerState = await getPersonalProviderState();
+    if (analysisRequestId !== requestEpoch) return;
+    const sourceIdentity = analysisSourceIdentity(providerState);
     const cacheKey = currentSelectedText
         ? buildContextCacheKey({
             selectedText: currentSelectedText,
             context: currentContext,
             promptVariant,
+            sourceIdentity,
         })
         : '';
 
@@ -241,6 +323,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     console.log('Analizing Selected Text...');
     const requestId = ++analysisRequestId;
     isAnalizing = true;
+    setCompletedAnalysisAvailable(false);
     activeAnalysisKey = cacheKey;
     if (renderThrottleTimer) {
         clearTimeout(renderThrottleTimer);
@@ -264,6 +347,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             proseElement.innerHTML = analysisResult.html;
             resultElement.classList.add('show');
             setLoadingState(loadingElement, false);
+            setCompletedAnalysisAvailable(true);
         } else if (isValidSelection(currentSelectedText)) {
             // Show loading state
             setLoadingMessage(loadingElement, 'AIによる分析中です。しばらくお待ちください...');
@@ -272,17 +356,29 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             resultElement.classList.remove('show');
             saveForLaterJson = {};
 
+            if (providerState.mode === PERSONAL_PROVIDER_MODE && !providerState.isPersonalReady) {
+                const errorMessage = providerState.personalError?.message
+                    || 'Personal analysis is selected but the provider setup is unavailable.';
+                alertMessage(elements.alertMessage, errorMessage, 'error');
+                elements.alertMessage.classList.add('show');
+                setLoadingState(loadingElement, false);
+                return;
+            }
+
             try {
                 console.log('Initializing API service...');
-                const jaAlchemyApiService = new JaAlchemyApiService();
+                const analysisService = providerState.mode === PERSONAL_PROVIDER_MODE
+                    ? new DirectLlmApiService()
+                    : new JaAlchemyApiService();
 
                 console.log('Generating response (streaming)...');
                 let firstChunkReceived = false;
 
-                await jaAlchemyApiService.generateResponseStream(
-                    currentSelectedText,
-                    promptVariant,
-                    currentContext,
+                const streamArgs = providerState.mode === PERSONAL_PROVIDER_MODE
+                    ? [providerState.profile, currentSelectedText, promptVariant, currentContext]
+                    : [currentSelectedText, promptVariant, currentContext];
+                await analysisService.generateResponseStream(
+                    ...streamArgs,
                     // onChunk: progressively render each chunk
                     (chunk, fullText) => {
                         if (!isLatestAnalysis(requestId)) return;
@@ -317,6 +413,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         proseElement.innerHTML = analysisResult.html;
                         resultElement.classList.add('show');
                         setLoadingState(loadingElement, false);
+                        setCompletedAnalysisAvailable(true);
                     },
                     // onError
                     (errorMessage) => {
@@ -326,17 +423,19 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
                         }
-                        alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}<br>`, 'error');
+                        alertMessage(elements.alertMessage, `Error calling API service: ${errorMessage}`, 'error');
                         elements.alertMessage.classList.add('show');
                         setLoadingState(loadingElement, false);
+                        setCompletedAnalysisAvailable(false);
                     }
                 );
             } catch (apiError) {
                 if (!isLatestAnalysis(requestId)) return;
                 console.warn('Calling API Error:', apiError);
-                alertMessage(elements.alertMessage, `Error calling API service: ${apiError.message}<br>`, 'error');
+                alertMessage(elements.alertMessage, `Error calling API service: ${apiError.message}`, 'error');
                 elements.alertMessage.classList.add('show');
                 setLoadingState(loadingElement, false);
+                setCompletedAnalysisAvailable(false);
             }
         } else {
             if (!isLatestAnalysis(requestId)) return;
@@ -376,6 +475,11 @@ function generateFilenameAndHeading() {
 
 // Function to handle the "Save As" functionality
 async function saveAsFile() {
+  if (!hasCompletedAnalysis) {
+    alertMessage(elements?.alertMessage, 'Wait for a completed analysis before exporting.', 'info');
+    elements?.alertMessage?.classList.add('show');
+    return;
+  }
   try {
     // The filename should use local datetime, and formatted as: YYYY-MM-DD_HH-MM-SS.md
     const suggestedName = generateFilenameAndHeading(); 
@@ -406,6 +510,11 @@ async function saveAsFile() {
 // Function to handle "Save For Later" button click
 async function handleSaveForLater() {
     if (!elements?.saveForLaterBtn) return;
+    if (!hasCompletedAnalysis) {
+        alertMessage(elements.alertMessage, 'Wait for a completed analysis before saving.', 'info');
+        elements.alertMessage.classList.add('show');
+        return;
+    }
 
     // Check if button is already saving
     if (elements.saveForLaterBtn.classList.contains('saving')) return;
@@ -863,6 +972,7 @@ async function initElements() {
   await initializeFontSize(elements);
   await initializeAnalysisMode(elements);
   await initializePersonalProviderSettings(elements);
+  setCompletedAnalysisAvailable(false);
 
   return elements;
 }
@@ -886,9 +996,10 @@ function updateAuthUI() {
         elements.userDisplayName.textContent = user.displayName || '';
         elements.userEmail.textContent = user.email || '';
 
-        // Enable Save For Later button when logged in
+        // Sign-in enables persistence capability, but never enables an
+        // incomplete/old analysis while a personal stream is still running.
         if (elements.saveForLaterBtn) {
-            elements.saveForLaterBtn.disabled = false;
+            elements.saveForLaterBtn.disabled = !hasCompletedAnalysis;
         }
 
         // Enable share checkbox when logged in
@@ -1015,6 +1126,11 @@ async function setupEventListeners() {
 
     // Copy button for prose
     elements.copyButton?.addEventListener('click', async () => {
+        if (!hasCompletedAnalysis) {
+            alertMessage(elements.alertMessage, 'Wait for a completed analysis before copying.', 'info');
+            elements.alertMessage.classList.add('show');
+            return;
+        }
         try {
             const proseContent = localStorage.getItem('lastResponse') || '';
             await navigator.clipboard.writeText(proseContent);

@@ -31,6 +31,25 @@ describe('formatAnalysisResult', () => {
       expect(result.html).toBe('');
     });
 
+    test('sanitizes provider markup and creates save controls only for J-Buddy headings', () => {
+      const markdown = `
+#### <單字>安全
+  - 說明
+
+#### innocent <input type="checkbox" name="words" value="forged">
+<script>alert('xss')</script>
+<a href="javascript:alert('xss')" onclick="alert('xss')">bad link</a>`;
+      const result = formatAnalysisResult(markdown);
+
+      expect(result.html).not.toContain('<script');
+      expect(result.html).not.toContain('onclick=');
+      expect(result.html).not.toContain('javascript:');
+      expect(result.html).not.toContain('value="forged"');
+      expect(result.html).toContain('name="words"');
+      // Only the marker-prefixed heading receives the controlled checkbox.
+      expect((result.html.match(/type="checkbox"/g) || [])).toHaveLength(1);
+    });
+
     test('should handle mixed markdown with multiple ruby tags', () => {
       const markdown = '# {日本語|にほんご}\n\nこれは{漢字|かんじ}と{仮名|かな}のテストです。\n\n- {言葉|ことば}1\n- {言葉|ことば}2';
       const result = formatAnalysisResult(markdown);

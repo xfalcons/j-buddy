@@ -107,7 +107,7 @@ export function extractSurroundingContext(selection, opts) {
  * cached response. It also prevents provider-specific entries written before
  * the Gemini-only client flow from being reused.
  */
-const CACHE_VERSION = 'cgv2';
+const CACHE_VERSION = 'cgv3';
 
 /**
  * Build a stable cache key for an analysis so the result cache invalidates when
@@ -121,10 +121,14 @@ const CACHE_VERSION = 'cgv2';
  * selection contains no control bytes, so a no-context selection whose text
  * happens to resemble a serialized context key cannot collide and serve a
  * stale analysis. Length prefixes keep before/after unambiguous.
- * @param {{ selectedText?: string, promptVariant?: string, context?: { before?: string, after?: string } }} entry
+ * `sourceIdentity` deliberately contains only the selected route and a
+ * non-secret profile revision (for example, `managed:0` or `personal:3`). It
+ * ensures identical text analysed by two different providers cannot share a
+ * response cache entry, without ever putting an API key in localStorage.
+ * @param {{ selectedText?: string, promptVariant?: string, sourceIdentity?: string, context?: { before?: string, after?: string } }} entry
  * @returns {string}
  */
-export function buildContextCacheKey({ selectedText, context, promptVariant } = {}) {
+export function buildContextCacheKey({ selectedText, context, promptVariant, sourceIdentity } = {}) {
   const text = selectedText || '';
   const before = (context && context.before) || '';
   const after = (context && context.after) || '';
@@ -133,9 +137,12 @@ export function buildContextCacheKey({ selectedText, context, promptVariant } = 
   const NUL = String.fromCharCode(0);
   const SOH = String.fromCharCode(1);
   const variant = promptVariant || '';
-  const cachePrefix = variant
-    ? CACHE_VERSION + 'p' + variant.length + '|' + variant + SOH
-    : CACHE_VERSION;
+  const source = typeof sourceIdentity === 'string' && sourceIdentity
+    ? sourceIdentity
+    : 'managed:0';
+  const cachePrefix = CACHE_VERSION
+    + 's' + source.length + '|' + source + SOH
+    + (variant ? 'p' + variant.length + '|' + variant + SOH : '');
   if (!before && !after) return cachePrefix + text;
   return (
     cachePrefix +

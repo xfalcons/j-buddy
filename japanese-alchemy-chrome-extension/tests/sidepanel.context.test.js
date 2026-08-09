@@ -31,12 +31,13 @@ describe('buildContextCacheKey', () => {
     expect(a).not.toBe(b);
   });
 
-  test('empty/absent context reduces to the version + bare selectedText', () => {
-    // The version prefix (bumped when the conjugation engine shipped) is what
-    // distinguishes a post-engine key from a pre-engine cached one.
-    expect(buildContextCacheKey({ selectedText: 'テスト', context: { before: '', after: '' } })).toBe('cgv2テスト');
-    expect(buildContextCacheKey({ selectedText: 'テスト', context: {} })).toBe('cgv2テスト');
-    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe('cgv2テスト');
+  test('empty/absent context reduces to the versioned managed-source key + bare selectedText', () => {
+    // The version and source prefix distinguish a post-personal-provider cache
+    // entry from any old Gemini-only response.
+    const expected = `cgv3s9|managed:0${String.fromCharCode(1)}テスト`;
+    expect(buildContextCacheKey({ selectedText: 'テスト', context: { before: '', after: '' } })).toBe(expected);
+    expect(buildContextCacheKey({ selectedText: 'テスト', context: {} })).toBe(expected);
+    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe(expected);
     // Same selection with vs without context must NOT collide.
     expect(
       buildContextCacheKey({ selectedText: 'テスト', context: { before: '', after: '' } })
@@ -61,12 +62,13 @@ describe('buildContextCacheKey', () => {
       selectedText: '猫',
       context: { before: 'hello', after: 'world' },
     });
-    expect(withCtx.startsWith('cgv2')).toBe(true);
-    expect(withCtx.charCodeAt('cgv2'.length)).toBe(0); // NUL sentinel right after the version prefix
+    const prefix = `cgv3s9|managed:0${String.fromCharCode(1)}`;
+    expect(withCtx.startsWith(prefix)).toBe(true);
+    expect(withCtx.charCodeAt(prefix.length)).toBe(0); // NUL sentinel after version + source
     // A selectedText that literally resembles the serialized form still reduces
     // to the version + itself (no NUL) and does not equal the context key.
     const lookalike = '猫 5|hello5|world';
-    expect(buildContextCacheKey({ selectedText: lookalike })).toBe('cgv2' + lookalike);
+    expect(buildContextCacheKey({ selectedText: lookalike })).toBe(prefix + lookalike);
     expect(buildContextCacheKey({ selectedText: lookalike })).not.toBe(withCtx);
   });
 
@@ -77,14 +79,14 @@ describe('buildContextCacheKey', () => {
     // never serve a stale pre-engine response.
     const noCtxNew = buildContextCacheKey({ selectedText: 'テスト' });
     expect(noCtxNew).not.toBe('テスト');
-    expect(noCtxNew.startsWith('cgv2')).toBe(true);
+    expect(noCtxNew.startsWith('cgv3')).toBe(true);
 
     const withCtxNew = buildContextCacheKey({
       selectedText: '猫',
       context: { before: 'hello', after: 'world' },
     });
     expect(withCtxNew.charCodeAt(0)).not.toBe(0); // old context form began with NUL
-    expect(withCtxNew.startsWith('cgv2')).toBe(true);
+    expect(withCtxNew.startsWith('cgv3')).toBe(true);
   });
 
   test('prompt variant separates cached results for the same selection and context', () => {
@@ -108,7 +110,7 @@ describe('buildContextCacheKey', () => {
     expect(buildContextCacheKey({ selectedText: 'テスト', promptVariant: 'v2' })).not.toBe(
       buildContextCacheKey({ selectedText: 'テスト' })
     );
-    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe('cgv2テスト');
+    expect(buildContextCacheKey({ selectedText: 'テスト' })).toBe(`cgv3s9|managed:0${String.fromCharCode(1)}テスト`);
   });
 
   test('ignores legacy provider values and cannot reuse a cgv1 key', () => {
@@ -116,7 +118,18 @@ describe('buildContextCacheKey', () => {
     const zai = buildContextCacheKey({ selectedText: 'テスト', ai: 'zai' });
 
     expect(gemini).toBe(zai);
-    expect(gemini).toBe('cgv2テスト');
+    expect(gemini).toBe(`cgv3s9|managed:0${String.fromCharCode(1)}テスト`);
     expect(gemini).not.toBe('cgv1a3|zai' + String.fromCharCode(1) + 'テスト');
+  });
+
+  test('separates managed and personal profile revisions without placing a key in the cache key', () => {
+    const managed = buildContextCacheKey({ selectedText: 'テスト', sourceIdentity: 'managed:0' });
+    const personalFirst = buildContextCacheKey({ selectedText: 'テスト', sourceIdentity: 'personal:1' });
+    const personalEdited = buildContextCacheKey({ selectedText: 'テスト', sourceIdentity: 'personal:2' });
+
+    expect(managed).not.toBe(personalFirst);
+    expect(personalFirst).not.toBe(personalEdited);
+    expect(personalFirst).toContain('personal:1');
+    expect(personalFirst).not.toContain('secret');
   });
 });
