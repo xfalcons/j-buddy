@@ -10,6 +10,11 @@ firebase-debug.*.log*
 # Firebase cache
 .firebase/
 
+# Functions build and Firebase runtime files
+functions/lib/
+functions/.runtimeconfig.json
+functions/serviceAccountKey.json
+
 # Firebase config
 
 # Uncomment this if you'd like others to create their own Firebase project.
@@ -62,8 +67,14 @@ node_modules/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
+# Local environment configuration
 .env
+.env.*
+!.env.example
+!.env.*.example
+
+# Keep a shareable Functions secrets template, if added later.
+!functions/secrets.example
 
 # dataconnect generated files
 .dataconnect
