@@ -50,6 +50,23 @@ describe('formatAnalysisResult', () => {
       expect((result.html.match(/type="checkbox"/g) || [])).toHaveLength(1);
     });
 
+    test('does not preserve raw provider HTML in data sent to Save For Later', () => {
+      const markdown = `
+### 單字分析
+#### <單字><img src=x onerror="alert('xss')">{安全|あんぜん}
+  - <script>alert('xss')</script>安全な説明
+
+### 文法分析
+#### <文法><a href="javascript:alert('xss')">〜ながら</a>
+  - <iframe src="https://attacker.invalid"></iframe>同時進行を表す。`;
+      const result = formatAnalysisResult(markdown);
+
+      expect(result.json.words[0].term).toBe('{安全|あんぜん}');
+      expect(result.json.words[0].detail).not.toMatch(/<\/?(?:script|img)[^>]*>/i);
+      expect(result.json.grammars[0].point).toBe('〜ながら');
+      expect(result.json.grammars[0].explanation).not.toContain('<iframe');
+    });
+
     test('should handle mixed markdown with multiple ruby tags', () => {
       const markdown = '# {日本語|にほんご}\n\nこれは{漢字|かんじ}と{仮名|かな}のテストです。\n\n- {言葉|ことば}1\n- {言葉|ことば}2';
       const result = formatAnalysisResult(markdown);

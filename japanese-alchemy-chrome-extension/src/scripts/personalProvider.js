@@ -200,18 +200,36 @@ export async function setAnalysisProviderMode(mode) {
 }
 
 /**
+ * Start the host-permission prompt synchronously from the settings form's
+ * submit gesture. Chrome can reject permission requests once an async storage
+ * read has yielded, so the subsequent persistence step receives this promise.
+ */
+export function requestPersonalProviderOriginPermission(profile) {
+  const normalizedProfile = normalizePersonalProviderProfile(profile);
+  const permission = getOriginPermission(normalizedProfile.apiUrl);
+  return {
+    normalizedProfile,
+    permission,
+    permissionRequest: requirePermissions().request({ origins: [permission] }),
+  };
+}
+
+/**
  * Request the exact provider origin before saving a replacement profile. The
  * previous origin is released only after the new profile has committed.
  */
-export async function savePersonalProvider(profile) {
-  const normalizedProfile = normalizePersonalProviderProfile(profile);
-  const nextPermission = getOriginPermission(normalizedProfile.apiUrl);
+export async function savePersonalProvider(profile, pendingPermission = null) {
+  const normalizedProfile = pendingPermission?.normalizedProfile
+    || normalizePersonalProviderProfile(profile);
+  const nextPermission = pendingPermission?.permission
+    || getOriginPermission(normalizedProfile.apiUrl);
   const stored = await getStoredProviderValues();
   const currentReadiness = await readProfileReadiness(stored?.[PERSONAL_PROVIDER_PROFILE_KEY]);
   const previousPermission = currentReadiness.permission;
 
   const permissions = requirePermissions();
-  const granted = await permissions.request({ origins: [nextPermission] });
+  const granted = await (pendingPermission?.permissionRequest
+    || permissions.request({ origins: [nextPermission] }));
   if (!granted) {
     throw new PersonalProviderError(
       'Provider access was not granted. Personal settings were not saved.',

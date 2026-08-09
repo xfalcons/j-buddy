@@ -296,6 +296,37 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(storage.analysisProviderMode).toBe('personal');
   });
 
+  test('revoked personal-provider access cannot render a matching cached result', async () => {
+    const text = '成長を後押しする';
+    const cacheKey = buildContextCacheKey({
+      selectedText: text,
+      promptVariant: 'v2',
+      sourceIdentity: 'personal:4',
+    });
+    setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'personal-secret-key', model: 'learner-model',
+      },
+    });
+    setupLocalStorage({
+      lastAnalysisKey: cacheKey,
+      lastResponse: '### 單字分析\n#### <單字>stale cached result',
+    });
+    global.chrome.permissions.contains = jest.fn(async () => false);
+    global.fetch = jest.fn();
+    const { alertMessage, prose, result } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(prose.innerHTML).toBe('');
+    expect(result.classList.contains('show')).toBe(false);
+    expect(alertMessage.textContent).toContain('Allow access to this provider');
+  });
+
   test('a personal-provider failure stays personal and never caches a partial result', async () => {
     const storage = setupStorage({
       promptVariant: 'v2',

@@ -8,6 +8,7 @@ import {
   getOriginPermission,
   getPersonalProviderState,
   normalizeApiBaseUrl,
+  requestPersonalProviderOriginPermission,
   savePersonalProvider,
   setAnalysisProviderMode,
 } from '../src/scripts/personalProvider.js';
@@ -113,6 +114,24 @@ describe('personal provider state', () => {
       [PERSONAL_PROVIDER_REVISION_KEY]: 1,
     }));
     expect(global.chrome.storage.sync).toBeUndefined();
+  });
+
+  test('starts the permission request before any asynchronous storage work when called from a form gesture', async () => {
+    const events = [];
+    global.chrome.storage.local.get.mockImplementation(async () => {
+      events.push('storage-get');
+      return {};
+    });
+    global.chrome.permissions.request.mockImplementation(async ({ origins }) => {
+      events.push('permission-request');
+      return true;
+    });
+
+    const pendingPermission = requestPersonalProviderOriginPermission(profile);
+    await savePersonalProvider(profile, pendingPermission);
+
+    expect(events).toEqual(expect.arrayContaining(['permission-request', 'storage-get']));
+    expect(events.indexOf('permission-request')).toBeLessThan(events.indexOf('storage-get'));
   });
 
   test('denied initial setup preserves managed mode and does not persist credentials', async () => {

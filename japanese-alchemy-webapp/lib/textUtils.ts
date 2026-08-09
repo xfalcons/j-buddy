@@ -1,4 +1,25 @@
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+
+const ANALYSIS_ALLOWED_TAGS = [
+  'a', 'blockquote', 'br', 'code', 'del', 'em', 'h1', 'h2', 'h3', 'h4',
+  'h5', 'h6', 'hr', 'li', 'ol', 'p', 'pre', 'ruby', 'rb', 'rt', 'strong',
+  'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul',
+];
+const ANALYSIS_ALLOWED_ATTR = ['colspan', 'href', 'rowspan', 'title'];
+
+/**
+ * Firestore content is user- and provider-controlled. Keep the markdown and
+ * ruby markup the dashboard needs, while sanitizing the HTML at every render
+ * path that feeds `dangerouslySetInnerHTML`.
+ */
+export function sanitizeAnalysisHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ANALYSIS_ALLOWED_TAGS,
+    ALLOWED_ATTR: ANALYSIS_ALLOWED_ATTR,
+    ALLOW_DATA_ATTR: false,
+  });
+}
 
 /**
  * Parse furigana text and convert to RUBY HTML tags
@@ -8,7 +29,9 @@ export function parseFurigana(text: string): string {
   if (!text) return '';
   
   // Replace patterns like {kanji|reading} with ruby tags
-  return text.replace(/\{([^|]+)\|([^}]+)\}/g, '<ruby><rb>$1</rb><rt>$2</rt></ruby>');
+  return sanitizeAnalysisHtml(
+    text.replace(/\{([^|]+)\|([^}]+)\}/g, '<ruby><rb>$1</rb><rt>$2</rt></ruby>')
+  );
 }
 
 /**
@@ -49,7 +72,7 @@ export function parseExplanationJson(explanationJson: string): string | null {
 export function markdownToHtml(markdown: string): string {
   if (!markdown) return '';
   
-  return marked.parse(markdown) as string;
+  return sanitizeAnalysisHtml(marked.parse(markdown) as string);
 }
 
 /**

@@ -10,6 +10,7 @@ import {
     PERSONAL_PROVIDER_MODE,
     clearPersonalProvider,
     getPersonalProviderState,
+    requestPersonalProviderOriginPermission,
     savePersonalProvider,
     setAnalysisProviderMode,
 } from '../scripts/personalProvider.js';
@@ -61,6 +62,30 @@ export function sanitizeAnalysisHtml(html) {
         ALLOWED_ATTR: ANALYSIS_ALLOWED_ATTR,
         ALLOW_DATA_ATTR: false,
     });
+}
+
+/**
+ * Stored vocabulary and grammar fields are later rendered by the web app.
+ * They are markdown, not HTML, so discard all provider-supplied HTML before
+ * the fields leave the extension. Ruby is represented in this stored format
+ * as `{word|reading}`, so this does not remove J-Buddy's annotation syntax.
+ */
+export function sanitizeAnalysisTextForStorage(value) {
+    const text = String(value || '');
+    const purifier = getDomPurify();
+    if (purifier) {
+        return purifier.sanitize(text, {
+            ALLOWED_TAGS: [],
+            ALLOWED_ATTR: [],
+            ALLOW_DATA_ATTR: false,
+        });
+    }
+
+    // The test-only fallback deliberately keeps markdown text while dropping
+    // raw HTML tags. The production extension takes the DOMPurify path above.
+    return text
+        .replace(/<!--([\s\S]*?)-->/g, '')
+        .replace(/<\/?[^>]+>/g, '');
 }
 
 function escapeHtmlAttribute(value) {
@@ -144,8 +169,10 @@ export function formatAnalysisResult(markdown) {
         wordContent.split(/^####\s+/gm).forEach(entry => {
             const lines = entry.trim().split('\n');
             // remove <單字>： prefix if exists
-            const term = lines.shift().trim().replace('<單字>', ''); // First line is the term
-            const detail = lines.join('\n').trim(); // The rest is detail
+            const term = sanitizeAnalysisTextForStorage(
+                lines.shift().trim().replace('<單字>', '')
+            ); // First line is the term
+            const detail = sanitizeAnalysisTextForStorage(lines.join('\n').trim()); // The rest is detail
             // push into jsonData.words
             if (term) {
                 if (!jsonData.words) jsonData.words = [];
@@ -160,8 +187,10 @@ export function formatAnalysisResult(markdown) {
         grammarContent.split(/^####\s+/gm).forEach(entry => {
             const lines = entry.trim().split('\n');
             // remove <文法>： prefix if exists
-            const point = lines.shift().trim().replace('<文法>', ''); // First line is the point
-            const explanation = lines.join('\n').trim(); // The rest is explanation
+            const point = sanitizeAnalysisTextForStorage(
+                lines.shift().trim().replace('<文法>', '')
+            ); // First line is the point
+            const explanation = sanitizeAnalysisTextForStorage(lines.join('\n').trim()); // The rest is explanation
             // push into jsonData.grammars
             if (point) {
                 if (!jsonData.grammars) jsonData.grammars = [];
@@ -323,6 +352,31 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             sourceIdentity,
         })
         : '';
+
+    // Permission can be revoked without changing the saved profile or cache
+    // key. Check readiness before any cache reuse so a stale personal result
+    // never becomes visible, copyable, or saveable after revocation.
+    if (isValidSelection(currentSelectedText)
+        && providerState.mode === PERSONAL_PROVIDER_MODE
+        && !providerState.isPersonalReady) {
+        cancelActivePersonalAnalysis();
+        analysisRequestId += 1;
+        isAnalizing = false;
+        activeAnalysisKey = null;
+        saveForLaterJson = {};
+        proseElement.innerHTML = '';
+        resultElement.classList.remove('show');
+        setLoadingState(loadingElement, false);
+        setCompletedAnalysisAvailable(false);
+        alertMessage(
+            elements.alertMessage,
+            providerState.personalError?.message
+                || 'Personal analysis is selected but the provider setup is unavailable.',
+            'error'
+        );
+        elements.alertMessage.classList.add('show');
+        return;
+    }
 
     if (!options.force && isAnalizing && cacheKey && cacheKey === activeAnalysisKey) {
         return;
@@ -843,11 +897,22 @@ export async function handlePersonalProviderSave(elements) {
         return null;
     }
 
+    // This synchronous call must remain before the first await in this click
+    // handler. It preserves Chrome's user-gesture requirement for optional
+    // host permissions while still rejecting invalid URLs before a prompt.
+    let pendingPermission;
+    try {
+        pendingPermission = requestPersonalProviderOriginPermission(values);
+    } catch (error) {
+        setPersonalProviderFeedback(elements, error.message, 'error', true);
+        return null;
+    }
+
     if (elements.savePersonalProviderButton) elements.savePersonalProviderButton.disabled = true;
     setPersonalProviderFeedback(elements, '', 'error');
     setPersonalProviderFeedback(elements, 'Requesting provider access…', 'status');
     try {
-        await savePersonalProvider(values);
+        await savePersonalProvider(values, pendingPermission);
         await setAnalysisProviderMode(PERSONAL_PROVIDER_MODE);
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
