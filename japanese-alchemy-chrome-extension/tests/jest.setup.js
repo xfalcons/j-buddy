@@ -5,7 +5,9 @@ global.chrome = {
   storage: {
     local: {
       get: jest.fn(async () => ({})),
-      set: jest.fn(async () => undefined)
+      set: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+      setAccessLevel: jest.fn(async () => undefined),
     },
     onChanged: {
       addListener: jest.fn(),
@@ -17,7 +19,19 @@ global.chrome = {
       addListener: jest.fn(),
       removeListener: jest.fn()
     }
-  }
+  },
+  permissions: {
+    contains: jest.fn(async () => false),
+    request: jest.fn(async () => false),
+    remove: jest.fn(async () => true),
+  },
+  action: {
+    onClicked: { addListener: jest.fn() },
+  },
+  sidePanel: {
+    setOptions: jest.fn(),
+    open: jest.fn(),
+  },
 };
 
 // Mock document and window APIs for tests

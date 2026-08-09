@@ -1,4 +1,13 @@
+import { restrictLocalStorageToTrustedContexts } from './personalProvider.js';
+
 // Background service worker
+
+// Content scripts only submit selected text through this relay. Restrict the
+// shared local storage area before any provider profile can be read elsewhere.
+void restrictLocalStorageToTrustedContexts().catch((error) => {
+  // This intentionally reports only the capability error, never provider data.
+  console.error('[Background] Unable to protect local provider settings:', error.message);
+});
 
 // Track panel states
 const panelStates = new Map();
@@ -38,7 +47,6 @@ chrome.action.onClicked.addListener((tab) => {
 // Handle messages from content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Background] request.action: ', request.action);
-  console.log('[Background] request.data: ', request.data);
   if (request.action === 'textSelected') {
     // Store selected text + surrounding context temporarily. Context fields are
     // optional (older builds / selections with no neighbors send none) and default
