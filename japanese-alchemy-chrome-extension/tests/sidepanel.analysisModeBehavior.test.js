@@ -275,6 +275,8 @@ describe('sidepanel analysis-mode behavior', () => {
       },
     });
     global.chrome.permissions.contains = jest.fn(async () => true);
+    const managedService = jest.fn();
+    global.JaAlchemyApiService = managedService;
     global.fetch = jest.fn(async () => ({
       ok: true,
       headers: { get: () => 'application/json' },
@@ -294,6 +296,41 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(global.localStorage.getItem('lastAnalysisKey')).toContain('personal:4');
     expect(global.localStorage.getItem('lastAnalysisKey')).not.toContain('personal-secret-key');
     expect(storage.analysisProviderMode).toBe('personal');
+    expect(managedService).not.toHaveBeenCalled();
+  });
+
+  test('a ready personal-provider cache hit is sanitized before it renders and never calls Firebase', async () => {
+    const text = '成長を後押しする';
+    const cacheKey = buildContextCacheKey({
+      selectedText: text,
+      promptVariant: 'v2',
+      sourceIdentity: 'personal:4',
+    });
+    setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'personal-secret-key', model: 'learner-model',
+      },
+    });
+    setupLocalStorage({
+      lastAnalysisKey: cacheKey,
+      lastResponse: '#### <單字>安全\n<img src=x onerror="alert(1)"><script>alert(1)</script>',
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    const managedService = jest.fn();
+    global.JaAlchemyApiService = managedService;
+    global.fetch = jest.fn();
+    const { prose } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(managedService).not.toHaveBeenCalled();
+    expect(prose.innerHTML).toContain('安全');
+    expect(prose.innerHTML).not.toContain('<script');
+    expect(prose.innerHTML).not.toContain('onerror=');
   });
 
   test('revoked personal-provider access cannot render a matching cached result', async () => {

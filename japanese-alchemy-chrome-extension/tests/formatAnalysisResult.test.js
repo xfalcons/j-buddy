@@ -4,7 +4,7 @@
  */
 
 // Import functions being tested from source file
-import { formatAnalysisResult, convertToRuby } from '../src/sidepanel/sidepanel.js';
+import { formatAnalysisResult, convertToRuby, renderAnalysisMarkdown } from '../src/sidepanel/sidepanel.js';
 
 describe('formatAnalysisResult', () => {
   describe('Basic Functionality Tests', () => {
@@ -48,6 +48,16 @@ describe('formatAnalysisResult', () => {
       expect(result.html).toContain('name="words"');
       // Only the marker-prefixed heading receives the controlled checkbox.
       expect((result.html.match(/type="checkbox"/g) || [])).toHaveLength(1);
+    });
+
+    test('sanitizes streaming-preview markup before it enters the side panel', () => {
+      const html = renderAnalysisMarkdown(
+        'partial <img src=x onerror="alert(1)"> <a href="javascript:alert(1)">link</a>'
+      );
+
+      expect(html).not.toContain('onerror=');
+      expect(html).not.toContain('javascript:');
+      expect(html).toContain('partial');
     });
 
     test('does not preserve raw provider HTML in data sent to Save For Later', () => {

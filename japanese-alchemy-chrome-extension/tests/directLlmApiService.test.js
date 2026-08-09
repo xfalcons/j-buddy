@@ -25,6 +25,21 @@ function sseResponse(chunks) {
   };
 }
 
+function sseResponseBytes(chunks) {
+  const queue = [...chunks];
+  return {
+    ok: true,
+    headers: headers(),
+    body: {
+      getReader: () => ({
+        read: jest.fn(async () => queue.length
+          ? { done: false, value: queue.shift() }
+          : { done: true, value: undefined }),
+      }),
+    },
+  };
+}
+
 function jsonResponse(payload) {
   return {
     ok: true,
@@ -70,6 +85,33 @@ describe('DirectLlmApiService', () => {
     expect(chunks).toEqual([['分', '分'], ['析', '分析']]);
     expect(done).toHaveBeenCalledTimes(1);
     expect(done).toHaveBeenCalledWith('分析');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('reassembles fragmented CRLF SSE frames, [DONE], and split UTF-8 content', async () => {
+    const encoder = new TextEncoder();
+    const utf8Character = encoder.encode('語');
+    const fetch = jest.fn(async () => sseResponseBytes([
+      encoder.encode('data: {"choices":[{"delta":{"content":"'),
+      utf8Character.slice(0, 1),
+      utf8Character.slice(1),
+      encoder.encode('"},"finish_reason":null}]}\r'),
+      encoder.encode('\n\r'),
+      encoder.encode('\ndata: [DO'),
+      encoder.encode('NE]\r\n\r\n'),
+    ]));
+    const chunks = [];
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      profile, '日本語', 'v2', undefined,
+      (chunk, fullText) => chunks.push([chunk, fullText]), done, onError
+    );
+
+    expect(chunks).toEqual([['語', '語']]);
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(done).toHaveBeenCalledWith('語');
     expect(onError).not.toHaveBeenCalled();
   });
 
