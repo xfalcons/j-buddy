@@ -26,11 +26,27 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('aria-pressed="true">造句分析</button>');
   });
 
-  test('does not render an AI provider selector', () => {
-    expect(html).not.toContain('ai-selection-toggle');
+  test('renders separate provider settings without repurposing prompt variants', () => {
+    expect(html).toContain('id="personalProviderSettings"');
+    expect(html).toContain('class="provider-mode-toggle"');
+    expect(html).toContain('data-provider-mode="managed"');
+    expect(html).toContain('data-provider-mode="personal"');
+    expect(html).toContain('id="personalProviderApiUrl"');
+    expect(html).toContain('id="personalProviderApiKey"');
+    expect(html).toContain('id="personalProviderModel"');
+    expect(html).toContain('Save and use personal');
+    expect(html).toContain('Clear personal settings');
     expect(html).not.toContain('data-ai-preference');
     expect(html).not.toContain('aiPreference');
-    expect(html).not.toContain('>Zai<');
+  });
+
+  test('discloses personal-provider data sharing and charges accessibly', () => {
+    expect(html).toContain('selected text and surrounding context directly to your provider');
+    expect(html).toContain('may charge for requests');
+    expect(html).toContain('id="personalProviderStatus"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('id="personalProviderError"');
+    expect(html).toContain('role="alert"');
   });
 
   test('keeps the top controls in one horizontal row', () => {

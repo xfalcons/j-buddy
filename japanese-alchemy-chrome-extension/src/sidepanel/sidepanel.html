@@ -664,6 +664,118 @@
       cursor: not-allowed;
     }
 
+    /* Personal provider settings deliberately live in the side panel so a
+       learner can see where their selected text will be sent before analysis. */
+    .provider-settings {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      padding: 12px;
+    }
+
+    .provider-settings summary {
+      color: var(--text-primary);
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .provider-settings-content {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .provider-mode-toggle {
+      display: flex;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .provider-mode-option,
+    .provider-action {
+      border: 0;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      cursor: pointer;
+      font: inherit;
+      padding: 8px 10px;
+    }
+
+    .provider-mode-option {
+      flex: 1;
+      border-right: 1px solid var(--border-color);
+    }
+
+    .provider-mode-option:last-child {
+      border-right: 0;
+    }
+
+    .provider-mode-option.selected,
+    .provider-action.primary {
+      background: var(--button-bg);
+      color: white;
+    }
+
+    .provider-mode-option:hover,
+    .provider-action:hover {
+      background: var(--button-hover);
+    }
+
+    .provider-mode-option.selected:hover,
+    .provider-action.primary:hover {
+      background: var(--button-bg);
+      filter: brightness(0.92);
+    }
+
+    .provider-form-field {
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+    }
+
+    .provider-form-field input {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: var(--text-primary);
+      padding: 8px;
+    }
+
+    .provider-hint,
+    .provider-summary,
+    .provider-message {
+      font-size: 12px;
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .provider-summary {
+      color: var(--text-secondary);
+      overflow-wrap: anywhere;
+    }
+
+    .provider-message.error {
+      color: var(--alert-text);
+    }
+
+    .provider-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .provider-action.danger {
+      border: 1px solid var(--border-color);
+    }
+
+    .provider-mode-option:disabled,
+    .provider-action:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
   </style>
 
   <!-- Bootstrap Bundle with Popper -->
@@ -697,6 +809,38 @@
         <button class="sign-out-button" id="signOutBtn">Sign Out</button>
       </div>
     </div>
+
+    <details class="provider-settings" id="personalProviderSettings">
+      <summary>Analysis provider</summary>
+      <div class="provider-settings-content">
+        <div class="provider-mode-toggle" role="group" aria-label="Analysis provider">
+          <button class="provider-mode-option selected" type="button" data-provider-mode="managed" aria-pressed="true">Managed</button>
+          <button class="provider-mode-option" type="button" data-provider-mode="personal" aria-pressed="false" aria-describedby="personalProviderStatus personalProviderError">Personal</button>
+        </div>
+        <p id="personalProviderSummary" class="provider-summary"></p>
+        <p id="personalProviderStatus" class="provider-message" aria-live="polite" tabindex="-1"></p>
+        <p id="personalProviderError" class="provider-message error" role="alert" tabindex="-1" hidden></p>
+        <p class="provider-hint">Personal analysis sends selected text and surrounding context directly to your provider. Your provider may charge for requests.</p>
+        <form id="personalProviderForm" novalidate>
+          <label class="provider-form-field" for="personalProviderApiUrl">
+            API base URL
+            <input id="personalProviderApiUrl" name="apiUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com/v1" aria-describedby="personalProviderError" required>
+          </label>
+          <label class="provider-form-field" for="personalProviderApiKey">
+            API key
+            <input id="personalProviderApiKey" name="apiKey" type="password" autocomplete="off" placeholder="Enter to save or replace" aria-describedby="personalProviderError" required>
+          </label>
+          <label class="provider-form-field" for="personalProviderModel">
+            Model
+            <input id="personalProviderModel" name="model" type="text" autocomplete="off" placeholder="gemini-2.5-flash" aria-describedby="personalProviderError" required>
+          </label>
+          <div class="provider-actions">
+            <button id="savePersonalProviderButton" class="provider-action primary" type="submit">Save and use personal</button>
+            <button id="clearPersonalProviderButton" class="provider-action danger" type="button">Clear personal settings</button>
+          </div>
+        </form>
+      </div>
+    </details>
 
     <div class="controls">
       <div class="controls-left">

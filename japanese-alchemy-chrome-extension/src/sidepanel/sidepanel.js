@@ -4,6 +4,14 @@ import {
     getPromptVariant,
     setPromptVariant,
 } from '../scripts/promptVariant.js';
+import {
+    MANAGED_PROVIDER_MODE,
+    PERSONAL_PROVIDER_MODE,
+    clearPersonalProvider,
+    getPersonalProviderState,
+    savePersonalProvider,
+    setAnalysisProviderMode,
+} from '../scripts/personalProvider.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
 
@@ -589,6 +597,188 @@ export function updateAnalysisModeUi(elements, selectedVariant) {
     });
 }
 
+export function redactPersonalProviderApiKey(apiKey) {
+    if (typeof apiKey !== 'string' || !apiKey) return '';
+    return apiKey.length > 4 ? `••••${apiKey.slice(-4)}` : '••••';
+}
+
+function setPersonalProviderFeedback(elements, message = '', type = 'status', focus = false) {
+    const feedbackElement = type === 'error'
+        ? elements.personalProviderError
+        : elements.personalProviderStatus;
+    if (!feedbackElement) return;
+
+    feedbackElement.textContent = message;
+    feedbackElement.hidden = !message;
+    if (focus && message && typeof feedbackElement.focus === 'function') {
+        feedbackElement.focus();
+    }
+}
+
+export function updatePersonalProviderModeUi(elements, mode, isPersonalReady) {
+    elements.providerModeButtons?.forEach((button) => {
+        const isSelected = button.dataset.providerMode === mode;
+        button.classList.toggle('selected', isSelected);
+        button.setAttribute('aria-pressed', String(isSelected));
+    });
+
+    if (elements.personalProviderModeButton) {
+        elements.personalProviderModeButton.setAttribute(
+            'aria-describedby',
+            isPersonalReady ? 'personalProviderStatus' : 'personalProviderError personalProviderStatus'
+        );
+    }
+}
+
+export function renderPersonalProviderState(elements, state) {
+    const { mode, profile, isPersonalReady, personalError } = state;
+    updatePersonalProviderModeUi(elements, mode, isPersonalReady);
+
+    if (elements.personalProviderSummary) {
+        elements.personalProviderSummary.textContent = profile
+            ? `Saved provider: ${profile.apiUrl} · ${profile.model} · key ${redactPersonalProviderApiKey(profile.apiKey)}`
+            : 'No personal provider is configured. Managed analysis is selected.';
+    }
+
+    if (elements.personalProviderApiUrl) {
+        elements.personalProviderApiUrl.value = profile?.apiUrl || '';
+    }
+    if (elements.personalProviderModel) {
+        elements.personalProviderModel.value = profile?.model || '';
+    }
+    // Never render a saved credential into the form, even as a masked value.
+    if (elements.personalProviderApiKey) {
+        elements.personalProviderApiKey.value = '';
+    }
+    if (elements.clearPersonalProviderButton) {
+        elements.clearPersonalProviderButton.disabled = !profile;
+    }
+
+    const unavailableMessage = mode === PERSONAL_PROVIDER_MODE && !isPersonalReady
+        ? `Personal analysis is selected but unavailable: ${personalError?.message || 'complete provider setup first.'}`
+        : '';
+    setPersonalProviderFeedback(elements, unavailableMessage, 'error');
+    if (!unavailableMessage) {
+        setPersonalProviderFeedback(
+            elements,
+            profile
+                ? (isPersonalReady
+                    ? 'Personal provider is ready. Select Managed to use the J-Buddy service instead.'
+                    : 'Personal provider is saved, but access must be allowed before it can be used.')
+                : 'Configure one OpenAI-compatible provider to analyze text directly from this extension.',
+            'status'
+        );
+    }
+}
+
+export async function initializePersonalProviderSettings(elements) {
+    try {
+        const state = await getPersonalProviderState();
+        renderPersonalProviderState(elements, state);
+        return state;
+    } catch (error) {
+        updatePersonalProviderModeUi(elements, MANAGED_PROVIDER_MODE, false);
+        setPersonalProviderFeedback(
+            elements,
+            `Personal provider settings are unavailable: ${error.message}`,
+            'error'
+        );
+        return null;
+    }
+}
+
+function getPersonalProviderFormValues(elements) {
+    return {
+        apiUrl: elements.personalProviderApiUrl?.value || '',
+        apiKey: elements.personalProviderApiKey?.value || '',
+        model: elements.personalProviderModel?.value || '',
+    };
+}
+
+function focusPersonalProviderField(elements, values) {
+    if (!values.apiUrl.trim()) return elements.personalProviderApiUrl?.focus();
+    if (!values.apiKey.trim()) return elements.personalProviderApiKey?.focus();
+    return elements.personalProviderModel?.focus();
+}
+
+export async function handlePersonalProviderSave(elements) {
+    const values = getPersonalProviderFormValues(elements);
+    if (!values.apiUrl.trim() || !values.apiKey.trim() || !values.model.trim()) {
+        setPersonalProviderFeedback(
+            elements,
+            'Enter an HTTPS API URL, API key, and model before saving.',
+            'error',
+            true
+        );
+        focusPersonalProviderField(elements, values);
+        return null;
+    }
+
+    if (elements.savePersonalProviderButton) elements.savePersonalProviderButton.disabled = true;
+    setPersonalProviderFeedback(elements, '', 'error');
+    setPersonalProviderFeedback(elements, 'Requesting provider access…', 'status');
+    try {
+        await savePersonalProvider(values);
+        await setAnalysisProviderMode(PERSONAL_PROVIDER_MODE);
+        const state = await getPersonalProviderState();
+        renderPersonalProviderState(elements, state);
+        setPersonalProviderFeedback(
+            elements,
+            'Personal provider saved and selected. Future analyses will be sent directly to this provider.',
+            'status',
+            true
+        );
+        return state;
+    } catch (error) {
+        setPersonalProviderFeedback(elements, error.message, 'error', true);
+        return null;
+    } finally {
+        if (elements.savePersonalProviderButton) elements.savePersonalProviderButton.disabled = false;
+    }
+}
+
+export async function handlePersonalProviderModeChange(elements, mode) {
+    try {
+        await setAnalysisProviderMode(mode);
+        const state = await getPersonalProviderState();
+        renderPersonalProviderState(elements, state);
+        setPersonalProviderFeedback(
+            elements,
+            mode === PERSONAL_PROVIDER_MODE
+                ? 'Personal provider selected. Future analyses will be sent directly to it.'
+                : 'Managed provider selected. Future analyses will use the J-Buddy service.',
+            'status',
+            true
+        );
+        return state;
+    } catch (error) {
+        const state = await initializePersonalProviderSettings(elements);
+        setPersonalProviderFeedback(elements, error.message, 'error', true);
+        return state;
+    }
+}
+
+export async function handlePersonalProviderClear(elements, confirmClear = globalThis.confirm) {
+    const confirmed = typeof confirmClear === 'function' && confirmClear(
+        'Clear the saved API URL, API key, model, and provider access? Future analyses will use the managed provider.'
+    );
+    if (!confirmed) return false;
+
+    if (elements.clearPersonalProviderButton) elements.clearPersonalProviderButton.disabled = true;
+    try {
+        await clearPersonalProvider();
+        const state = await getPersonalProviderState();
+        renderPersonalProviderState(elements, state);
+        setPersonalProviderFeedback(elements, 'Personal provider settings cleared. Managed analysis is selected.', 'status', true);
+        return true;
+    } catch (error) {
+        setPersonalProviderFeedback(elements, error.message, 'error', true);
+        return false;
+    } finally {
+        if (elements.clearPersonalProviderButton) elements.clearPersonalProviderButton.disabled = false;
+    }
+}
+
 export async function initializeAnalysisMode(elements) {
     const selectedVariant = await getPromptVariant();
     updateAnalysisModeUi(elements, selectedVariant);
@@ -646,6 +836,17 @@ async function initElements() {
     shareCheckbox: document.getElementById('shareCheckbox'),
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
     analysisModeButtons: document.querySelectorAll('.analysis-mode-option'),
+    providerModeButtons: document.querySelectorAll('.provider-mode-option'),
+    personalProviderModeButton: document.querySelector('[data-provider-mode="personal"]'),
+    personalProviderForm: document.getElementById('personalProviderForm'),
+    personalProviderApiUrl: document.getElementById('personalProviderApiUrl'),
+    personalProviderApiKey: document.getElementById('personalProviderApiKey'),
+    personalProviderModel: document.getElementById('personalProviderModel'),
+    personalProviderSummary: document.getElementById('personalProviderSummary'),
+    personalProviderStatus: document.getElementById('personalProviderStatus'),
+    personalProviderError: document.getElementById('personalProviderError'),
+    savePersonalProviderButton: document.getElementById('savePersonalProviderButton'),
+    clearPersonalProviderButton: document.getElementById('clearPersonalProviderButton'),
     result: document.getElementById('result'),
     // Auth elements
     authSection: document.querySelector('#authSection'),
@@ -661,6 +862,7 @@ async function initElements() {
   // Initialize font size
   await initializeFontSize(elements);
   await initializeAnalysisMode(elements);
+  await initializePersonalProviderSettings(elements);
 
   return elements;
 }
@@ -785,6 +987,18 @@ async function setupEventListeners() {
       button.addEventListener('click', async () => {
         await handleAnalysisModeChange(elements, button.dataset.promptVariant);
       });
+    });
+    elements.providerModeButtons?.forEach((button) => {
+      button.addEventListener('click', async () => {
+        await handlePersonalProviderModeChange(elements, button.dataset.providerMode);
+      });
+    });
+    elements.personalProviderForm?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await handlePersonalProviderSave(elements);
+    });
+    elements.clearPersonalProviderButton?.addEventListener('click', async () => {
+      await handlePersonalProviderClear(elements);
     });
     // Font size button
     elements.fontSizeBtn?.addEventListener('click', e => {
