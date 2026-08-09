@@ -220,12 +220,14 @@ chrome.storage.onChanged.addListener(async (changes) => {
     // A profile, permission route, or revision changed while a request was in
     // flight. Invalidate its callbacks before it can overwrite the panel or
     // cache a response under the wrong provider identity.
+    cancelActivePersonalAnalysis();
     analysisRequestId += 1;
     isAnalizing = false;
     activeAnalysisKey = null;
     setCompletedAnalysisAvailable(false);
   }
   if (changes.selectedText || changes.contextBefore || changes.contextAfter) {
+    cancelActivePersonalAnalysis();
     const { selectedText, contextBefore = '', contextAfter = '' } =
       await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
     await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
@@ -250,6 +252,7 @@ let currentSelectedText = '';
 let currentContext = { before: '', after: '' };
 let analysisRequestId = 0;
 let activeAnalysisKey = null;
+let activePersonalAnalysisController = null;
 let modeChangeRequestId = 0;
 let hasCompletedAnalysis = false;
 
@@ -266,6 +269,11 @@ function isValidSelection(selectedText) {
 
 function isLatestAnalysis(requestId) {
     return requestId === analysisRequestId;
+}
+
+function cancelActivePersonalAnalysis() {
+    activePersonalAnalysisController?.abort();
+    activePersonalAnalysisController = null;
 }
 
 function analysisSourceIdentity(providerState) {
@@ -321,7 +329,11 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     }
 
     console.log('Analizing Selected Text...');
+    // A new selection/mode request invalidates an in-flight direct provider
+    // stream. Managed Firebase calls keep their existing callback guard.
+    cancelActivePersonalAnalysis();
     const requestId = ++analysisRequestId;
+    let personalAnalysisController = null;
     isAnalizing = true;
     setCompletedAnalysisAvailable(false);
     activeAnalysisKey = cacheKey;
@@ -377,6 +389,10 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                 const streamArgs = providerState.mode === PERSONAL_PROVIDER_MODE
                     ? [providerState.profile, currentSelectedText, promptVariant, currentContext]
                     : [currentSelectedText, promptVariant, currentContext];
+                personalAnalysisController = providerState.mode === PERSONAL_PROVIDER_MODE
+                    ? new AbortController()
+                    : null;
+                activePersonalAnalysisController = personalAnalysisController;
                 await analysisService.generateResponseStream(
                     ...streamArgs,
                     // onChunk: progressively render each chunk
@@ -427,7 +443,8 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         elements.alertMessage.classList.add('show');
                         setLoadingState(loadingElement, false);
                         setCompletedAnalysisAvailable(false);
-                    }
+                    },
+                    personalAnalysisController ? { signal: personalAnalysisController.signal } : undefined
                 );
             } catch (apiError) {
                 if (!isLatestAnalysis(requestId)) return;
@@ -452,6 +469,9 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         setLoadingState(loadingElement, false);
     }
     if (isLatestAnalysis(requestId)) {
+        if (activePersonalAnalysisController === personalAnalysisController) {
+            activePersonalAnalysisController = null;
+        }
         isAnalizing = false;
         activeAnalysisKey = null;
     }

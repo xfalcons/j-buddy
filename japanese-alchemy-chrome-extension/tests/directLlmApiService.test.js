@@ -123,6 +123,63 @@ describe('DirectLlmApiService', () => {
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('ended the stream'));
   });
 
+  test('silently aborts a superseded request and forwards its signal to fetch', async () => {
+    const controller = new AbortController();
+    const fetch = jest.fn((_url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('The operation was aborted.');
+        error.name = 'AbortError';
+        reject(error);
+      }, { once: true });
+    }));
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    const request = new DirectLlmApiService(fetch).generateResponseStream(
+      profile, '日本語', 'v2', undefined, jest.fn(), done, onError,
+      { signal: controller.signal }
+    );
+    controller.abort();
+    await request;
+
+    expect(fetch.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('cancels and releases an open SSE reader when its analysis is superseded', async () => {
+    const controller = new AbortController();
+    const reader = {
+      cancel: jest.fn(async () => undefined),
+      releaseLock: jest.fn(),
+      read: jest.fn(() => new Promise((resolve, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          const error = new Error('The operation was aborted.');
+          error.name = 'AbortError';
+          reject(error);
+        }, { once: true });
+      })),
+    };
+    const fetch = jest.fn(async () => ({
+      ok: true,
+      headers: headers(),
+      body: { getReader: () => reader },
+    }));
+    const onError = jest.fn();
+
+    const request = new DirectLlmApiService(fetch).generateResponseStream(
+      profile, '日本語', 'v2', undefined, jest.fn(), jest.fn(), onError,
+      { signal: controller.signal }
+    );
+    await Promise.resolve();
+    controller.abort();
+    await request;
+
+    expect(reader.cancel).toHaveBeenCalledTimes(1);
+    expect(reader.releaseLock).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   test('redacts provider bodies, endpoint details, and keys from errors', async () => {
     const fetch = jest.fn(async () => errorResponse(401, {
       error: { message: `invalid key ${profile.apiKey} at ${profile.apiUrl}` },

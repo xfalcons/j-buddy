@@ -324,6 +324,51 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(prose.innerHTML).toBe('');
   });
 
+  test('a newer personal analysis aborts the older direct stream without showing an error', async () => {
+    const storage = setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 2,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    const requestSignals = [];
+    global.fetch = jest.fn((_url, options) => {
+      requestSignals.push(options.signal);
+      if (requestSignals.length === 1) {
+        return new Promise((resolve, reject) => {
+          options.signal.addEventListener('abort', () => {
+            const error = new Error('The operation was aborted.');
+            error.name = 'AbortError';
+            reject(error);
+          }, { once: true });
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          choices: [{ message: { content: '### 單字分析\n#### <單字>最新' }, finish_reason: 'stop' }],
+        }),
+      });
+    });
+    const { alertMessage, prose } = setupElements();
+
+    const older = analizingSelectedText('成長を後押しする', {}, { force: true, promptVariant: 'v2' });
+    await flushMicrotasks();
+    const newer = analizingSelectedText('最新の選択', {}, { force: true, promptVariant: 'v2' });
+    await newer;
+    await older;
+
+    expect(requestSignals).toHaveLength(2);
+    expect(requestSignals[0].aborted).toBe(true);
+    expect(storage.analysisProviderMode).toBe('personal');
+    expect(alertMessage.classList.contains('show')).toBe(false);
+    expect(prose.innerHTML).toContain('最新');
+  });
+
   test('rapid mode clicks keep the last requested mode when storage reads finish out of order', async () => {
     const { compactButton, elements, usageButton } = setupElements();
     const getResolvers = [];

@@ -59,6 +59,10 @@ async function cancelResponse(response) {
   }
 }
 
+function isAbortError(error, signal) {
+  return Boolean(signal?.aborted || error?.name === 'AbortError');
+}
+
 function hasTerminalFinishReason(payload) {
   const finishReason = payload?.choices?.[0]?.finish_reason;
   return finishReason !== null && finishReason !== undefined;
@@ -94,7 +98,7 @@ function parseSsePayload(data) {
   }
 }
 
-async function consumeOpenAiSse(response, onChunk) {
+async function consumeOpenAiSse(response, onChunk, signal) {
   if (!response.body?.getReader) {
     throw new DirectLlmApiError(
       'Your personal provider did not return a readable streaming response.',
@@ -107,6 +111,12 @@ async function consumeOpenAiSse(response, onChunk) {
   let buffer = '';
   let fullText = '';
   let terminal = false;
+  const cancelReader = () => {
+    // `fetch` cancellation normally stops the body too, but explicitly
+    // cancelling the reader releases an already-open stream immediately.
+    Promise.resolve(reader.cancel?.()).catch(() => {});
+  };
+  signal?.addEventListener?.('abort', cancelReader, { once: true });
 
   const consumeFrame = (frame) => {
     const data = sseFrameData(frame);
@@ -130,27 +140,39 @@ async function consumeOpenAiSse(response, onChunk) {
     if (hasTerminalFinishReason(payload)) terminal = true;
   };
 
-  while (!terminal) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const frames = buffer.split(/\r?\n\r?\n/);
-    buffer = frames.pop() || '';
-    for (const frame of frames) {
-      consumeFrame(frame);
-      if (terminal) break;
+  try {
+    if (signal?.aborted) {
+      cancelReader();
+      const error = new Error('The analysis was aborted.');
+      error.name = 'AbortError';
+      throw error;
     }
-  }
+    while (!terminal) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-  if (!terminal && buffer) consumeFrame(buffer);
-  if (!terminal) {
-    throw new DirectLlmApiError(
-      'Your personal provider ended the stream before completing the analysis.',
-      'personal_provider_incomplete_stream'
-    );
+      const frames = buffer.split(/\r?\n\r?\n/);
+      buffer = frames.pop() || '';
+      for (const frame of frames) {
+        consumeFrame(frame);
+        if (terminal) break;
+      }
+    }
+
+    if (!terminal && buffer) consumeFrame(buffer);
+    if (!terminal) {
+      throw new DirectLlmApiError(
+        'Your personal provider ended the stream before completing the analysis.',
+        'personal_provider_incomplete_stream'
+      );
+    }
+    return fullText;
+  } finally {
+    signal?.removeEventListener?.('abort', cancelReader);
+    if (!terminal && !signal?.aborted) cancelReader();
+    reader.releaseLock?.();
   }
-  return fullText;
 }
 
 function responseIsJson(response) {
@@ -169,7 +191,7 @@ export class DirectLlmApiService {
     this.fetch = fetchImpl;
   }
 
-  async request(profile, selectedText, promptVariant, context, stream) {
+  async request(profile, selectedText, promptVariant, context, stream, signal) {
     let response;
     try {
       response = await this.fetch(buildChatCompletionsUrl(profile.apiUrl), {
@@ -185,8 +207,10 @@ export class DirectLlmApiService {
           context,
           stream,
         })),
+        signal,
       });
-    } catch {
+    } catch (error) {
+      if (isAbortError(error, signal)) throw error;
       throw new DirectLlmApiError(
         'Could not reach your personal provider. Check the URL, permission, and network connection.',
         'personal_provider_network_error'
@@ -206,25 +230,29 @@ export class DirectLlmApiService {
    * Match the existing side-panel callback contract. Errors are deliberately
    * redacted and a partial personal stream is never promoted to `onDone`.
    */
-  async generateResponseStream(profile, selectedText, promptVariant, context, onChunk, onDone, onError) {
+  async generateResponseStream(profile, selectedText, promptVariant, context, onChunk, onDone, onError, { signal } = {}) {
     try {
       let response;
       try {
-        response = await this.request(profile, selectedText, promptVariant, context, true);
+        response = await this.request(profile, selectedText, promptVariant, context, true, signal);
       } catch (error) {
         if (error?.code !== 'streaming_unsupported') throw error;
         // A provider only gets a stream:false retry after a clear 4xx rejection
         // before content. We never retry an ambiguous/partial stream.
         await cancelResponse(error.response);
-        response = await this.request(profile, selectedText, promptVariant, context, false);
+        response = await this.request(profile, selectedText, promptVariant, context, false, signal);
       }
 
       const fullText = responseIsJson(response)
         ? completeResponseContent(await response.json())
-        : await consumeOpenAiSse(response, onChunk);
+        : await consumeOpenAiSse(response, onChunk, signal);
+      if (signal?.aborted) return null;
       onDone(fullText);
       return fullText;
     } catch (error) {
+      // Superseded analysis is expected control flow. It must neither show a
+      // provider error nor turn a partial response into a completed result.
+      if (isAbortError(error, signal)) return null;
       const message = error instanceof DirectLlmApiError
         ? error.message
         : 'Your personal provider could not complete this request. Check its settings and try again.';
@@ -234,4 +262,4 @@ export class DirectLlmApiService {
   }
 }
 
-export { completeResponseContent, consumeOpenAiSse };
+export { completeResponseContent, consumeOpenAiSse, isAbortError };
