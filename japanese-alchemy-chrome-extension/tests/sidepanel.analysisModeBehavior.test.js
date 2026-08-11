@@ -111,7 +111,7 @@ function setupLocalStorage(initial = {}) {
 function setupDeferredApi() {
   const calls = [];
   global.JaAlchemyApiService = class JaAlchemyApiService {
-    async generateResponseStream(selectedText, promptVariant, context, onChunk, onDone, onError) {
+    async generateResponseStream(selectedText, promptVariant, context, onChunk, onDone, onError, options) {
       return new Promise((resolve) => {
         calls.push({
           selectedText,
@@ -120,6 +120,7 @@ function setupDeferredApi() {
           onChunk,
           onDone,
           onError,
+          options,
           resolve,
         });
       });
@@ -214,6 +215,7 @@ describe('sidepanel analysis-mode behavior', () => {
       promptVariant: 'v1',
     });
     await flushMicrotasks();
+    expect(apiCalls[0].options.signal.aborted).toBe(true);
     apiCalls[1].onDone('# latest v1 response');
     apiCalls[1].resolve();
     await newRequest;
@@ -227,6 +229,80 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(prose.innerHTML).not.toContain('old preview');
     expect(prose.innerHTML).not.toContain('stale v2 response');
     expect(global.localStorage.getItem('lastResponse')).toContain('latest v1 response');
+  });
+
+  test('aborts a managed stream before replacement setup finishes', async () => {
+    const apiCalls = setupDeferredApi();
+    const { prose } = setupElements();
+    const older = analizingSelectedText('成長を後押しする', {}, {
+      force: true,
+      promptVariant: 'v2',
+    });
+    await flushMicrotasks();
+
+    const getStorage = global.chrome.storage.local.get;
+    let resolvePromptVariant;
+    global.chrome.storage.local.get = jest.fn((key) => {
+      if (key === 'promptVariant') {
+        return new Promise((resolve) => {
+          resolvePromptVariant = resolve;
+        });
+      }
+      return getStorage(key);
+    });
+
+    const newer = analizingSelectedText('最新の選択', {}, { force: true });
+
+    expect(apiCalls[0].options.signal.aborted).toBe(true);
+    apiCalls[0].onDone('# stale response');
+    apiCalls[0].resolve();
+    await older;
+    expect(prose.innerHTML).not.toContain('stale response');
+
+    resolvePromptVariant({ promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[1].onDone('# latest response');
+    apiCalls[1].resolve();
+    await newer;
+
+    expect(prose.innerHTML).toContain('latest response');
+  });
+
+  test('keeps the active managed stream for a duplicate non-forced selection', async () => {
+    const apiCalls = setupDeferredApi();
+    const text = '成長を後押しする';
+    const context = { before: '制度が', after: 'という。' };
+    const firstRequest = analizingSelectedText(text, context, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    await analizingSelectedText(text, context, { promptVariant: 'v2' });
+
+    expect(apiCalls).toHaveLength(1);
+    expect(apiCalls[0].options.signal.aborted).toBe(false);
+    apiCalls[0].onDone('# completed response');
+    apiCalls[0].resolve();
+    await firstRequest;
+  });
+
+  test('allows retrying a selection after asynchronous setup fails', async () => {
+    const apiCalls = setupDeferredApi();
+    const { alertMessage, loading, prose, result } = setupElements();
+    const text = '成長を後押しする';
+    const context = { before: '制度が', after: 'という。' };
+    global.chrome.storage.local.get.mockRejectedValueOnce(new Error('storage unavailable'));
+
+    await expect(analizingSelectedText(text, context)).resolves.toBeUndefined();
+    expect(loading.classList.contains('show')).toBe(false);
+    expect(prose.innerHTML).toBe('');
+    expect(result.classList.contains('show')).toBe(false);
+    expect(alertMessage.classList.contains('show')).toBe(true);
+
+    const retry = analizingSelectedText(text, context, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    expect(apiCalls).toHaveLength(1);
+    apiCalls[0].onDone('# retry response');
+    apiCalls[0].resolve();
+    await retry;
   });
 
   test('updates the loading message after receiving the first response chunk', async () => {

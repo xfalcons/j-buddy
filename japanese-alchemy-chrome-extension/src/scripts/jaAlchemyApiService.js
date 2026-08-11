@@ -66,10 +66,15 @@ class JaAlchemyApiService {
    * @param {function} onChunk - Callback invoked with each text chunk
    * @param {function} onDone - Callback invoked with the full accumulated text when stream completes
    * @param {function} onError - Callback invoked with an error message on failure
+   * @param {{ signal?: AbortSignal }} [options] - cancellation options for the callable request
    */
-  async generateResponseStream(selectedText, promptVersion, context, onChunk, onDone, onError) {
+  async generateResponseStream(selectedText, promptVersion, context, onChunk, onDone, onError, { signal } = {}) {
     let fullText = '';
     try {
+      if (signal?.aborted) {
+        return;
+      }
+
       console.log('[Firebase API] Calling explainStreamCallable with:', {
         content: selectedText.substring(0, 100) + '...',
         prompt: promptVersion
@@ -77,10 +82,17 @@ class JaAlchemyApiService {
 
       const explainStreamCallable = httpsCallable(this.functions, 'explainStreamCallable');
       const { stream, data } = await explainStreamCallable.stream(
-        buildRequestBody(selectedText, promptVersion, context)
+        buildRequestBody(selectedText, promptVersion, context),
+        { signal }
       );
+      // Firebase rejects both stream and data when an AbortSignal cancels the
+      // request. Attach a handler now because the stream can reject first.
+      void data.catch(() => {});
 
       for await (const chunk of stream) {
+        if (signal?.aborted) {
+          return;
+        }
         if (!chunk?.content) continue;
         console.log('[Firebase API] Received chunk:', chunk.content);
         fullText += chunk.content;
@@ -88,6 +100,9 @@ class JaAlchemyApiService {
       }
 
       const result = await data;
+      if (signal?.aborted) {
+        return;
+      }
       if (!result?.success) {
         onError(result?.error || '未知的串流錯誤');
         return;
@@ -95,6 +110,9 @@ class JaAlchemyApiService {
 
       onDone(fullText);
     } catch (error) {
+      if (signal?.aborted || error?.name === 'AbortError') {
+        return;
+      }
       console.error('[Firebase API] Stream error:', error);
       // If we got partial results, still deliver them
       if (fullText) {

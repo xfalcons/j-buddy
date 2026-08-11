@@ -54,6 +54,7 @@ describe('JaAlchemyApiService', () => {
   test('renders callable stream chunks before completing managed-provider analysis', async () => {
     const functions = {};
     const callable = jest.fn();
+    const controller = new AbortController();
     callable.stream = jest.fn(async () => ({
       stream: {
         async *[Symbol.asyncIterator]() {
@@ -71,13 +72,76 @@ describe('JaAlchemyApiService', () => {
     const onError = jest.fn();
 
     await new window.JaAlchemyApiService().generateResponseStream(
-      'テストです', 'v2', undefined, onChunk, onDone, onError
+      'テストです', 'v2', undefined, onChunk, onDone, onError, { signal: controller.signal }
     );
 
     expect(mockHttpsCallable).toHaveBeenCalledWith(functions, 'explainStreamCallable');
+    expect(callable.stream).toHaveBeenCalledWith(
+      { content: 'テストです', prompt: 'v2' },
+      { signal: controller.signal }
+    );
     expect(onChunk).toHaveBeenNthCalledWith(1, '分', '分');
     expect(onChunk).toHaveBeenNthCalledWith(2, '析', '分析');
     expect(onDone).toHaveBeenCalledWith('分析');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('silently stops a managed stream cancelled before its first chunk', async () => {
+    const controller = new AbortController();
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    const callable = jest.fn();
+    callable.stream = jest.fn(async () => ({
+      stream: {
+        async *[Symbol.asyncIterator]() {
+          controller.abort();
+          throw abortError;
+        },
+      },
+      data: Promise.reject(abortError),
+    }));
+    mockInitializeApp.mockReturnValue({});
+    mockGetFunctions.mockReturnValue({});
+    mockHttpsCallable.mockReturnValue(callable);
+    const onDone = jest.fn();
+    const onError = jest.fn();
+
+    await new window.JaAlchemyApiService().generateResponseStream(
+      'テストです', 'v2', undefined, jest.fn(), onDone, onError, { signal: controller.signal }
+    );
+
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('does not finalize partial managed text after cancellation', async () => {
+    const controller = new AbortController();
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    const callable = jest.fn();
+    callable.stream = jest.fn(async () => ({
+      stream: {
+        async *[Symbol.asyncIterator]() {
+          yield { content: '分' };
+          controller.abort();
+          throw abortError;
+        },
+      },
+      data: Promise.reject(abortError),
+    }));
+    mockInitializeApp.mockReturnValue({});
+    mockGetFunctions.mockReturnValue({});
+    mockHttpsCallable.mockReturnValue(callable);
+    const onChunk = jest.fn();
+    const onDone = jest.fn();
+    const onError = jest.fn();
+
+    await new window.JaAlchemyApiService().generateResponseStream(
+      'テストです', 'v2', undefined, onChunk, onDone, onError, { signal: controller.signal }
+    );
+
+    expect(onChunk).toHaveBeenCalledWith('分', '分');
+    expect(onDone).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
   });
 

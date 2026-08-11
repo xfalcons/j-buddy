@@ -249,14 +249,14 @@ chrome.storage.onChanged.addListener(async (changes) => {
     // A profile, permission route, or revision changed while a request was in
     // flight. Invalidate its callbacks before it can overwrite the panel or
     // cache a response under the wrong provider identity.
-    cancelActivePersonalAnalysis();
+    cancelActiveAnalysis();
     analysisRequestId += 1;
     isAnalizing = false;
     activeAnalysisKey = null;
     setCompletedAnalysisAvailable(false);
   }
   if (changes.selectedText || changes.contextBefore || changes.contextAfter) {
-    cancelActivePersonalAnalysis();
+    cancelActiveAnalysis();
     const { selectedText, contextBefore = '', contextAfter = '' } =
       await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
     await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
@@ -281,7 +281,8 @@ let currentSelectedText = '';
 let currentContext = { before: '', after: '' };
 let analysisRequestId = 0;
 let activeAnalysisKey = null;
-let activePersonalAnalysisController = null;
+let activeAnalysisController = null;
+let activeAnalysisRequestIdentity = null;
 let modeChangeRequestId = 0;
 let hasCompletedAnalysis = false;
 
@@ -300,9 +301,10 @@ function isLatestAnalysis(requestId) {
     return requestId === analysisRequestId;
 }
 
-function cancelActivePersonalAnalysis() {
-    activePersonalAnalysisController?.abort();
-    activePersonalAnalysisController = null;
+function cancelActiveAnalysis() {
+    activeAnalysisController?.abort();
+    activeAnalysisController = null;
+    activeAnalysisRequestIdentity = null;
 }
 
 function analysisSourceIdentity(providerState) {
@@ -333,21 +335,52 @@ function renderStreamingPreview(proseElement, accumulatedText, requestId) {
 }
 
 export async function analizingSelectedText(selectedText, context = { before: '', after: '' }, options = {}) {
-    currentSelectedText = selectedText || '';
-    currentContext = normalizeContext(context);
+    const selectedTextForRequest = selectedText || '';
+    const contextForRequest = normalizeContext(context);
+    const requestIdentity = JSON.stringify({ selectedText: selectedTextForRequest, context: contextForRequest });
+    if (!options.force && activeAnalysisRequestIdentity === requestIdentity) {
+        return;
+    }
+
+    // A replacement must invalidate an active stream before any async setup.
+    // Otherwise the prior request can finish while prompt/provider state loads.
+    const requestId = ++analysisRequestId;
+    cancelActiveAnalysis();
+    activeAnalysisRequestIdentity = requestIdentity;
+    currentSelectedText = selectedTextForRequest;
+    currentContext = contextForRequest;
 
     const resultElement = document.getElementById('result');
     const proseElement = resultElement.querySelector('.prose');
     const loadingElement = document.getElementById('loading');
-    const requestEpoch = analysisRequestId;
-    const promptVariant = options.promptVariant || await getPromptVariant();
-    const providerState = await getPersonalProviderState();
-    if (analysisRequestId !== requestEpoch) return;
+    let promptVariant;
+    let providerState;
+    try {
+        promptVariant = options.promptVariant || await getPromptVariant();
+        if (!isLatestAnalysis(requestId)) return;
+        providerState = await getPersonalProviderState();
+    } catch (error) {
+        if (isLatestAnalysis(requestId)) {
+            activeAnalysisRequestIdentity = null;
+            isAnalizing = false;
+            activeAnalysisKey = null;
+            saveForLaterJson = {};
+            proseElement.innerHTML = '';
+            resultElement.classList.remove('show');
+            setLoadingState(loadingElement, false);
+            setCompletedAnalysisAvailable(false);
+            console.error('Analysis setup error:', error);
+            alertMessage(elements.alertMessage, '無法讀取此頁面上的選取文字。', 'error');
+            elements.alertMessage.classList.add('show');
+        }
+        return;
+    }
+    if (!isLatestAnalysis(requestId)) return;
     const sourceIdentity = analysisSourceIdentity(providerState);
-    const cacheKey = currentSelectedText
+    const cacheKey = selectedTextForRequest
         ? buildContextCacheKey({
-            selectedText: currentSelectedText,
-            context: currentContext,
+            selectedText: selectedTextForRequest,
+            context: contextForRequest,
             promptVariant,
             sourceIdentity,
         })
@@ -356,13 +389,12 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     // Permission can be revoked without changing the saved profile or cache
     // key. Check readiness before any cache reuse so a stale personal result
     // never becomes visible, copyable, or saveable after revocation.
-    if (isValidSelection(currentSelectedText)
+    if (isValidSelection(selectedTextForRequest)
         && providerState.mode === PERSONAL_PROVIDER_MODE
         && !providerState.isPersonalReady) {
-        cancelActivePersonalAnalysis();
-        analysisRequestId += 1;
         isAnalizing = false;
         activeAnalysisKey = null;
+        activeAnalysisRequestIdentity = null;
         saveForLaterJson = {};
         proseElement.innerHTML = '';
         resultElement.classList.remove('show');
@@ -378,16 +410,8 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         return;
     }
 
-    if (!options.force && isAnalizing && cacheKey && cacheKey === activeAnalysisKey) {
-        return;
-    }
-
     console.log('Analizing Selected Text...');
-    // A new selection/mode request invalidates an in-flight direct provider
-    // stream. Managed Firebase calls keep their existing callback guard.
-    cancelActivePersonalAnalysis();
-    const requestId = ++analysisRequestId;
-    let personalAnalysisController = null;
+    let analysisController = null;
     isAnalizing = true;
     setCompletedAnalysisAvailable(false);
     activeAnalysisKey = cacheKey;
@@ -414,7 +438,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             resultElement.classList.add('show');
             setLoadingState(loadingElement, false);
             setCompletedAnalysisAvailable(true);
-        } else if (isValidSelection(currentSelectedText)) {
+        } else if (isValidSelection(selectedTextForRequest)) {
             // Show loading state
             setLoadingMessage(loadingElement, 'AI 正在分析，請稍候…');
             setLoadingState(loadingElement, true);
@@ -441,12 +465,10 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                 let firstChunkReceived = false;
 
                 const streamArgs = providerState.mode === PERSONAL_PROVIDER_MODE
-                    ? [providerState.profile, currentSelectedText, promptVariant, currentContext]
-                    : [currentSelectedText, promptVariant, currentContext];
-                personalAnalysisController = providerState.mode === PERSONAL_PROVIDER_MODE
-                    ? new AbortController()
-                    : null;
-                activePersonalAnalysisController = personalAnalysisController;
+                    ? [providerState.profile, selectedTextForRequest, promptVariant, contextForRequest]
+                    : [selectedTextForRequest, promptVariant, contextForRequest];
+                analysisController = new AbortController();
+                activeAnalysisController = analysisController;
                 await analysisService.generateResponseStream(
                     ...streamArgs,
                     // onChunk: progressively render each chunk
@@ -473,7 +495,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         // stream error/catch does not leave a key pointing at a
                         // stale response.
                         localStorage.setItem('lastAnalysisKey', cacheKey);
-                        localStorage.setItem('lastSelectedText', currentSelectedText);
+                        localStorage.setItem('lastSelectedText', selectedTextForRequest);
                         if (renderThrottleTimer) {
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
@@ -498,7 +520,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         setLoadingState(loadingElement, false);
                         setCompletedAnalysisAvailable(false);
                     },
-                    personalAnalysisController ? { signal: personalAnalysisController.signal } : undefined
+                    { signal: analysisController.signal }
                 );
             } catch (apiError) {
                 if (!isLatestAnalysis(requestId)) return;
@@ -523,11 +545,12 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         setLoadingState(loadingElement, false);
     }
     if (isLatestAnalysis(requestId)) {
-        if (activePersonalAnalysisController === personalAnalysisController) {
-            activePersonalAnalysisController = null;
+        if (activeAnalysisController === analysisController) {
+            activeAnalysisController = null;
         }
         isAnalizing = false;
         activeAnalysisKey = null;
+        activeAnalysisRequestIdentity = null;
     }
 }
 
