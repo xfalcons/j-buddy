@@ -823,11 +823,11 @@
 
     <details class="provider-settings" id="personalProviderSettings">
       <summary>
-        <span>分析提供者</span>
+        <span>LLM API 提供者</span>
         <span id="personalProviderSummary" class="provider-summary">代管</span>
       </summary>
       <div class="provider-settings-content">
-        <div class="provider-mode-toggle" role="group" aria-label="分析提供者">
+        <div class="provider-mode-toggle" role="group" aria-label="LLM API 提供者">
           <button class="provider-mode-option selected" type="button" data-provider-mode="managed" aria-pressed="true">代管</button>
           <button class="provider-mode-option" type="button" data-provider-mode="personal" aria-pressed="false" aria-describedby="personalProviderStatus personalProviderError">個人</button>
         </div>
@@ -835,7 +835,7 @@
         <p id="personalProviderError" class="provider-message error" role="alert" tabindex="-1" hidden></p>
         <form id="personalProviderForm" novalidate hidden>
           <label class="provider-form-field" for="personalProviderApiUrl">
-            API 基礎網址
+            API 網址 (OpenAI Compatible)
             <input id="personalProviderApiUrl" name="apiUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com/v1" aria-describedby="personalProviderError" required>
           </label>
           <label class="provider-form-field" for="personalProviderApiKey">
@@ -847,8 +847,8 @@
             <input id="personalProviderModel" name="model" type="text" autocomplete="off" placeholder="gemini-2.5-flash" aria-describedby="personalProviderError" required>
           </label>
           <div class="provider-actions">
-            <button id="savePersonalProviderButton" class="provider-action primary" type="submit">儲存並使用個人提供者</button>
-            <button id="clearPersonalProviderButton" class="provider-action danger" type="button">清除個人設定</button>
+            <button id="savePersonalProviderButton" class="provider-action primary" type="submit">儲存</button>
+            <button id="clearPersonalProviderButton" class="provider-action danger" type="button">清除</button>
           </div>
         </form>
       </div>
