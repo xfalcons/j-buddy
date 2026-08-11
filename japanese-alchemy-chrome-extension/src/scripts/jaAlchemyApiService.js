@@ -1,6 +1,6 @@
 // Import Firebase Functions
 import { initializeApp } from 'firebase/app';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions';
 import firebaseConfig from './firebaseConfig.js';
 import { buildRequestBody } from './requestBody.js';
 
@@ -14,7 +14,9 @@ class JaAlchemyApiService {
     // Initialize Firebase Functions
     this.app = window.firebaseApp;
     this.functions = getFunctions(this.app, 'us-central1'); // Use your region
-
+    if (process.env.NODE_ENV === 'development') {
+      connectFunctionsEmulator(this.functions, '127.0.0.1', 5001);
+    }
   }
 
   /**

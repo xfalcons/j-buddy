@@ -109,28 +109,18 @@ npm run serve
 This will start:
 - Functions emulator on port 5001
 - Firestore emulator
-- Auth emulator
 
 ### Testing with Emulators
 
-To test locally, create a `secrets.json` file in the `functions/` directory:
+To keep local LLM credentials separate from Secret Manager, create a
+`.secret.local` file in the `functions/` directory:
 
 ```bash
-echo '{
-  "gemini": {
-    "api_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-    "api_key": "YOUR_GEMINI_API_KEY",
-    "model": "gemini-2.0-flash"
-  },
-  "zai": {
-    "api_url": "YOUR_ZAI_API_URL",
-    "api_key": "YOUR_ZAI_API_KEY",
-    "model": "YOUR_ZAI_MODEL"
-  }
-}' > secrets.json
+printf "%s\\n" "JAPANESE_ALCHEMY_CONFIG='{\"gemini\":{\"api_url\":\"https://generativelanguage.googleapis.com/v1beta/openai\",\"api_key\":\"YOUR_GEMINI_API_KEY\",\"model\":\"gemini-2.0-flash\"},\"zai\":{\"api_url\":\"YOUR_ZAI_API_URL\",\"api_key\":\"YOUR_ZAI_API_KEY\",\"model\":\"YOUR_ZAI_MODEL\"}}'" > .secret.local
 ```
 
-This file is gitignored and is automatically loaded by the Firebase emulator.
+The Firebase emulator loads this override instead of reading the production
+secret. `functions/.secret.local` is ignored by Git.
 
 ## Deployment
 

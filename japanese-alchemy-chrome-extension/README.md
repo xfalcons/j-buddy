@@ -35,6 +35,37 @@ The analysis includes:
 - Edit `background.js` to add background tasks
 - Update `manifest.json` to add new permissions or features
 
+### Managed-provider emulator mode
+
+Use this workflow to test progressive managed-provider analysis against the
+Firebase Local Emulator Suite:
+
+1. In `japanese-alchemy-hosting/functions`, create the Git-ignored
+   `.secret.local` file described in the [Functions README](../japanese-alchemy-hosting/functions/README.md#testing-with-emulators).
+2. Start the Functions and Firestore emulators:
+
+   ```bash
+   cd ../japanese-alchemy-hosting/functions
+   npm run serve
+   ```
+
+3. Build the development extension and load (or reload) its `dist/` directory
+   from `chrome://extensions`:
+
+   ```bash
+   cd ../../japanese-alchemy-chrome-extension
+   npm run watch
+   ```
+
+   Development builds route Firebase callable requests to
+   `127.0.0.1:5001`; production builds from `npm run build` keep using the
+   deployed Functions service. Reload the unpacked extension after switching
+   build modes so Chrome applies the development-only loopback permission.
+4. Select Japanese text and open the side panel. Chunks should appear
+   progressively, while the Emulator Suite terminal (or Emulator UI) logs the
+   `explainStreamCallable` request. Firestore rate-limit documents stay in the
+   Firestore emulator.
+
 ## Promotion
 
 ### v1.0.0

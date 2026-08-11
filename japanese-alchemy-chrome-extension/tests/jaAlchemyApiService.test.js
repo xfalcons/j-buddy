@@ -1,5 +1,6 @@
 const mockInitializeApp = jest.fn();
 const mockGetFunctions = jest.fn();
+const mockConnectFunctionsEmulator = jest.fn();
 const mockHttpsCallable = jest.fn();
 
 jest.mock('firebase/app', () => ({
@@ -8,17 +9,46 @@ jest.mock('firebase/app', () => ({
 
 jest.mock('firebase/functions', () => ({
   getFunctions: (...args) => mockGetFunctions(...args),
+  connectFunctionsEmulator: (...args) => mockConnectFunctionsEmulator(...args),
   httpsCallable: (...args) => mockHttpsCallable(...args),
 }));
 
 import '../src/scripts/jaAlchemyApiService.js';
 
 describe('JaAlchemyApiService', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
   beforeEach(() => {
     delete window.firebaseApp;
     mockInitializeApp.mockReset();
     mockGetFunctions.mockReset();
+    mockConnectFunctionsEmulator.mockReset();
     mockHttpsCallable.mockReset();
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  test('connects development builds to the Functions emulator before callable use', () => {
+    const functions = {};
+    process.env.NODE_ENV = 'development';
+    mockInitializeApp.mockReturnValue({});
+    mockGetFunctions.mockReturnValue(functions);
+
+    new window.JaAlchemyApiService();
+
+    expect(mockConnectFunctionsEmulator).toHaveBeenCalledWith(functions, '127.0.0.1', 5001);
+  });
+
+  test('keeps production builds connected to deployed Functions', () => {
+    process.env.NODE_ENV = 'production';
+    mockInitializeApp.mockReturnValue({});
+    mockGetFunctions.mockReturnValue({});
+
+    new window.JaAlchemyApiService();
+
+    expect(mockConnectFunctionsEmulator).not.toHaveBeenCalled();
   });
 
   test('renders callable stream chunks before completing managed-provider analysis', async () => {

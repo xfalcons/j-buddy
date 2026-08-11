@@ -72,6 +72,7 @@ node_modules/
 .env.*
 !.env.example
 !.env.*.example
+functions/.secret.local
 
 # Keep a shareable Functions secrets template, if added later.
 !functions/secrets.example
