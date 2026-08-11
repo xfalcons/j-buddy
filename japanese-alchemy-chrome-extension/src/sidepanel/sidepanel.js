@@ -271,7 +271,7 @@ function getCachedCompletedAnalysis(cacheKey) {
         // matching canonical markdown, if present, is reformatted instead.
         if (!sanitizedHtml || sanitizedHtml !== projection.html) return null;
 
-        return { html: sanitizedHtml, json: projection.json };
+        return { html: sanitizedHtml, json: projection.json, isSanitized: true };
     } catch {
         return null;
     }
@@ -279,7 +279,9 @@ function getCachedCompletedAnalysis(cacheKey) {
 
 function renderCompletedAnalysis(analysisResult, proseElement, resultElement, loadingElement) {
     saveForLaterJson = analysisResult.json;
-    proseElement.innerHTML = sanitizeCachedAnalysisHtml(analysisResult.html);
+    proseElement.innerHTML = analysisResult.isSanitized
+        ? analysisResult.html
+        : sanitizeCachedAnalysisHtml(analysisResult.html);
     resultElement.classList.add('show');
     setLoadingState(loadingElement, false);
     setCompletedAnalysisAvailable(true);
@@ -538,15 +540,6 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             proseElement.innerHTML = '';
             resultElement.classList.remove('show');
             saveForLaterJson = {};
-
-            if (providerState.mode === PERSONAL_PROVIDER_MODE && !providerState.isPersonalReady) {
-                const errorMessage = providerState.personalError?.message
-                    || '已選取個人分析，但提供者設定無法使用。';
-                alertMessage(elements.alertMessage, errorMessage, 'error');
-                elements.alertMessage.classList.add('show');
-                setLoadingState(loadingElement, false);
-                return;
-            }
 
             try {
                 console.log('Initializing API service...');
