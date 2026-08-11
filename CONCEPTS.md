@@ -16,6 +16,9 @@ A vocabulary or grammar entry selected from an analysis and persisted for later 
 ### Enriched markdown
 Analysis markdown after a deterministic client-side preprocessing pass has added computed fields while preserving the same markdown contract for rendering, saving, copying, exporting, and caching.
 
+### Cached analysis result
+The most recent completed analysis result retained locally by the Chrome side panel, including the rendered output and the structured state needed to restore its existing result actions for the same analysis context.
+
 ### Prompt variant
 A selectable prompt contract for analysis generation. Variants may ask for different explanation depth, but they should preserve the fields downstream parsers and enrichment passes depend on.
 
