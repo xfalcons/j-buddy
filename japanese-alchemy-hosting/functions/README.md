@@ -76,7 +76,7 @@ echo '{"gemini":{"api_url":"https://...","api_key":"...","model":"..."},"zai":{"
   firebase functions:secrets:set JAPANESE_ALCHEMY_CONFIG --data-file=-
 
 # or
-firebase functions:secrets:set JAPANESE_ALCHEMY_CONFIG --data-file=./functions/secrets.json
+firebase functions:secrets:set JAPANESE_ALCHEMY_CONFIG --data-file=./functions/.secret.local
 ```
 
 After updating, redeploy for functions to pick up the new version:
