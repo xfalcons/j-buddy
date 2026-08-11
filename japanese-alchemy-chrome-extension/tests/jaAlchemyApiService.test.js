@@ -192,4 +192,31 @@ describe('JaAlchemyApiService', () => {
     expect(onDone).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledWith('provider unavailable');
   });
+
+  test('reports a transport failure after partial content without finalizing analysis', async () => {
+    const transportError = new Error('network disconnected');
+    const callable = jest.fn();
+    callable.stream = jest.fn(async () => ({
+      stream: {
+        async *[Symbol.asyncIterator]() {
+          yield { content: '分' };
+        },
+      },
+      data: Promise.reject(transportError),
+    }));
+    mockInitializeApp.mockReturnValue({});
+    mockGetFunctions.mockReturnValue({});
+    mockHttpsCallable.mockReturnValue(callable);
+    const onChunk = jest.fn();
+    const onDone = jest.fn();
+    const onError = jest.fn();
+
+    await new window.JaAlchemyApiService().generateResponseStream(
+      'テストです', 'v2', undefined, onChunk, onDone, onError
+    );
+
+    expect(onChunk).toHaveBeenCalledWith('分', '分');
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith('network disconnected');
+  });
 });

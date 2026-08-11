@@ -64,7 +64,7 @@ class JaAlchemyApiService {
    * @param {string} promptVersion - The prompt version ("v1" or "v2")
    * @param {{ before?: string, after?: string }} [context] - surrounding page context
    * @param {function} onChunk - Callback invoked with each text chunk
-   * @param {function} onDone - Callback invoked with the full accumulated text when stream completes
+   * @param {function} onDone - Callback invoked with the full accumulated text after callable success
    * @param {function} onError - Callback invoked with an error message on failure
    * @param {{ signal?: AbortSignal }} [options] - cancellation options for the callable request
    */
@@ -114,13 +114,7 @@ class JaAlchemyApiService {
         return;
       }
       console.error('[Firebase API] Stream error:', error);
-      // If we got partial results, still deliver them
-      if (fullText) {
-        console.warn('[Firebase API] Stream interrupted, delivering partial results');
-        onDone(fullText);
-      } else {
-        onError(error.message || '串流請求失敗');
-      }
+      onError(error.message || '串流請求失敗');
     }
   }
 
