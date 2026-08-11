@@ -2,7 +2,7 @@
  * A/B prompt-variant assignment for the Chrome extension.
  *
  * The variant is read from chrome.storage.local on each analysis and sent to the
- * explainStream endpoint as the `prompt` field. On first launch it is unset, so we
+ * managed analysis callable as the `prompt` field. On first launch it is unset, so we
  * assign the default ("v2") and persist it — this keeps the initial rollout
  * uniform. To start the A/B test, set some users' `promptVariant` to "v1"
  * (debug toggle or random assignment); see docs/plans/...prompt-evaluation-harness.

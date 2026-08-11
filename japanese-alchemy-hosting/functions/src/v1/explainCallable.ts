@@ -22,10 +22,10 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
     );
   }
 
-  // Defaults match the Chrome extension and streaming handler.
+  // Defaults match the Chrome extension and streaming callable.
   const { content, prompt = "v2", context_before, context_after } = data;
 
-  // Per-IP rate limit (parity with explainStream). The callable's client IP is
+  // Per-IP rate limit (parity with explainStreamCallable). The callable's client IP is
   // on the underlying Express request.
   const rateLimit = await checkRateLimit(request.rawRequest?.ip);
   if (!rateLimit.allowed) {

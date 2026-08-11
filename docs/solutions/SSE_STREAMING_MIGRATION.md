@@ -1,4 +1,16 @@
-# SSE Streaming Migration
+---
+module: managed-analysis
+problem_type: migration
+tags: [firebase, sse, streaming, retired]
+status: historical
+---
+
+# SSE Streaming Migration (Retired)
+
+> **Status:** Historical. The raw `explainStream` HTTP/SSE route was retired on
+> 2026-08-11 after an in-repository and GitHub consumer inventory found no
+> supported external consumer. The current contract is documented in
+> [Callable Streaming Migration](CALLABLE_STREAMING_MIGRATION.md).
 
 This document describes the migration of the `explain` pipeline from synchronous batch responses to Server-Sent Events (SSE) streaming, enabling progressive rendering of AI analysis results.
 

@@ -9,7 +9,7 @@ This project provides Firebase Cloud Functions for Japanese text analysis and da
 ### Functions
 
 - `explain` - Analyze Japanese text and extract vocabulary/grammar (public, callable)
-- `explainStream` - Same as explain, but streams results via SSE (HTTP endpoint)
+- `explainStreamCallable` - Progressively streams the same analysis through Firebase callable streaming
 - `saveItems` - Save analysis results to Firestore (requires Firebase Authentication)
 
 ### LLM Providers
@@ -139,59 +139,15 @@ firebase functions:log
 
 **Note:** Functions are automatically deployed with secrets bound. The `JAPANESE_ALCHEMY_CONFIG` secret must exist in Secret Manager.
 
-## explainStream Abuse Hardening
+## Callable streaming safeguards
 
-`explainStream` is an unauthenticated HTTP endpoint that calls an LLM per request. It is layered against abuse / denial-of-wallet, in order of execution:
+`explainStreamCallable` validates the request, enforces the same Firestore-backed
+per-IP rate limit as `explain`, and uses a 120-second timeout for long-lived
+streams. Both analysis callables share the `maxInstances × concurrency` cost
+ceiling in `src/runtimeOptions.ts`.
 
-1. **Cost ceiling** (runtime options, `src/runtimeOptions.ts`) — `maxInstances × concurrency` bounds concurrent streams; `timeoutSeconds` bounds per-request stream duration (60s for `explain`, 120s for `explainStream` since SSE streams run longer). With `concurrency: 1`, `maxInstances` is a literal concurrent-stream cap.
-2. **Body-size guard** — requests over 16 KB are rejected with `413` before any work, on both the `Content-Length` header and the parsed body (so chunked / under-reported bodies can't bypass it).
-3. **Input validation** (`src/v1/requestValidation.ts`) — `content` 2–500 chars, `context_*` ≤ `MAX_CONTEXT_CHARS`, types, prompt version; invalid → `400`. Applied to both `explainStream` and `explain`.
-4. **Per-IP rate limit** (`src/v1/rateLimiter.ts`) — Firestore token bucket keyed by an HMAC of the client IP; over-limit → `429`. Capacity is kept ≤ the concurrent-stream ceiling so a single source can't saturate the deployment. Fails open on a missing IP, **fails closed as `503` (Retry-After) on a Firestore error** so clients don't retry-loop into the failing dependency. Applied to both endpoints.
-
-### Alerting signal
-
-The rate limiter's fail-closed path logs at **error** level: `"Rate limit: Firestore error — denying (fail-closed)"`. A sustained rate of that log line means the fairness layer is down (requests are being rejected to protect spend) — page on it.
-
-### Tuning
-
-`maxInstances`, `concurrency`, and `RATE_LIMIT_CAPACITY` / `RATE_LIMIT_REFILL_PER_MIN` are constants chosen for a low-traffic extension. Derive them from a worst-case daily-spend budget; raise `maxInstances` if legitimate concurrency demands it (the product `maxInstances × concurrency` is the worst-case concurrent-spend window). `RATE_LIMIT_CAPACITY` is kept ≤ that product so one source cannot admit more concurrent requests than the deployment can serve. Per-IP limiting caps a single source; distributed/rotating-IP abuse is bounded only by `maxInstances` — Cloud Armor is the escalation path.
-
-Rate-limit documents carry an `expireAt` field (1 hour). Reap them by enabling a Firestore TTL policy (one-time, via gcloud):
-
-```bash
-gcloud firestore fields ttls update expireAt --collection-group=rateLimits --enable-ttl
-```
-
-### Post-deploy verification runbook
-
-After `firebase deploy --only functions`, probe each layer against the live `explainStream` URL (`$URL = https://us-central1-<projectId>.cloudfunctions.net/explainStream`):
-
-```bash
-# 1. Oversized body -> 413 (never reaches the LLM)
-curl -s -o /dev/null -w "%{http_code}\n" -X POST "$URL" \
-  -H "Content-Type: application/json" \
-  --data-binary "$(python3 -c 'print("{\"content\":\"" + "あ"*100000 + "\"}")')"
-# expect: 413
-
-# 2. Oversized content -> 400
-curl -s -o /dev/null -w "%{http_code}\n" -X POST "$URL" \
-  -H "Content-Type: application/json" \
-  -d '{"content":"'"$(python3 -c 'print("あ"*501)')"'"}'
-# expect: 400
-
-# 3. Rate limit -> 429 after the per-IP threshold (burst)
-for i in $(seq 1 30); do
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST "$URL" \
-    -H "Content-Type: application/json" -d '{"content":"テストです"}'
-done
-# expect: 200s then 429s once the bucket empties
-
-# 4. Valid request still streams (200 + SSE)
-curl -s -X POST "$URL" -H "Content-Type: application/json" -d '{"content":"テストです"}' | head
-# expect: event: chunk / data: ... (a streamed analysis)
-```
-
-Then in the Google Cloud console (or `firebase functions:log`) confirm: `explainStream` shows the configured `maxInstances`/`concurrency`/`timeoutSeconds`; the `rateLimits` Firestore collection appears and rejects direct client writes (the deny rule in `firestore.rules`).
+The raw `explainStream` HTTP/SSE route is retired. Consumers should use the
+Firebase Functions SDK and the `explainStreamCallable` contract below.
 
 ## API Reference
 
@@ -227,6 +183,26 @@ const result = await explainFn({
 });
 
 console.log(result.data);
+```
+
+### explainStreamCallable
+
+Progressive managed-provider analysis is a Firebase callable stream:
+
+```javascript
+import { httpsCallable } from 'firebase/functions';
+
+const explainStream = httpsCallable(functions, 'explainStreamCallable');
+const { stream, data } = await explainStream.stream({
+  content: "日本語のテキスト",
+  prompt: "v2"
+});
+
+for await (const chunk of stream) {
+  console.log(chunk.content);
+}
+
+const result = await data; // { success: true }
 ```
 
 ### saveItems
@@ -307,6 +283,7 @@ users/
 ## Security
 
 - `explain`: Public function (no authentication required)
+- `explainStreamCallable`: Public callable stream (no authentication required)
 - `saveItems`: Requires Firebase Authentication
 - Firestore rules ensure users can only access their own data
 - API keys stored securely in Firebase Secret Manager

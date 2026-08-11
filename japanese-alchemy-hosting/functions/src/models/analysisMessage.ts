@@ -21,8 +21,8 @@ export const TARGET_LABEL = "【分析対象】";
 export const CONTEXT_AFTER_LABEL = "【後文】";
 
 // Server-side safety bound per context side. Clients clamp to ~100 chars
-// (extension src/scripts/surroundingContext.js), but explainStream is an
-// unauthenticated onRequest handler, so the server enforces its own ceiling.
+// (extension src/scripts/surroundingContext.js), but analysis callables accept
+// untrusted client input, so the server enforces its own ceiling.
 export const MAX_CONTEXT_CHARS = 500;
 
 export interface SurroundingContext {

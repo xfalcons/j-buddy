@@ -5,13 +5,13 @@ import type { GlobalOptions } from "firebase-functions/v2/options";
  *
  * These convert an unbounded denial-of-wallet surface into a bounded cost
  * ceiling. The true concurrent-stream ceiling is `maxInstances × concurrency`:
- * each SSE request occupies a concurrency slot for the whole stream, so with
+ * each streaming callable occupies a concurrency slot for the whole stream, so with
  * `concurrency: 1`, `maxInstances` is a literal concurrent-stream cap (10 here).
  *
  * Tuned for a low-traffic extension. Raise `maxInstances` if legitimate
  * concurrency demands it; the product `maxInstances × concurrency` is the
  * worst-case concurrent-spend window. `timeoutSeconds` is set per function
- * (explainStream streams longer than explain) — see index.ts. `minInstances` is
+ * (explainStreamCallable streams longer than explain) — see index.ts. `minInstances` is
  * deliberately unset (no idle cost on an abuse-prone surface).
  */
 export const explainRuntimeOptions: GlobalOptions = {

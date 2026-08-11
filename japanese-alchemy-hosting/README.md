@@ -34,9 +34,10 @@ japanese-alchemy-hosting/
 
 ### Firebase Functions
 
-Two callable functions for Japanese text analysis:
+Three callable functions:
 
 - **explain** - Public API for Japanese text analysis (no auth required)
+- **explainStreamCallable** - Public callable stream for progressive managed analysis
 - **saveItems** - Save analysis results to Firestore (requires Firebase Auth)
 
 ### Firebase Hosting

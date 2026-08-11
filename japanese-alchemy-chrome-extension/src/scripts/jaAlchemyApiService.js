@@ -70,7 +70,7 @@ class JaAlchemyApiService {
   async generateResponseStream(selectedText, promptVersion, context, onChunk, onDone, onError) {
     let fullText = '';
     try {
-      console.log('[Firebase API] Calling explainStream with:', {
+      console.log('[Firebase API] Calling explainStreamCallable with:', {
         content: selectedText.substring(0, 100) + '...',
         prompt: promptVersion
       });

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 J-Buddy is a Japanese language learning AI assistant with three components in a monorepo:
 
 - **Chrome Extension** (`japanese-alchemy-chrome-extension`) — MV3 side panel extension. User selects Japanese text on any HTTPS page, extension sends it to Firebase Functions for AI analysis, and renders results with ruby annotations.
-- **Firebase Backend** (`japanese-alchemy-hosting`) — Cloud Functions (`explain`, `explainStream`, `saveItems`) backed by a pluggable LLM service layer (currently Gemini and ZAI, both using OpenAI-compatible `/chat/completions` endpoints), with Firestore for persistence. Node.js 22 runtime, deployed to us-central1. `explainStream` uses SSE streaming via `onRequest`; `explain` and `saveItems` use `onCall`.
+- **Firebase Backend** (`japanese-alchemy-hosting`) — Cloud Functions (`explain`, `explainStreamCallable`, `saveItems`) backed by a pluggable LLM service layer (currently Gemini and ZAI, both using OpenAI-compatible `/chat/completions` endpoints), with Firestore for persistence. Node.js 22 runtime, deployed to us-central1. All public analysis endpoints use `onCall`; `explainStreamCallable` uses Firebase callable streaming.
 - **Next.js Webapp** (`japanese-alchemy-webapp`) — Reads Firestore to display saved vocabulary and grammar. Next.js 16, React 19, TypeScript, Tailwind CSS v4, shadcn/ui.
 
 Auth: Firebase Auth (Google login). Secrets: Firebase Secret Manager (`JAPANESE_ALCHEMY_CONFIG`).
@@ -16,10 +16,10 @@ Auth: Firebase Auth (Google login). Secrets: Firebase Secret Manager (`JAPANESE_
 
 ```
 Chrome Extension (contentScript → background → sidePanel)
-        │  Firebase Callable Functions (onCall)
+        │  Firebase Callable Functions (onCall + callable streaming)
         ▼
   explain()     → LLM (batch)     → full markdown (used by webapp)
-  explainStream() → LLM (stream: true) → SSE chunks (used by Chrome extension)
+  explainStreamCallable() → LLM (stream: true) → callable stream chunks (used by Chrome extension)
   saveItems()     → Firestore
         │
         ▼
@@ -33,9 +33,9 @@ LLM Service Layer (abstraction over providers):
   Switch provider by changing LLM_PROVIDER in config.ts.
 ```
 
-**Data flow**: Text selection → contentScript sends to background → stored in chrome.storage.local → sidePanel reads it → calls `jaAlchemyApiService.generateResponseStream()` → Firebase `explainStream` HTTP endpoint → LLM API (streaming) → results rendered progressively with ruby tag conversion. On stream completion, `formatAnalysisResult()` produces structured data (checkboxes, save JSON).
+**Data flow**: Text selection → contentScript sends to background → stored in chrome.storage.local → sidePanel reads it → calls `jaAlchemyApiService.generateResponseStream()` → Firebase `explainStreamCallable` → LLM API (streaming) → results rendered progressively with ruby tag conversion. On stream completion, `formatAnalysisResult()` produces structured data (checkboxes, save JSON).
 
-The `explain` callable is preserved for backward compatibility; the Chrome extension uses the streaming `explainStream` endpoint. See `docs/SSE_STREAMING_MIGRATION.md` for details.
+The `explain` callable is preserved for batch consumers; the Chrome extension uses `explainStreamCallable`. The raw `explainStream` SSE route was retired after no supported external consumer was found. See `docs/solutions/CALLABLE_STREAMING_MIGRATION.md` for the current contract and compatibility decision.
 
 ## Build & Development Commands
 
@@ -57,13 +57,13 @@ cd japanese-alchemy-hosting/functions
 npm install
 npm run build          # tsc → lib/
 npm run build:watch    # tsc --watch
-npm run serve          # build + firebase emulators:start --only functions
+npm run serve          # build + firebase emulators:start --only functions,firestore
 npm run deploy         # firebase deploy --only functions
 npm run lint           # eslint
 npm test               # jest
 ```
 
-For local dev, place a `secrets.json` file in `functions/` with the `JAPANESE_ALCHEMY_CONFIG` payload (see `functions/README.md`).
+For local dev, place a Git-ignored `.secret.local` file in `functions/` with the `JAPANESE_ALCHEMY_CONFIG` override (see `functions/README.md`).
 
 Deploy Firestore rules: `cd japanese-alchemy-hosting && firebase deploy --only firestore:rules`
 
@@ -87,7 +87,7 @@ npm run lint           # eslint
 - **Prompt versions**: `v1` (basic) and `v2` (with ruby annotations, default). Defined in `functions/src/models/systemPromptV1.ts` and `systemPromptV2.ts`. Selected via request body field `prompt`.
 - **Text limits**: Analysis accepts 2–500 characters of Japanese text.
 - **LLM service abstraction** (`functions/src/services/llmService.ts`): Factory function `createLlmService()` returns the active provider. Both Gemini and ZAI use the OpenAI-compatible `POST /chat/completions` endpoint. Gemini additionally sends `extra_body.google.thinking_config` for Gemini-specific features.
-- **Chrome extension config**: `jaAlchemyApiService.js` derives its streaming URL from `firebaseConfig.projectId` (e.g. `https://us-central1-{projectId}.cloudfunctions.net/explainStream`). The `explain` batch method also uses the derived URL.
+- **Chrome extension config**: `jaAlchemyApiService.js` uses Firebase callable streaming for `explainStreamCallable`; development builds connect it to the Functions emulator before callable use, while production builds use the deployed project.
 - **Console log prefixes**: `[Background]` in background.js, `[Sidebar]` in sidepanel.js.
 - **Path aliases**: Webapp uses `@/*` mapping to `./lib/*` and `./components/*`.
 - **Firestore security rules**: Users can only read/write their own data under `users/{userId}/`.
