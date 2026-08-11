@@ -32,6 +32,9 @@ const ANALYSIS_ALLOWED_TAGS = [
     'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul',
 ];
 const ANALYSIS_ALLOWED_ATTR = ['colspan', 'href', 'rowspan', 'title'];
+const COMPLETED_ANALYSIS_RESULT_CACHE_VERSION = 1;
+const COMPLETED_ANALYSIS_RESULT_STORAGE_KEY = 'lastAnalysisResult';
+const CONTROLLED_CHECKBOX_PATTERN = /<input type="checkbox" name="(words|grammars)" value="([^"<>]*)">/g;
 
 function getDomPurify() {
     // The production side panel always has a real browser window. The guarded
@@ -62,6 +65,23 @@ export function sanitizeAnalysisHtml(html) {
         ALLOWED_ATTR: ANALYSIS_ALLOWED_ATTR,
         ALLOW_DATA_ATTR: false,
     });
+}
+
+function sanitizeCachedAnalysisHtml(html) {
+    const checkboxes = [];
+    const withCheckboxPlaceholders = String(html || '').replace(
+        CONTROLLED_CHECKBOX_PATTERN,
+        (checkbox) => {
+            const placeholder = `ANALYSIS_CACHE_CHECKBOX_${checkboxes.length}_`;
+            checkboxes.push({ placeholder, checkbox });
+            return placeholder;
+        }
+    );
+    let sanitizedHtml = sanitizeAnalysisHtml(withCheckboxPlaceholders);
+    checkboxes.forEach(({ placeholder, checkbox }) => {
+        sanitizedHtml = sanitizedHtml.replace(placeholder, checkbox);
+    });
+    return sanitizedHtml;
 }
 
 /**
@@ -206,6 +226,86 @@ export function formatAnalysisResult(markdown) {
     // console.log('Formatted HTML:', resultData.html);
 
     return resultData;
+}
+
+function isStructuredAnalysisEntry(entry, fields) {
+    return entry
+        && typeof entry === 'object'
+        && fields.every((field) => typeof entry[field] === 'string');
+}
+
+function isStructuredAnalysisResult(json) {
+    return json
+        && typeof json === 'object'
+        && Array.isArray(json.words)
+        && Array.isArray(json.grammars)
+        && json.words.every((word) => isStructuredAnalysisEntry(word, ['term', 'detail']))
+        && json.grammars.every((grammar) => isStructuredAnalysisEntry(grammar, ['point', 'explanation']));
+}
+
+function createCompletedAnalysisProjection(cacheKey, analysisResult) {
+    return JSON.stringify({
+        version: COMPLETED_ANALYSIS_RESULT_CACHE_VERSION,
+        cacheKey,
+        html: analysisResult.html,
+        json: analysisResult.json,
+    });
+}
+
+function getCachedCompletedAnalysis(cacheKey) {
+    const storedProjection = localStorage.getItem(COMPLETED_ANALYSIS_RESULT_STORAGE_KEY);
+    if (!storedProjection) return null;
+
+    try {
+        const projection = JSON.parse(storedProjection);
+        if (projection?.version !== COMPLETED_ANALYSIS_RESULT_CACHE_VERSION
+            || projection.cacheKey !== cacheKey
+            || typeof projection.html !== 'string'
+            || !projection.html.trim()
+            || !isStructuredAnalysisResult(projection.json)) {
+            return null;
+        }
+
+        const sanitizedHtml = sanitizeCachedAnalysisHtml(projection.html);
+        // A projection changed by sanitization is treated as untrusted. Its
+        // matching canonical markdown, if present, is reformatted instead.
+        if (!sanitizedHtml || sanitizedHtml !== projection.html) return null;
+
+        return { html: sanitizedHtml, json: projection.json };
+    } catch {
+        return null;
+    }
+}
+
+function renderCompletedAnalysis(analysisResult, proseElement, resultElement, loadingElement) {
+    saveForLaterJson = analysisResult.json;
+    proseElement.innerHTML = sanitizeCachedAnalysisHtml(analysisResult.html);
+    resultElement.classList.add('show');
+    setLoadingState(loadingElement, false);
+    setCompletedAnalysisAvailable(true);
+}
+
+function restoreCompletedAnalysis(cacheKey, proseElement, resultElement, loadingElement) {
+    if (cacheKey !== localStorage.getItem('lastAnalysisKey')) return false;
+
+    const cachedProjection = getCachedCompletedAnalysis(cacheKey);
+    if (cachedProjection) {
+        renderCompletedAnalysis(cachedProjection, proseElement, resultElement, loadingElement);
+        return true;
+    }
+
+    const storedResponse = localStorage.getItem('lastResponse');
+    if (!storedResponse) return false;
+
+    const analysisResult = formatAnalysisResult(storedResponse);
+    if (!analysisResult.html) return false;
+
+    localStorage.setItem(
+        COMPLETED_ANALYSIS_RESULT_STORAGE_KEY,
+        createCompletedAnalysisProjection(cacheKey, analysisResult)
+    );
+    renderCompletedAnalysis(analysisResult, proseElement, resultElement, loadingElement);
+    return true;
 }
 
 // Function to show error message
@@ -424,20 +524,13 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     elements.alertMessage.classList.remove('show');
 
     try {
-        // Cache hit when both the selected text and its surrounding context match
-        // the last analysis. The prompt variant is part of the key, so different
-        // analysis modes can have distinct results for the same selection.
-        const storedKey = localStorage.getItem('lastAnalysisKey');
-        if (cacheKey === storedKey) {
+        // Cache hit when the complete analysis identity matches. The projection
+        // keeps the interactive render state, while canonical markdown remains
+        // the source for Copy and Save As.
+        if (isValidSelection(selectedTextForRequest)
+            && restoreCompletedAnalysis(cacheKey, proseElement, resultElement, loadingElement)) {
             if (!isLatestAnalysis(requestId)) return;
             console.log('Selected text + context same as last time');
-            const storedResponse = localStorage.getItem('lastResponse');
-            const analysisResult = formatAnalysisResult(storedResponse);
-            saveForLaterJson = analysisResult.json;
-            proseElement.innerHTML = analysisResult.html;
-            resultElement.classList.add('show');
-            setLoadingState(loadingElement, false);
-            setCompletedAnalysisAvailable(true);
         } else if (isValidSelection(selectedTextForRequest)) {
             // Show loading state
             setLoadingMessage(loadingElement, 'AI 正在分析，請稍候…');
@@ -490,22 +583,20 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         // cached response all carry the generated table from one
                         // pass (see KTD2).
                         const enrichedText = enrichMarkdownWithConjugation(fullText);
+                        const analysisResult = formatAnalysisResult(enrichedText);
+                        const completedProjection = createCompletedAnalysisProjection(cacheKey, analysisResult);
+                        // Advance the cache only after enrichment and formatting
+                        // both succeed, so errors cannot leave a key pointing at
+                        // a stale or partial result.
                         localStorage.setItem('lastResponse', enrichedText);
-                        // Advance the cache key only after a completed stream so a
-                        // stream error/catch does not leave a key pointing at a
-                        // stale response.
                         localStorage.setItem('lastAnalysisKey', cacheKey);
                         localStorage.setItem('lastSelectedText', selectedTextForRequest);
+                        localStorage.setItem(COMPLETED_ANALYSIS_RESULT_STORAGE_KEY, completedProjection);
                         if (renderThrottleTimer) {
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
                         }
-                        const analysisResult = formatAnalysisResult(enrichedText);
-                        saveForLaterJson = analysisResult.json;
-                        proseElement.innerHTML = analysisResult.html;
-                        resultElement.classList.add('show');
-                        setLoadingState(loadingElement, false);
-                        setCompletedAnalysisAvailable(true);
+                        renderCompletedAnalysis(analysisResult, proseElement, resultElement, loadingElement);
                     },
                     // onError
                     (errorMessage) => {

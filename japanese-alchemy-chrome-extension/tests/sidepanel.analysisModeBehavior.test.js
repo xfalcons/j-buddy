@@ -56,10 +56,16 @@ function setupElements() {
   };
   const compactButton = createButton('v1');
   const usageButton = createButton('v2', true);
+  const copyButton = { disabled: true };
+  const saveAsBtn = { disabled: true };
+  const saveForLaterBtn = { disabled: true };
   const elements = {
     alertMessage,
     analysisModeButtons: [compactButton, usageButton],
+    copyButton,
     result,
+    saveAsBtn,
+    saveForLaterBtn,
   };
 
   document.getElementById = jest.fn((id) => {
@@ -73,11 +79,14 @@ function setupElements() {
   return {
     alertMessage,
     compactButton,
+    copyButton,
     elements,
     loading,
     loadingMessage,
     prose,
     result,
+    saveAsBtn,
+    saveForLaterBtn,
     usageButton,
   };
 }
@@ -106,6 +115,19 @@ function setupLocalStorage(initial = {}) {
     store[key] = value;
   });
   return store;
+}
+
+function completedProjection(cacheKey, overrides = {}) {
+  return JSON.stringify({
+    version: 1,
+    cacheKey,
+    html: '<h3>單字分析</h3><h4><input type="checkbox" name="words" value="成長">成長</h4><p>growth</p>',
+    json: {
+      words: [{ term: '成長', detail: 'growth' }],
+      grammars: [],
+    },
+    ...overrides,
+  });
 }
 
 function setupDeferredApi() {
@@ -194,6 +216,83 @@ describe('sidepanel analysis-mode behavior', () => {
 
     expect(prose.innerHTML).toContain('fresh v1 response');
     expect(global.localStorage.getItem('lastResponse')).toContain('fresh v1 response');
+  });
+
+  test('persists a versioned completed-result projection and restores it without another stream', async () => {
+    const text = '成長を後押しする';
+    const context = { before: '制度が', after: 'という。' };
+    const apiCalls = setupDeferredApi();
+    const initialRequest = analizingSelectedText(text, context, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    apiCalls[0].onDone('### 單字分析\n#### <單字>成長\ngrowth');
+    apiCalls[0].resolve();
+    await initialRequest;
+
+    const cachedProjection = JSON.parse(global.localStorage.getItem('lastAnalysisResult'));
+    expect(cachedProjection).toEqual(expect.objectContaining({
+      version: 1,
+      cacheKey: global.localStorage.getItem('lastAnalysisKey'),
+      json: expect.objectContaining({
+        words: [{ term: '成長', detail: 'growth' }],
+      }),
+    }));
+
+    const { copyButton, prose, result, saveAsBtn, saveForLaterBtn } = setupElements();
+    await analizingSelectedText(text, context, { promptVariant: 'v2' });
+
+    expect(apiCalls).toHaveLength(1);
+    expect(prose.innerHTML).toContain('checkbox');
+    expect(prose.innerHTML).toContain('成長');
+    expect(result.classList.contains('show')).toBe(true);
+    expect(copyButton.disabled).toBe(false);
+    expect(saveAsBtn.disabled).toBe(false);
+    expect(saveForLaterBtn.disabled).toBe(false);
+  });
+
+  test('a malformed completed-result projection falls back to matching canonical markdown', async () => {
+    const text = '成長を後押しする';
+    const context = { before: '制度が', after: 'という。' };
+    const cacheKey = buildContextCacheKey({ selectedText: text, context, promptVariant: 'v2' });
+    const apiCalls = setupDeferredApi();
+    setupLocalStorage({
+      lastAnalysisKey: cacheKey,
+      lastResponse: '### 單字分析\n#### <單字>成長\ngrowth',
+      lastAnalysisResult: '{not valid JSON',
+    });
+    const { prose } = setupElements();
+
+    await analizingSelectedText(text, context, { promptVariant: 'v2' });
+
+    expect(apiCalls).toHaveLength(0);
+    expect(prose.innerHTML).toContain('成長');
+    expect(JSON.parse(global.localStorage.getItem('lastAnalysisResult'))).toEqual(expect.objectContaining({
+      version: 1,
+      cacheKey,
+    }));
+  });
+
+  test('a matching cache key without a valid projection or canonical result clears stale output and streams', async () => {
+    const text = '成長を後押しする';
+    const cacheKey = buildContextCacheKey({ selectedText: text, promptVariant: 'v2' });
+    const apiCalls = setupDeferredApi();
+    setupLocalStorage({
+      lastAnalysisKey: cacheKey,
+      lastAnalysisResult: '{not valid JSON',
+    });
+    const { loading, prose, result } = setupElements();
+
+    const request = analizingSelectedText(text, {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    expect(apiCalls).toHaveLength(1);
+    expect(prose.innerHTML).toBe('');
+    expect(result.classList.contains('show')).toBe(false);
+    expect(loading.classList.contains('show')).toBe(true);
+
+    apiCalls[0].onError('unavailable');
+    apiCalls[0].resolve();
+    await request;
   });
 
   test('stale stream callbacks and queued previews cannot overwrite the latest mode result', async () => {
