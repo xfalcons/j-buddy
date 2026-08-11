@@ -121,6 +121,7 @@ function completedProjection(cacheKey, overrides = {}) {
   return JSON.stringify({
     version: 1,
     cacheKey,
+    response: '### 單字分析\n#### <單字>成長\ngrowth',
     html: '<h3>單字分析</h3><h4><input type="checkbox" name="words" value="成長">成長</h4><p>growth</p>',
     json: {
       words: [{ term: '成長', detail: 'growth' }],
@@ -233,6 +234,7 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(cachedProjection).toEqual(expect.objectContaining({
       version: 1,
       cacheKey: global.localStorage.getItem('lastAnalysisKey'),
+      response: expect.stringContaining('成長'),
       json: expect.objectContaining({
         words: [{ term: '成長', detail: 'growth' }],
       }),
@@ -272,6 +274,20 @@ describe('sidepanel analysis-mode behavior', () => {
     }));
   });
 
+  test('restores a valid word-only projection without canonical markdown fallback', async () => {
+    const text = '成長を後押しする';
+    const cacheKey = buildContextCacheKey({ selectedText: text, promptVariant: 'v2' });
+    const apiCalls = setupDeferredApi();
+    setupLocalStorage({ lastAnalysisResult: completedProjection(cacheKey) });
+    const { prose, result } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(apiCalls).toHaveLength(0);
+    expect(prose.innerHTML).toContain('成長');
+    expect(result.classList.contains('show')).toBe(true);
+  });
+
   test('a matching cache key without a valid projection or canonical result clears stale output and streams', async () => {
     const text = '成長を後押しする';
     const cacheKey = buildContextCacheKey({ selectedText: text, promptVariant: 'v2' });
@@ -290,6 +306,56 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(result.classList.contains('show')).toBe(false);
     expect(loading.classList.contains('show')).toBe(true);
 
+    apiCalls[0].onError('unavailable');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('a failed replacement clears its preview without replacing the completed cache', async () => {
+    const text = '成長を後押しする';
+    const oldKey = buildContextCacheKey({ selectedText: text, promptVariant: 'v2' });
+    const oldResponse = '### 單字分析\n#### <單字>成長\ngrowth';
+    const oldProjection = completedProjection(oldKey, { response: oldResponse });
+    const apiCalls = setupDeferredApi();
+    setupLocalStorage({
+      lastAnalysisKey: oldKey,
+      lastResponse: oldResponse,
+      lastAnalysisResult: oldProjection,
+    });
+    const { prose, result } = setupElements();
+
+    const request = analizingSelectedText('最新の選択', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[0].onChunk('途中', '途中の分析');
+    apiCalls[0].onError('unavailable');
+    apiCalls[0].resolve();
+    await request;
+
+    expect(prose.innerHTML).toBe('');
+    expect(result.classList.contains('show')).toBe(false);
+    expect(global.localStorage.getItem('lastAnalysisKey')).toBe(oldKey);
+    expect(global.localStorage.getItem('lastResponse')).toBe(oldResponse);
+    expect(global.localStorage.getItem('lastAnalysisResult')).toBe(oldProjection);
+  });
+
+  test('does not pair an interrupted legacy cache write with another projection', async () => {
+    const oldText = '以前の選択';
+    const newText = '新しい選択';
+    const oldKey = buildContextCacheKey({ selectedText: oldText, promptVariant: 'v2' });
+    const newKey = buildContextCacheKey({ selectedText: newText, promptVariant: 'v2' });
+    const apiCalls = setupDeferredApi();
+    setupLocalStorage({
+      lastAnalysisKey: oldKey,
+      lastResponse: 'new response written before the legacy key failed',
+      lastAnalysisResult: completedProjection(newKey, {
+        response: 'new response written atomically in the projection',
+      }),
+    });
+
+    const request = analizingSelectedText(oldText, {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    expect(apiCalls).toHaveLength(1);
     apiCalls[0].onError('unavailable');
     apiCalls[0].resolve();
     await request;

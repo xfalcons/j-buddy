@@ -234,19 +234,27 @@ function isStructuredAnalysisEntry(entry, fields) {
         && fields.every((field) => typeof entry[field] === 'string');
 }
 
-function isStructuredAnalysisResult(json) {
-    return json
-        && typeof json === 'object'
-        && Array.isArray(json.words)
-        && Array.isArray(json.grammars)
-        && json.words.every((word) => isStructuredAnalysisEntry(word, ['term', 'detail']))
-        && json.grammars.every((grammar) => isStructuredAnalysisEntry(grammar, ['point', 'explanation']));
+function normalizeStructuredAnalysisResult(json) {
+    if (!json || typeof json !== 'object') return null;
+
+    const normalizedJson = {
+        ...json,
+        words: json.words || [],
+        grammars: json.grammars || [],
+    };
+    return Array.isArray(normalizedJson.words)
+        && Array.isArray(normalizedJson.grammars)
+        && normalizedJson.words.every((word) => isStructuredAnalysisEntry(word, ['term', 'detail']))
+        && normalizedJson.grammars.every((grammar) => isStructuredAnalysisEntry(grammar, ['point', 'explanation']))
+        ? normalizedJson
+        : null;
 }
 
-function createCompletedAnalysisProjection(cacheKey, analysisResult) {
+function createCompletedAnalysisProjection(cacheKey, response, analysisResult) {
     return JSON.stringify({
         version: COMPLETED_ANALYSIS_RESULT_CACHE_VERSION,
         cacheKey,
+        response,
         html: analysisResult.html,
         json: analysisResult.json,
     });
@@ -260,9 +268,10 @@ function getCachedCompletedAnalysis(cacheKey) {
         const projection = JSON.parse(storedProjection);
         if (projection?.version !== COMPLETED_ANALYSIS_RESULT_CACHE_VERSION
             || projection.cacheKey !== cacheKey
+            || typeof projection.response !== 'string'
             || typeof projection.html !== 'string'
             || !projection.html.trim()
-            || !isStructuredAnalysisResult(projection.json)) {
+            || !normalizeStructuredAnalysisResult(projection.json)) {
             return null;
         }
 
@@ -271,14 +280,34 @@ function getCachedCompletedAnalysis(cacheKey) {
         // matching canonical markdown, if present, is reformatted instead.
         if (!sanitizedHtml || sanitizedHtml !== projection.html) return null;
 
-        return { html: sanitizedHtml, json: projection.json, isSanitized: true };
+        return {
+            html: sanitizedHtml,
+            json: normalizeStructuredAnalysisResult(projection.json),
+            response: projection.response,
+            isSanitized: true,
+        };
     } catch {
         return null;
     }
 }
 
+function hasMismatchedCompletedAnalysis(cacheKey) {
+    try {
+        const projection = JSON.parse(localStorage.getItem(COMPLETED_ANALYSIS_RESULT_STORAGE_KEY) || 'null');
+        return projection?.version === COMPLETED_ANALYSIS_RESULT_CACHE_VERSION
+            && typeof projection.cacheKey === 'string'
+            && typeof projection.response === 'string'
+            && typeof projection.html === 'string'
+            && !!normalizeStructuredAnalysisResult(projection.json)
+            && projection.cacheKey !== cacheKey;
+    } catch {
+        return false;
+    }
+}
+
 function renderCompletedAnalysis(analysisResult, proseElement, resultElement, loadingElement) {
     saveForLaterJson = analysisResult.json;
+    completedAnalysisResponse = analysisResult.response || '';
     proseElement.innerHTML = analysisResult.isSanitized
         ? analysisResult.html
         : sanitizeCachedAnalysisHtml(analysisResult.html);
@@ -287,26 +316,35 @@ function renderCompletedAnalysis(analysisResult, proseElement, resultElement, lo
     setCompletedAnalysisAvailable(true);
 }
 
-function restoreCompletedAnalysis(cacheKey, proseElement, resultElement, loadingElement) {
-    if (cacheKey !== localStorage.getItem('lastAnalysisKey')) return false;
+function getCompletedAnalysisResponse() {
+    return completedAnalysisResponse || localStorage.getItem('lastResponse') || '';
+}
 
+function restoreCompletedAnalysis(cacheKey, proseElement, resultElement, loadingElement) {
     const cachedProjection = getCachedCompletedAnalysis(cacheKey);
     if (cachedProjection) {
         renderCompletedAnalysis(cachedProjection, proseElement, resultElement, loadingElement);
         return true;
     }
 
+    // A valid projection is authoritative. Do not pair a legacy key from an
+    // interrupted compatibility write with a response for another analysis.
+    if (hasMismatchedCompletedAnalysis(cacheKey)) return false;
+    if (cacheKey !== localStorage.getItem('lastAnalysisKey')) return false;
     const storedResponse = localStorage.getItem('lastResponse');
     if (!storedResponse) return false;
 
     const analysisResult = formatAnalysisResult(storedResponse);
     if (!analysisResult.html) return false;
 
+    const normalizedJson = normalizeStructuredAnalysisResult(analysisResult.json);
+    if (!normalizedJson) return false;
+    const completedAnalysis = { ...analysisResult, json: normalizedJson, response: storedResponse };
     localStorage.setItem(
         COMPLETED_ANALYSIS_RESULT_STORAGE_KEY,
-        createCompletedAnalysisProjection(cacheKey, analysisResult)
+        createCompletedAnalysisProjection(cacheKey, storedResponse, completedAnalysis)
     );
-    renderCompletedAnalysis(analysisResult, proseElement, resultElement, loadingElement);
+    renderCompletedAnalysis(completedAnalysis, proseElement, resultElement, loadingElement);
     return true;
 }
 
@@ -378,6 +416,7 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
 
 let isAnalizing = false;
 let saveForLaterJson = {};
+let completedAnalysisResponse = '';
 let renderThrottleTimer = null;
 let currentSelectedText = '';
 let currentContext = { before: '', after: '' };
@@ -576,15 +615,34 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         // cached response all carry the generated table from one
                         // pass (see KTD2).
                         const enrichedText = enrichMarkdownWithConjugation(fullText);
-                        const analysisResult = formatAnalysisResult(enrichedText);
-                        const completedProjection = createCompletedAnalysisProjection(cacheKey, analysisResult);
+                        const formattedResult = formatAnalysisResult(enrichedText);
+                        const normalizedJson = normalizeStructuredAnalysisResult(formattedResult.json);
+                        if (!normalizedJson) {
+                            throw new Error('Unable to format the completed analysis result.');
+                        }
+                        const analysisResult = {
+                            ...formattedResult,
+                            json: normalizedJson,
+                            response: enrichedText,
+                        };
+                        const completedProjection = createCompletedAnalysisProjection(
+                            cacheKey,
+                            enrichedText,
+                            analysisResult
+                        );
                         // Advance the cache only after enrichment and formatting
                         // both succeed, so errors cannot leave a key pointing at
                         // a stale or partial result.
-                        localStorage.setItem('lastResponse', enrichedText);
-                        localStorage.setItem('lastAnalysisKey', cacheKey);
-                        localStorage.setItem('lastSelectedText', selectedTextForRequest);
                         localStorage.setItem(COMPLETED_ANALYSIS_RESULT_STORAGE_KEY, completedProjection);
+                        try {
+                            // These legacy values keep older cache consumers working,
+                            // but the versioned projection above is the atomic source.
+                            localStorage.setItem('lastResponse', enrichedText);
+                            localStorage.setItem('lastAnalysisKey', cacheKey);
+                            localStorage.setItem('lastSelectedText', selectedTextForRequest);
+                        } catch (storageError) {
+                            console.warn('Unable to update legacy analysis cache:', storageError);
+                        }
                         if (renderThrottleTimer) {
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
@@ -602,6 +660,10 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         alertMessage(elements.alertMessage, `呼叫分析服務時發生錯誤：${errorMessage}`, 'error');
                         elements.alertMessage.classList.add('show');
                         setLoadingState(loadingElement, false);
+                        proseElement.innerHTML = '';
+                        resultElement.classList.remove('show');
+                        saveForLaterJson = {};
+                        completedAnalysisResponse = '';
                         setCompletedAnalysisAvailable(false);
                     },
                     { signal: analysisController.signal }
@@ -612,6 +674,10 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                 alertMessage(elements.alertMessage, `呼叫分析服務時發生錯誤：${apiError.message}`, 'error');
                 elements.alertMessage.classList.add('show');
                 setLoadingState(loadingElement, false);
+                proseElement.innerHTML = '';
+                resultElement.classList.remove('show');
+                saveForLaterJson = {};
+                completedAnalysisResponse = '';
                 setCompletedAnalysisAvailable(false);
             }
         } else {
@@ -664,7 +730,7 @@ async function saveAsFile() {
   try {
     // The filename should use local datetime, and formatted as: YYYY-MM-DD_HH-MM-SS.md
     const suggestedName = generateFilenameAndHeading(); 
-    let text = localStorage.getItem('lastResponse');
+    let text = getCompletedAnalysisResponse();
     text = suggestedName.heading + "\n" + text;
 
     const handle = await window.showSaveFilePicker({
@@ -1330,7 +1396,7 @@ async function setupEventListeners() {
             return;
         }
         try {
-            const proseContent = localStorage.getItem('lastResponse') || '';
+            const proseContent = getCompletedAnalysisResponse();
             await navigator.clipboard.writeText(proseContent);
 
             // Show check icon
