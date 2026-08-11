@@ -7,6 +7,7 @@ admin.initializeApp();
 // Import handler functions and secret
 import { explainHandler } from "./v1/explainCallable";
 import { explainStreamHandler } from "./v1/explainStreamHandler";
+import { explainStreamCallableHandler } from "./v1/explainStreamCallableHandler";
 import { saveItemsHandler } from "./v1/saveItemsCallable";
 import { configSecret } from "./config";
 import { explainRuntimeOptions } from "./runtimeOptions";
@@ -28,6 +29,11 @@ export const explain = onCall(
 export const explainStream = onRequest(
   { ...explainRuntimeOptions, timeoutSeconds: 120, secrets: [configSecret], cors: true },
   explainStreamHandler
+);
+
+export const explainStreamCallable = onCall(
+  { ...explainRuntimeOptions, timeoutSeconds: 120, secrets: [configSecret] },
+  explainStreamCallableHandler
 );
 
 export const saveItems = onCall(

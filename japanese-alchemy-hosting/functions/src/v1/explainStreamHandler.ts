@@ -6,6 +6,7 @@ import { createLlmService } from "../services/llmService";
 import { logger } from "../utils/logger";
 import { isBodyTooLarge, isParsedBodyTooLarge, validateExplainRequest } from "./requestValidation";
 import { checkRateLimit, rateLimitKey } from "./rateLimiter";
+import { streamLlmDeltas } from "./llmStreamDeltas";
 
 // HMAC'd client identifier for rejection logs (abuse correlation): never the
 // raw IP, never request content.
@@ -88,74 +89,15 @@ export async function explainStreamHandler(req: Request, res: Response): Promise
     const ttfb = Date.now() - t0;
     logger.info(`LLM API headers received (TTFB): ${ttfb}ms`);
 
-    if (!llmResponse.body) {
-      sendSSE("error", { error: "No response body from LLM provider" });
-      res.end();
-      return;
-    }
-
-    const decoder = new TextDecoder();
-    const reader = llmResponse.body.getReader();
-    let buffer = "";
     let firstChunkSent = false;
 
-    // eslint-disable-next-line no-constant-condition -- intentional streaming loop, broken by `done`
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
+    for await (const delta of streamLlmDeltas(llmResponse)) {
       if (!firstChunkSent) {
         const firstChunkMs = Date.now() - t0;
         logger.info(`First content chunk forwarded to client: ${firstChunkMs}ms (body latency: ${firstChunkMs - ttfb}ms)`);
         firstChunkSent = true;
       }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // SSE frames from Gemini are separated by double newlines
-      const lines = buffer.split("\n");
-      // Keep the last incomplete line in the buffer
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(":")) continue;
-
-        if (trimmed === "data: [DONE]") {
-          sendSSE("done", "[DONE]");
-          continue;
-        }
-
-        if (trimmed.startsWith("data: ")) {
-          const jsonStr = trimmed.slice(6);
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              sendSSE("chunk", { content: delta });
-            }
-          } catch {
-            // Malformed JSON — skip
-          }
-        }
-      }
-    }
-
-    // Process any remaining buffer
-    if (buffer.trim() && buffer.trim() !== "data: [DONE]") {
-      const trimmed = buffer.trim();
-      if (trimmed.startsWith("data: ")) {
-        const jsonStr = trimmed.slice(6);
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            sendSSE("chunk", { content: delta });
-          }
-        } catch {
-          // Skip
-        }
-      }
+      sendSSE("chunk", { content: delta });
     }
 
     const totalMs = Date.now() - t0;

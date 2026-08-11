@@ -15,9 +15,6 @@ class JaAlchemyApiService {
     this.app = window.firebaseApp;
     this.functions = getFunctions(this.app, 'us-central1'); // Use your region
 
-    // Derive the streaming endpoint URL from the Firebase project config
-    const projectId = firebaseConfig.projectId;
-    this.streamUrl = `https://us-central1-${projectId}.cloudfunctions.net/explainStream`;
   }
 
   /**
@@ -60,7 +57,7 @@ class JaAlchemyApiService {
   }
 
   /**
-   * Generate response using SSE streaming
+   * Generate response using Firebase callable streaming
    * @param {string} selectedText - The text to analyze
    * @param {string} promptVersion - The prompt version ("v1" or "v2")
    * @param {{ before?: string, after?: string }} [context] - surrounding page context
@@ -76,73 +73,22 @@ class JaAlchemyApiService {
         prompt: promptVersion
       });
 
-      const response = await fetch(this.streamUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildRequestBody(selectedText, promptVersion, context))
-      });
+      const explainStreamCallable = httpsCallable(this.functions, 'explainStreamCallable');
+      const { stream, data } = await explainStreamCallable.stream(
+        buildRequestBody(selectedText, promptVersion, context)
+      );
 
-      if (!response.ok) {
-        let detail = await response.text();
-        try {
-          const parsed = JSON.parse(detail);
-          if (parsed && parsed.error) detail = parsed.error;
-        } catch {
-          // body wasn't JSON; keep the raw text
-        }
-        throw new Error(`串流請求失敗：${response.status} ${detail}`);
+      for await (const chunk of stream) {
+        if (!chunk?.content) continue;
+        console.log('[Firebase API] Received chunk:', chunk.content);
+        fullText += chunk.content;
+        onChunk(chunk.content, fullText);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Parse SSE frames from the server
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        let currentEvent = null;
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-
-          if (trimmed.startsWith('event:')) {
-            currentEvent = trimmed.slice(6).trim();
-          } else if (trimmed.startsWith('data:')) {
-            const dataStr = trimmed.slice(5).trim();
-
-            if (currentEvent === 'chunk') {
-              try {
-                const parsed = JSON.parse(dataStr);
-                if (parsed.content) {
-                  console.log('[Firebase API] Received chunk:', parsed.content);
-                  fullText += parsed.content;
-                  onChunk(parsed.content, fullText);
-                }
-              } catch {
-                // Skip malformed JSON
-              }
-            } else if (currentEvent === 'error') {
-              try {
-                const parsed = JSON.parse(dataStr);
-                onError(parsed.error || '未知的串流錯誤');
-                return;
-              } catch {
-                onError(dataStr);
-                return;
-              }
-            } else if (currentEvent === 'done' || dataStr === '[DONE]') {
-              // Stream complete
-            }
-            currentEvent = null;
-          }
-        }
+      const result = await data;
+      if (!result?.success) {
+        onError(result?.error || '未知的串流錯誤');
+        return;
       }
 
       onDone(fullText);
