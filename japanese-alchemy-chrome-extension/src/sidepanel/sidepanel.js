@@ -432,6 +432,7 @@ let analysisRequestId = 0;
 let activeAnalysisKey = null;
 let activeAnalysisController = null;
 let activeAnalysisRequestIdentity = null;
+let activeAnalysisPreviewText = '';
 let modeChangeRequestId = 0;
 let hasCompletedAnalysis = false;
 
@@ -454,6 +455,7 @@ function cancelActiveAnalysis() {
     activeAnalysisController?.abort();
     activeAnalysisController = null;
     activeAnalysisRequestIdentity = null;
+    setAnalysisCancellationAvailable(false);
 }
 
 function analysisSourceIdentity(providerState) {
@@ -467,6 +469,59 @@ function setCompletedAnalysisAvailable(available) {
     [elements?.copyButton, elements?.saveAsBtn, elements?.saveForLaterBtn]
         .filter(Boolean)
         .forEach((button) => { button.disabled = !available; });
+}
+
+function setAnalysisCancellationAvailable(available) {
+    if (elements?.cancelAnalysisButton) {
+        elements.cancelAnalysisButton.hidden = !available;
+    }
+}
+
+/**
+ * Stop the active provider request without allowing a partial response to
+ * become completed Analysis markdown. A visible preview remains useful after
+ * the first chunk, but completion-only actions stay disabled.
+ */
+export function handleCancelAnalysis(panelElements = elements) {
+    if (!isAnalizing) return false;
+
+    const previewText = activeAnalysisPreviewText;
+    const resultElement = panelElements?.result || document.getElementById('result');
+    const proseElement = panelElements?.prose || resultElement?.querySelector('.prose');
+    const loadingElement = document.getElementById('loading');
+    const previewRenderPending = renderThrottleTimer !== null;
+
+    analysisRequestId += 1;
+    cancelActiveAnalysis();
+    isAnalizing = false;
+    activeAnalysisKey = null;
+    activeAnalysisPreviewText = '';
+    completedAnalysisResponse = '';
+    saveForLaterJson = {};
+    if (previewRenderPending) {
+        clearTimeout(renderThrottleTimer);
+        renderThrottleTimer = null;
+    }
+    setLoadingState(loadingElement, false);
+    setCompletedAnalysisAvailable(false);
+
+    if (previewText) {
+        if (previewRenderPending) {
+            proseElement.innerHTML = renderAnalysisMarkdown(previewText);
+        }
+        resultElement.classList.add('show');
+        alertMessage(
+            panelElements?.alertMessage,
+            '分析已停止。以下內容為未完成的預覽，無法儲存、複製或加入收藏。',
+            'info'
+        );
+        panelElements?.alertMessage?.classList.add('show');
+    } else {
+        proseElement.innerHTML = '';
+        resultElement.classList.remove('show');
+    }
+
+    return true;
 }
 
 function isLatestModeChange(requestId) {
@@ -562,6 +617,8 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     console.log('Analizing Selected Text...');
     let analysisController = null;
     isAnalizing = true;
+    activeAnalysisPreviewText = '';
+    setAnalysisCancellationAvailable(true);
     setCompletedAnalysisAvailable(false);
     activeAnalysisKey = cacheKey;
     if (renderThrottleTimer) {
@@ -612,6 +669,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                             setLoadingMessage(loadingElement, '已收到分析結果，正在整理版面…');
                             resultElement.classList.add('show');
                         }
+                        activeAnalysisPreviewText = fullText;
                         renderStreamingPreview(proseElement, fullText, requestId);
                     },
                     // onDone: finalize with full formatting (checkboxes, structured data)
@@ -623,6 +681,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         // cached response all carry the generated table from one
                         // pass (see KTD2).
                         const enrichedText = enrichMarkdownWithConjugation(fullText);
+                        activeAnalysisPreviewText = '';
                         const formattedResult = formatAnalysisResult(enrichedText);
                         const normalizedJson = normalizeStructuredAnalysisResult(formattedResult.json);
                         if (!normalizedJson) {
@@ -672,6 +731,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         resultElement.classList.remove('show');
                         saveForLaterJson = {};
                         completedAnalysisResponse = '';
+                        activeAnalysisPreviewText = '';
                         setCompletedAnalysisAvailable(false);
                     },
                     { signal: analysisController.signal }
@@ -686,6 +746,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                 resultElement.classList.remove('show');
                 saveForLaterJson = {};
                 completedAnalysisResponse = '';
+                activeAnalysisPreviewText = '';
                 setCompletedAnalysisAvailable(false);
             }
         } else {
@@ -709,6 +770,8 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         isAnalizing = false;
         activeAnalysisKey = null;
         activeAnalysisRequestIdentity = null;
+        activeAnalysisPreviewText = '';
+        setAnalysisCancellationAvailable(false);
     }
 }
 
@@ -1395,6 +1458,7 @@ async function initElements() {
     fontSizeMenu: document.querySelector('#fontSizeMenu'),
     saveAsBtn: document.getElementById('saveAsBtn'),
     saveForLaterBtn: document.getElementById('saveForLaterBtn'),
+    cancelAnalysisButton: document.getElementById('cancelAnalysisButton'),
     shareCheckbox: document.getElementById('shareCheckbox'),
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
     analysisModeButtons: document.querySelectorAll('.analysis-mode-option'),
@@ -1564,6 +1628,9 @@ async function setupEventListeners() {
     });
     elements.loadPersonalProviderModelsButton?.addEventListener('click', async () => {
       await handlePersonalProviderLoadModels(elements);
+    });
+    elements.cancelAnalysisButton?.addEventListener('click', () => {
+      handleCancelAnalysis(elements);
     });
     [elements.personalProviderApiUrl, elements.personalProviderApiKey].forEach((field) => {
       field?.addEventListener('input', async () => {

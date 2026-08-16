@@ -60,4 +60,10 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toMatch(/\.controls\s*\{[\s\S]*?flex-wrap:\s*nowrap;/);
     expect(html).toMatch(/\.controls-left\s*\{[\s\S]*?flex-wrap:\s*nowrap;/);
   });
+
+  test('provides an initially hidden Stop analysis control in the loading state', () => {
+    expect(html).toContain('id="cancelAnalysisButton"');
+    expect(html).toContain('hidden>停止分析</button>');
+    expect(html).toContain('aria-label="停止目前分析"');
+  });
 });

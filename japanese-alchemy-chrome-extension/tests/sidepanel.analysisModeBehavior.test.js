@@ -1,5 +1,6 @@
 import {
   analizingSelectedText,
+  handleCancelAnalysis,
   handleAnalysisModeChange,
   isValidSelection,
   setSidepanelElementsForTesting,
@@ -52,6 +53,7 @@ function setupElements() {
   };
   const alertMessage = {
     innerHTML: '',
+    textContent: '',
     classList: createClassList(),
   };
   const compactButton = createButton('v1');
@@ -59,10 +61,13 @@ function setupElements() {
   const copyButton = { disabled: true };
   const saveAsBtn = { disabled: true };
   const saveForLaterBtn = { disabled: true };
+  const cancelAnalysisButton = { hidden: true };
   const elements = {
     alertMessage,
     analysisModeButtons: [compactButton, usageButton],
+    cancelAnalysisButton,
     copyButton,
+    prose,
     result,
     saveAsBtn,
     saveForLaterBtn,
@@ -79,6 +84,7 @@ function setupElements() {
   return {
     alertMessage,
     compactButton,
+    cancelAnalysisButton,
     copyButton,
     elements,
     loading,
@@ -307,6 +313,109 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(loading.classList.contains('show')).toBe(true);
 
     apiCalls[0].onError('unavailable');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('manually stops an active analysis before the first chunk without creating a result', async () => {
+    const apiCalls = setupDeferredApi();
+    const {
+      cancelAnalysisButton,
+      copyButton,
+      elements,
+      loading,
+      result,
+      saveAsBtn,
+      saveForLaterBtn,
+    } = setupElements();
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    expect(cancelAnalysisButton.hidden).toBe(false);
+    expect(loading.classList.contains('show')).toBe(true);
+
+    handleCancelAnalysis(elements);
+
+    expect(apiCalls[0].options.signal.aborted).toBe(true);
+    expect(cancelAnalysisButton.hidden).toBe(true);
+    expect(loading.classList.contains('show')).toBe(false);
+    expect(result.classList.contains('show')).toBe(false);
+    expect(copyButton.disabled).toBe(true);
+    expect(saveAsBtn.disabled).toBe(true);
+    expect(saveForLaterBtn.disabled).toBe(true);
+    expect(global.localStorage.getItem('lastAnalysisResult')).toBeNull();
+
+    apiCalls[0].onDone('# stale response');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('manually stops an active personal-provider request before its first chunk', async () => {
+    setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 2,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    let requestSignal;
+    global.fetch = jest.fn((_url, options) => new Promise((resolve, reject) => {
+      requestSignal = options.signal;
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('The operation was aborted.');
+        error.name = 'AbortError';
+        reject(error);
+      }, { once: true });
+    }));
+    const { cancelAnalysisButton, elements, loading, result } = setupElements();
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    expect(cancelAnalysisButton.hidden).toBe(false);
+    handleCancelAnalysis(elements);
+    await request;
+
+    expect(requestSignal.aborted).toBe(true);
+    expect(loading.classList.contains('show')).toBe(false);
+    expect(result.classList.contains('show')).toBe(false);
+    expect(global.localStorage.getItem('lastAnalysisResult')).toBeNull();
+  });
+
+  test('keeps a clearly marked but non-completable preview when manually stopped after streamed text', async () => {
+    const apiCalls = setupDeferredApi();
+    const {
+      alertMessage,
+      cancelAnalysisButton,
+      copyButton,
+      elements,
+      prose,
+      result,
+      saveAsBtn,
+      saveForLaterBtn,
+    } = setupElements();
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[0].onChunk('途中', '# 途中の分析');
+
+    handleCancelAnalysis(elements);
+
+    expect(apiCalls[0].options.signal.aborted).toBe(true);
+    expect(cancelAnalysisButton.hidden).toBe(true);
+    expect(result.classList.contains('show')).toBe(true);
+    expect(prose.innerHTML).toContain('途中の分析');
+    expect(alertMessage.textContent).toContain('未完成');
+    expect(alertMessage.classList.contains('show')).toBe(true);
+    expect(copyButton.disabled).toBe(true);
+    expect(saveAsBtn.disabled).toBe(true);
+    expect(saveForLaterBtn.disabled).toBe(true);
+    expect(global.localStorage.getItem('lastAnalysisResult')).toBeNull();
+
+    apiCalls[0].onDone('# stale response');
     apiCalls[0].resolve();
     await request;
   });

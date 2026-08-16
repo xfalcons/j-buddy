@@ -91,6 +91,20 @@
       animation: fadeIn 0.3s ease;
     }
 
+    .cancel-analysis-button {
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-primary);
+      cursor: pointer;
+      font: inherit;
+      padding: 6px 10px;
+    }
+
+    .cancel-analysis-button:hover {
+      background: var(--bg-secondary);
+    }
+
     .spinner {
       width: 1.5rem;
       height: 1.5rem;
@@ -900,6 +914,7 @@
     <div id="loading" class="loading">
       <div class="spinner"></div>
       <span class="loading-message">AI 正在分析，請稍候…</span>
+      <button id="cancelAnalysisButton" class="cancel-analysis-button" type="button" aria-label="停止目前分析" hidden>停止分析</button>
     </div>
 
     <!-- Message -->
