@@ -219,3 +219,14 @@ export function buildDirectCompletionRequest({ profile, selectedText, promptVari
     stream: Boolean(stream),
   };
 }
+
+export function buildDirectResponsesRequest({ profile, selectedText, promptVariant, context, stream }) {
+  return {
+    model: profile.model,
+    instructions: getSystemPrompt(promptVariant),
+    input: buildDirectAnalysisMessage(selectedText, context),
+    max_output_tokens: 8192,
+    stream: Boolean(stream),
+    store: false,
+  };
+}

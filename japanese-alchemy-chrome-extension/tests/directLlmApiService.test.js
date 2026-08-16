@@ -1,9 +1,18 @@
-import { DirectLlmApiService, buildModelsUrl } from '../src/scripts/directLlmApiService.js';
+import {
+  DirectLlmApiService,
+  buildModelsUrl,
+  buildResponsesUrl,
+} from '../src/scripts/directLlmApiService.js';
 
 const profile = {
   apiUrl: 'https://provider.example/v1/',
   apiKey: 'private-key-that-must-not-leak',
   model: 'test-model',
+};
+
+const responsesProfile = {
+  ...profile,
+  protocol: 'responses',
 };
 
 function headers(contentType = 'text/event-stream') {
@@ -153,6 +162,113 @@ describe('DirectLlmApiService', () => {
     expect(done).toHaveBeenCalledTimes(1);
     expect(done).toHaveBeenCalledWith('分析');
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('streams Responses text deltas through the existing callback contract', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"分"}\n\n',
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"析"}\n\n',
+      'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+    ]));
+    const chunks = [];
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined,
+      (chunk, fullText) => chunks.push([chunk, fullText]), done, onError
+    );
+
+    expect(buildResponsesUrl(profile.apiUrl)).toBe('https://provider.example/v1/responses');
+    expect(fetch.mock.calls[0][0]).toBe('https://provider.example/v1/responses');
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(expect.objectContaining({
+      model: 'test-model',
+      max_output_tokens: 8192,
+      stream: true,
+      store: false,
+      instructions: expect.any(String),
+      input: '日本語',
+    }));
+    expect(chunks).toEqual([['分', '分'], ['析', '分析']]);
+    expect(done).toHaveBeenCalledWith('分析');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('retries a rejected Responses stream once and completes textual JSON output', async () => {
+    const fetch = jest.fn()
+      .mockResolvedValueOnce(errorResponse(400, { error: { message: 'stream is not supported by this endpoint' } }))
+      .mockResolvedValueOnce(jsonResponse({
+        status: 'completed',
+        output: [{
+          type: 'message',
+          content: [
+            { type: 'output_text', text: '完整' },
+            { type: 'refusal', refusal: 'not analysis text' },
+            { type: 'output_text', text: '分析' },
+          ],
+        }],
+      }));
+    const onChunk = jest.fn();
+    const done = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, onChunk, done, jest.fn()
+    );
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).stream).toBe(true);
+    expect(JSON.parse(fetch.mock.calls[1][1].body).stream).toBe(false);
+    expect(onChunk).not.toHaveBeenCalled();
+    expect(done).toHaveBeenCalledWith('完整分析');
+  });
+
+  test('does not retry or complete a partial Responses stream', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+    ]));
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, jest.fn(), done, onError
+    );
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('中斷了串流'));
+  });
+
+  test('rejects a completed Responses stream that contains no textual output', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta"}\n\n',
+      'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+    ]));
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, jest.fn(), done, onError
+    );
+
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('不支援的串流回應'));
+  });
+
+  test('redacts malformed Responses stream errors without completing analysis', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.output_text.delta\ndata: not-json\n\n',
+    ]));
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, jest.fn(), done, onError
+    );
+
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('不支援的串流回應'));
+    expect(onError.mock.calls[0][0]).not.toContain(profile.apiKey);
+    expect(onError.mock.calls[0][0]).not.toContain(profile.apiUrl);
   });
 
   test('reassembles fragmented CRLF SSE frames, [DONE], and split UTF-8 content', async () => {

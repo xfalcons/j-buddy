@@ -1,4 +1,7 @@
-import { buildDirectCompletionRequest } from './directAnalysisContract.js';
+import {
+  buildDirectCompletionRequest,
+  buildDirectResponsesRequest,
+} from './directAnalysisContract.js';
 
 const UNSUPPORTED_STREAMING = /\bstream(?:ing)?\b[\s\S]{0,80}\b(?:not supported|unsupported|not allowed|invalid|unknown)\b|\b(?:not supported|unsupported)\b[\s\S]{0,80}\bstream(?:ing)?\b/i;
 
@@ -13,6 +16,10 @@ export class DirectLlmApiError extends Error {
 
 export function buildChatCompletionsUrl(apiUrl) {
   return `${String(apiUrl).replace(/\/+$/, '')}/chat/completions`;
+}
+
+export function buildResponsesUrl(apiUrl) {
+  return `${String(apiUrl).replace(/\/+$/, '')}/responses`;
 }
 
 export function buildModelsUrl(apiUrl) {
@@ -109,6 +116,21 @@ function completeResponseContent(payload) {
   return content;
 }
 
+function completeResponsesContent(payload) {
+  const text = payload?.output
+    ?.flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+    .filter((item) => item?.type === 'output_text' && typeof item.text === 'string')
+    .map((item) => item.text)
+    .join('');
+  if (payload?.status !== 'completed' || !text) {
+    throw new DirectLlmApiError(
+      '個人提供者回傳了不支援的回應格式。',
+      'personal_provider_invalid_response'
+    );
+  }
+  return text;
+}
+
 function sseFrameData(frame) {
   return frame
     .split(/\r?\n/)
@@ -128,7 +150,39 @@ function parseSsePayload(data) {
   }
 }
 
-async function consumeOpenAiSse(response, onChunk, signal) {
+function consumeOpenAiSsePayload(payload) {
+  if (payload?.error) {
+    throw new DirectLlmApiError(
+      '個人提供者在串流分析時回傳錯誤。',
+      'personal_provider_stream_error'
+    );
+  }
+  return {
+    delta: payload?.choices?.[0]?.delta?.content,
+    terminal: hasTerminalFinishReason(payload),
+  };
+}
+
+function consumeResponsesSsePayload(payload) {
+  if (payload?.type === 'error' || payload?.type === 'response.failed') {
+    throw new DirectLlmApiError(
+      '個人提供者在串流分析時回傳錯誤。',
+      'personal_provider_stream_error'
+    );
+  }
+  if (payload?.type === 'response.output_text.delta' && typeof payload.delta !== 'string') {
+    throw new DirectLlmApiError(
+      '個人提供者回傳了不支援的串流回應。',
+      'personal_provider_invalid_response'
+    );
+  }
+  return {
+    delta: payload?.type === 'response.output_text.delta' ? payload.delta : '',
+    terminal: payload?.type === 'response.completed' && payload?.response?.status === 'completed',
+  };
+}
+
+async function consumeSse(response, onChunk, signal, consumePayload, { doneTerminates, requireText }) {
   if (!response.body?.getReader) {
     throw new DirectLlmApiError(
       '個人提供者未回傳可讀取的串流回應。',
@@ -150,24 +204,25 @@ async function consumeOpenAiSse(response, onChunk, signal) {
 
   const consumeFrame = (frame) => {
     const data = sseFrameData(frame);
-    if (!data || data === '[DONE]') {
-      if (data === '[DONE]') terminal = true;
+    if (!data) return;
+    if (data === '[DONE]') {
+      if (doneTerminates) terminal = true;
+      else {
+        throw new DirectLlmApiError(
+          '個人提供者回傳了不支援的串流回應。',
+          'personal_provider_invalid_response'
+        );
+      }
       return;
     }
 
     const payload = parseSsePayload(data);
-    if (payload?.error) {
-      throw new DirectLlmApiError(
-        '個人提供者在串流分析時回傳錯誤。',
-        'personal_provider_stream_error'
-      );
-    }
-    const delta = payload?.choices?.[0]?.delta?.content;
+    const { delta, terminal: payloadTerminal } = consumePayload(payload);
     if (typeof delta === 'string' && delta) {
       fullText += delta;
       onChunk(delta, fullText);
     }
-    if (hasTerminalFinishReason(payload)) terminal = true;
+    if (payloadTerminal) terminal = true;
   };
 
   try {
@@ -191,10 +246,12 @@ async function consumeOpenAiSse(response, onChunk, signal) {
     }
 
     if (!terminal && buffer) consumeFrame(buffer);
-    if (!terminal) {
+    if (!terminal || (requireText && !fullText)) {
       throw new DirectLlmApiError(
-        '個人提供者在完成分析前中斷了串流。',
-        'personal_provider_incomplete_stream'
+        requireText && terminal
+          ? '個人提供者回傳了不支援的串流回應。'
+          : '個人提供者在完成分析前中斷了串流。',
+        requireText && terminal ? 'personal_provider_invalid_response' : 'personal_provider_incomplete_stream'
       );
     }
     return fullText;
@@ -204,6 +261,22 @@ async function consumeOpenAiSse(response, onChunk, signal) {
     reader.releaseLock?.();
   }
 }
+
+const consumeOpenAiSse = (response, onChunk, signal) => consumeSse(
+  response,
+  onChunk,
+  signal,
+  consumeOpenAiSsePayload,
+  { doneTerminates: true, requireText: false }
+);
+
+const consumeResponsesSse = (response, onChunk, signal) => consumeSse(
+  response,
+  onChunk,
+  signal,
+  consumeResponsesSsePayload,
+  { doneTerminates: false, requireText: true }
+);
 
 function responseIsJson(response) {
   return /application\/json/i.test(response?.headers?.get?.('content-type') || '');
@@ -259,15 +332,16 @@ export class DirectLlmApiService {
   }
 
   async request(profile, selectedText, promptVariant, context, stream, signal) {
+    const usesResponses = profile?.protocol === 'responses';
     let response;
     try {
-      response = await this.fetch(buildChatCompletionsUrl(profile.apiUrl), {
+      response = await this.fetch(usesResponses ? buildResponsesUrl(profile.apiUrl) : buildChatCompletionsUrl(profile.apiUrl), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${profile.apiKey}`,
         },
-        body: JSON.stringify(buildDirectCompletionRequest({
+        body: JSON.stringify((usesResponses ? buildDirectResponsesRequest : buildDirectCompletionRequest)({
           profile,
           selectedText,
           promptVariant,
@@ -300,6 +374,7 @@ export class DirectLlmApiService {
   async generateResponseStream(profile, selectedText, promptVariant, context, onChunk, onDone, onError, { signal } = {}) {
     try {
       let response;
+      const usesResponses = profile?.protocol === 'responses';
       try {
         response = await this.request(profile, selectedText, promptVariant, context, true, signal);
       } catch (error) {
@@ -311,8 +386,8 @@ export class DirectLlmApiService {
       }
 
       const fullText = responseIsJson(response)
-        ? completeResponseContent(await response.json())
-        : await consumeOpenAiSse(response, onChunk, signal);
+        ? (usesResponses ? completeResponsesContent : completeResponseContent)(await response.json())
+        : await (usesResponses ? consumeResponsesSse : consumeOpenAiSse)(response, onChunk, signal);
       if (signal?.aborted) return null;
       onDone(fullText);
       return fullText;
