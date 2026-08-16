@@ -1,4 +1,4 @@
-import { DirectLlmApiService } from '../src/scripts/directLlmApiService.js';
+import { DirectLlmApiService, buildModelsUrl } from '../src/scripts/directLlmApiService.js';
 
 const profile = {
   apiUrl: 'https://provider.example/v1/',
@@ -59,6 +59,52 @@ function errorResponse(status, body) {
 }
 
 describe('DirectLlmApiService', () => {
+  test('loads unique non-empty model IDs from the configured OpenAI-compatible base URL', async () => {
+    const fetch = jest.fn(async () => jsonResponse({
+      data: [{ id: 'model-b' }, { id: 'model-a' }, { id: 'model-b' }, { id: '  ' }, {}],
+    }));
+
+    await expect(new DirectLlmApiService(fetch).loadModels({
+      apiUrl: profile.apiUrl,
+      apiKey: profile.apiKey,
+    })).resolves.toEqual(['model-b', 'model-a']);
+
+    expect(buildModelsUrl(profile.apiUrl)).toBe('https://provider.example/v1/models');
+    expect(fetch).toHaveBeenCalledWith('https://provider.example/v1/models', expect.objectContaining({
+      method: 'GET',
+      headers: { Authorization: 'Bearer private-key-that-must-not-leak' },
+    }));
+  });
+
+  test('rejects an empty or incompatible model catalog without exposing provider details', async () => {
+    const fetch = jest.fn(async () => jsonResponse({ data: [] }));
+
+    await expect(new DirectLlmApiService(fetch).loadModels({
+      apiUrl: profile.apiUrl,
+      apiKey: profile.apiKey,
+    })).rejects.toMatchObject({ code: 'personal_provider_invalid_model_catalog' });
+  });
+
+  test('forwards abort signals while loading models', async () => {
+    const controller = new AbortController();
+    const fetch = jest.fn((_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('The request was aborted.');
+        error.name = 'AbortError';
+        reject(error);
+      }, { once: true });
+    }));
+
+    const request = new DirectLlmApiService(fetch).loadModels({
+      apiUrl: profile.apiUrl,
+      apiKey: profile.apiKey,
+    }, { signal: controller.signal });
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetch.mock.calls[0][1].signal).toBe(controller.signal);
+  });
+
   test('calls a receiver-sensitive fetch implementation with the extension global', async () => {
     const fetch = jest.fn(function receiverSensitiveFetch() {
       if (this !== globalThis) {

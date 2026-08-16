@@ -116,6 +116,22 @@ export function normalizePersonalProviderProfile(profile) {
   });
 }
 
+export function normalizePersonalProviderConnection(connection) {
+  if (!connection || typeof connection !== 'object' || Array.isArray(connection)) {
+    throw new PersonalProviderError('個人提供者設定不完整。', 'invalid_connection');
+  }
+
+  const apiKey = typeof connection.apiKey === 'string' ? connection.apiKey.trim() : '';
+  if (!apiKey) {
+    throw new PersonalProviderError('必須填寫 API 金鑰。', 'invalid_connection');
+  }
+
+  return Object.freeze({
+    apiUrl: normalizeApiBaseUrl(connection.apiUrl),
+    apiKey,
+  });
+}
+
 function normalizeRevision(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
@@ -204,14 +220,31 @@ export async function setAnalysisProviderMode(mode) {
  * submit gesture. Chrome can reject permission requests once an async storage
  * read has yielded, so the subsequent persistence step receives this promise.
  */
+export function requestPersonalProviderConnectionPermission(connection) {
+  const normalizedConnection = normalizePersonalProviderConnection(connection);
+  const permission = getOriginPermission(normalizedConnection.apiUrl);
+  const permissions = requirePermissions();
+  return {
+    normalizedConnection,
+    permission,
+    hadPermission: permissions.contains({ origins: [permission] }),
+    permissionRequest: permissions.request({ origins: [permission] }),
+  };
+}
+
 export function requestPersonalProviderOriginPermission(profile) {
   const normalizedProfile = normalizePersonalProviderProfile(profile);
-  const permission = getOriginPermission(normalizedProfile.apiUrl);
+  const pendingConnectionPermission = requestPersonalProviderConnectionPermission(normalizedProfile);
   return {
+    ...pendingConnectionPermission,
     normalizedProfile,
-    permission,
-    permissionRequest: requirePermissions().request({ origins: [permission] }),
   };
+}
+
+export async function releasePersonalProviderOriginPermission(permission) {
+  if (typeof permission === 'string' && permission) {
+    await requirePermissions().remove({ origins: [permission] });
+  }
 }
 
 /**

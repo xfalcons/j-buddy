@@ -31,5 +31,14 @@ The J-Buddy-operated analysis route, selected when a learner uses the service's 
 ### Personal provider
 A learner's own configured LLM provider profile, selected to analyze text directly from the extension instead of using the managed provider.
 
+### Model catalog
+The list of models a personal provider authorizes for a learner's configured API URL and API key, obtained through its OpenAI-compatible authenticated `/models` endpoint. It is fetched only when the learner explicitly asks to load models; an unavailable, empty, or incompatible catalog prevents profile saving, and the catalog itself is not persisted. The learner chooses one returned model from a required dropdown. Changing the API URL or API key invalidates the catalog and selection.
+
+### Staged provider profile
+Unpersisted API URL, API key, and model-catalog selection held in the personal-provider form. It cannot replace the saved personal provider profile until the learner explicitly saves all three values together. Model discovery first requests access only to the staged provider origin; a newly granted but unsaved permission is released if discovery fails or the staged URL/key changes.
+
+### Masked API key
+The `****************` value shown for a saved personal-provider credential. It is a non-secret UI placeholder: leaving it untouched preserves the saved credential, while editing it supplies a replacement credential. It may be reused only for a configured API URL on the same provider origin; switching origins requires a replacement key. A failed update retains the saved credential and its masked state.
+
 ### High-value vocabulary item
 A vocabulary item selected for analysis because it materially helps comprehension or later sentence production in the current source text. High-value items may include verbs, サ變 nouns, adjectives, adverbs, compound nouns, and katakana loanwords, and are preferred over exhaustive N1-N3 extraction.

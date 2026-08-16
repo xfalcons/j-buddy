@@ -9,8 +9,13 @@ import {
     MANAGED_PROVIDER_MODE,
     PERSONAL_PROVIDER_MODE,
     clearPersonalProvider,
+    getOriginPermission,
     getPersonalProviderState,
-    requestPersonalProviderOriginPermission,
+    normalizeApiBaseUrl,
+    normalizePersonalProviderConnection,
+    normalizePersonalProviderProfile,
+    releasePersonalProviderOriginPermission,
+    requestPersonalProviderConnectionPermission,
     savePersonalProvider,
     setAnalysisProviderMode,
 } from '../scripts/personalProvider.js';
@@ -35,6 +40,9 @@ const ANALYSIS_ALLOWED_ATTR = ['colspan', 'href', 'rowspan', 'title'];
 const COMPLETED_ANALYSIS_RESULT_CACHE_VERSION = 1;
 const COMPLETED_ANALYSIS_RESULT_STORAGE_KEY = 'lastAnalysisResult';
 const CONTROLLED_CHECKBOX_PATTERN = /<input type="checkbox" name="(words|grammars)" value="([^"<>]*)">/g;
+const MASKED_API_KEY = '****************';
+let stagedModelCatalog = null;
+let maskedApiKeyState = null;
 
 function getDomPurify() {
     // The production side panel always has a real browser window. The guarded
@@ -971,6 +979,168 @@ function setPersonalProviderFeedback(elements, message = '', type = 'status', fo
     }
 }
 
+function replacePersonalProviderModelOptions(modelSelect, modelIds = []) {
+    if (!modelSelect) return;
+    const createOption = (value, label, disabled = false) => {
+        const option = globalThis.document?.createElement?.('option') || {};
+        option.value = value;
+        option.textContent = label;
+        option.disabled = disabled;
+        return option;
+    };
+    const placeholder = createOption('', modelIds.length ? '請選擇模型' : '請先載入模型', true);
+    placeholder.selected = true;
+    const options = [placeholder, ...modelIds.map((modelId) => createOption(modelId, modelId))];
+    if (typeof modelSelect.replaceChildren === 'function') {
+        modelSelect.replaceChildren(...options);
+    } else {
+        modelSelect.innerHTML = '';
+        options.forEach((option) => modelSelect.appendChild?.(option));
+    }
+    modelSelect.value = '';
+    modelSelect.disabled = modelIds.length === 0;
+}
+
+function updateLoadPersonalProviderModelsButton(elements) {
+    if (!elements.loadPersonalProviderModelsButton) return;
+    const values = getPersonalProviderFormValues(elements);
+    const disabled = !values.apiUrl.trim() || !values.apiKey.trim();
+    if (elements.loadPersonalProviderModelsButton.disabled !== disabled) {
+        elements.loadPersonalProviderModelsButton.disabled = disabled;
+    }
+}
+
+function setMaskedApiKeyState(profile) {
+    if (!profile) {
+        maskedApiKeyState = null;
+        return;
+    }
+    maskedApiKeyState = {
+        apiKey: profile.apiKey,
+        origin: new URL(profile.apiUrl).origin,
+    };
+}
+
+function resolvePersonalProviderFormValues(values) {
+    if (values.apiKey !== MASKED_API_KEY || !maskedApiKeyState) return values;
+    const apiUrl = normalizeApiBaseUrl(values.apiUrl);
+    if (new URL(apiUrl).origin !== maskedApiKeyState.origin) {
+        throw new Error('更換不同提供者時，請輸入新的 API 金鑰。');
+    }
+    return { ...values, apiUrl, apiKey: maskedApiKeyState.apiKey };
+}
+
+async function releaseStagedModelCatalogPermission(catalog, retainedPermission = null) {
+    if (!catalog || catalog.permission === retainedPermission) return;
+    const [hadOriginPermission] = await Promise.all([
+        catalog.hadOriginPermission,
+        catalog.permissionRequest?.catch(() => false),
+    ]);
+    if (hadOriginPermission) return;
+    const state = await getPersonalProviderState();
+    const activePermission = state?.profile ? getOriginPermission(state.profile.apiUrl) : null;
+    if (activePermission !== catalog.permission) {
+        await releasePersonalProviderOriginPermission(catalog.permission);
+    }
+}
+
+export async function invalidatePersonalProviderModelCatalog(elements, retainedPermission = null) {
+    const catalog = stagedModelCatalog;
+    stagedModelCatalog = null;
+    catalog?.controller?.abort();
+    if (!catalog && elements.personalProviderModel?.disabled && !elements.personalProviderModel.value) {
+        updateLoadPersonalProviderModelsButton(elements);
+        return;
+    }
+    replacePersonalProviderModelOptions(elements.personalProviderModel);
+    updateLoadPersonalProviderModelsButton(elements);
+    await releaseStagedModelCatalogPermission(catalog, retainedPermission);
+}
+
+function catalogMatchesFormValues(catalog, values) {
+    if (!catalog || !connectionMatchesFormValues(catalog.connection, values)) return false;
+    return catalog.modelIds.includes(values.model.trim());
+}
+
+function connectionMatchesFormValues(connection, values) {
+    try {
+        const normalizedConnection = normalizePersonalProviderConnection(values);
+        return normalizedConnection.apiUrl === connection.apiUrl
+            && normalizedConnection.apiKey === connection.apiKey;
+    } catch {
+        return false;
+    }
+}
+
+export async function handlePersonalProviderLoadModels(elements, modelService = new DirectLlmApiService()) {
+    let values;
+    try {
+        values = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+    } catch (error) {
+        setPersonalProviderFeedback(elements, error.message, 'error', true);
+        return null;
+    }
+    let pendingPermission;
+    try {
+        // Starts Chrome's optional-host prompt within the explicit load gesture.
+        pendingPermission = requestPersonalProviderConnectionPermission(values);
+    } catch (error) {
+        setPersonalProviderFeedback(elements, error.message, 'error', true);
+        return null;
+    }
+
+    await invalidatePersonalProviderModelCatalog(elements, pendingPermission.permission);
+    let currentValues;
+    try {
+        currentValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+    } catch {
+        currentValues = null;
+    }
+    if (!connectionMatchesFormValues(pendingPermission.normalizedConnection, currentValues)) {
+        await releaseStagedModelCatalogPermission({
+            permission: pendingPermission.permission,
+            hadOriginPermission: pendingPermission.hadPermission,
+            permissionRequest: pendingPermission.permissionRequest,
+        });
+        return null;
+    }
+    const controller = new AbortController();
+    const catalog = {
+        connection: pendingPermission.normalizedConnection,
+        permission: pendingPermission.permission,
+        hadOriginPermission: pendingPermission.hadPermission,
+        permissionRequest: pendingPermission.permissionRequest,
+        modelIds: [],
+        controller,
+    };
+    stagedModelCatalog = catalog;
+    if (elements.loadPersonalProviderModelsButton) elements.loadPersonalProviderModelsButton.disabled = true;
+    setPersonalProviderFeedback(elements, '', 'error');
+    setPersonalProviderFeedback(elements, '正在取得可用模型…', 'status');
+
+    try {
+        const granted = await pendingPermission.permissionRequest;
+        if (!granted) throw new Error('未取得提供者存取權，無法載入模型。');
+        const modelIds = await modelService.loadModels(catalog.connection, { signal: controller.signal });
+        if (stagedModelCatalog !== catalog || controller.signal.aborted) return null;
+        catalog.modelIds = modelIds;
+        replacePersonalProviderModelOptions(elements.personalProviderModel, modelIds);
+        setPersonalProviderFeedback(elements, '請選擇模型後再儲存設定。', 'status');
+        return modelIds;
+    } catch (error) {
+        if (stagedModelCatalog !== catalog || controller.signal.aborted) return null;
+        stagedModelCatalog = null;
+        replacePersonalProviderModelOptions(elements.personalProviderModel);
+        await releaseStagedModelCatalogPermission(catalog);
+        setPersonalProviderFeedback(elements, error.message || '無法取得提供者模型。', 'error', true);
+        return null;
+    } finally {
+        if (!stagedModelCatalog || stagedModelCatalog === catalog) {
+            updateLoadPersonalProviderModelsButton(elements);
+        }
+    }
+}
+
 export function updatePersonalProviderModeUi(elements, mode, isPersonalReady) {
     elements.providerModeButtons?.forEach((button) => {
         const isSelected = button.dataset.providerMode === mode;
@@ -1005,16 +1175,15 @@ export function renderPersonalProviderState(elements, state) {
     if (elements.personalProviderApiUrl) {
         elements.personalProviderApiUrl.value = profile?.apiUrl || '';
     }
-    if (elements.personalProviderModel) {
-        elements.personalProviderModel.value = profile?.model || '';
-    }
-    // Never render a saved credential into the form, even as a masked value.
+    replacePersonalProviderModelOptions(elements.personalProviderModel);
+    setMaskedApiKeyState(profile);
     if (elements.personalProviderApiKey) {
-        elements.personalProviderApiKey.value = '';
+        elements.personalProviderApiKey.value = profile ? MASKED_API_KEY : '';
     }
     if (elements.clearPersonalProviderButton) {
         elements.clearPersonalProviderButton.disabled = !profile;
     }
+    updateLoadPersonalProviderModelsButton(elements);
 
     const unavailableMessage = mode === PERSONAL_PROVIDER_MODE && !isPersonalReady
         ? `已選取個人分析，但目前無法使用：${personalError?.message || '請先完成提供者設定。'}`
@@ -1064,24 +1233,43 @@ function focusPersonalProviderField(elements, values) {
 }
 
 export async function handlePersonalProviderSave(elements) {
-    const values = getPersonalProviderFormValues(elements);
-    if (!values.apiUrl.trim() || !values.apiKey.trim() || !values.model.trim()) {
+    const formValues = getPersonalProviderFormValues(elements);
+    if (!formValues.apiUrl.trim() || !formValues.apiKey.trim() || !formValues.model.trim()) {
         setPersonalProviderFeedback(
             elements,
             '請先輸入 HTTPS API 網址、API 金鑰與模型，再進行儲存。',
             'error',
             true
         );
-        focusPersonalProviderField(elements, values);
+        focusPersonalProviderField(elements, formValues);
         return null;
     }
 
-    // This synchronous call must remain before the first await in this click
-    // handler. It preserves Chrome's user-gesture requirement for optional
-    // host permissions while still rejecting invalid URLs before a prompt.
+    let values;
+    try {
+        values = resolvePersonalProviderFormValues(formValues);
+    } catch (error) {
+        setPersonalProviderFeedback(elements, error.message, 'error', true);
+        return null;
+    }
+
+    if (!catalogMatchesFormValues(stagedModelCatalog, values)) {
+        setPersonalProviderFeedback(
+            elements,
+            '請使用目前的 API 網址與 API 金鑰載入模型，並從清單中選擇模型後再儲存。',
+            'error',
+            true
+        );
+        return null;
+    }
+
     let pendingPermission;
     try {
-        pendingPermission = requestPersonalProviderOriginPermission(values);
+        pendingPermission = {
+            normalizedProfile: normalizePersonalProviderProfile(values),
+            permission: stagedModelCatalog.permission,
+            permissionRequest: stagedModelCatalog.permissionRequest,
+        };
     } catch (error) {
         setPersonalProviderFeedback(elements, error.message, 'error', true);
         return null;
@@ -1093,6 +1281,7 @@ export async function handlePersonalProviderSave(elements) {
     try {
         await savePersonalProvider(values, pendingPermission);
         await setAnalysisProviderMode(PERSONAL_PROVIDER_MODE);
+        stagedModelCatalog = null;
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
         setPersonalProviderFeedback(
@@ -1215,6 +1404,7 @@ async function initElements() {
     personalProviderApiUrl: document.getElementById('personalProviderApiUrl'),
     personalProviderApiKey: document.getElementById('personalProviderApiKey'),
     personalProviderModel: document.getElementById('personalProviderModel'),
+    loadPersonalProviderModelsButton: document.getElementById('loadPersonalProviderModelsButton'),
     personalProviderSummary: document.getElementById('personalProviderSummary'),
     personalProviderStatus: document.getElementById('personalProviderStatus'),
     personalProviderError: document.getElementById('personalProviderError'),
@@ -1371,6 +1561,17 @@ async function setupEventListeners() {
     elements.personalProviderForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
       await handlePersonalProviderSave(elements);
+    });
+    elements.loadPersonalProviderModelsButton?.addEventListener('click', async () => {
+      await handlePersonalProviderLoadModels(elements);
+    });
+    [elements.personalProviderApiUrl, elements.personalProviderApiKey].forEach((field) => {
+      field?.addEventListener('input', async () => {
+        if (field === elements.personalProviderApiKey && field.value !== MASKED_API_KEY) {
+          maskedApiKeyState = null;
+        }
+        await invalidatePersonalProviderModelCatalog(elements);
+      });
     });
     elements.clearPersonalProviderButton?.addEventListener('click', async () => {
       await handlePersonalProviderClear(elements);

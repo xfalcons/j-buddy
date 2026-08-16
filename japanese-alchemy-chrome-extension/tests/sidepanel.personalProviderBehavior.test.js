@@ -7,8 +7,10 @@ import {
 } from '../src/scripts/personalProvider.js';
 import {
   handlePersonalProviderClear,
+  handlePersonalProviderLoadModels,
   handlePersonalProviderModeChange,
   handlePersonalProviderSave,
+  invalidatePersonalProviderModelCatalog,
   initializePersonalProviderSettings,
   redactPersonalProviderApiKey,
 } from '../src/sidepanel/sidepanel.js';
@@ -77,12 +79,17 @@ function createElements(values = {}) {
     personalProviderModeButton: personalButton,
     personalProviderApiUrl: createField(values.apiUrl || ''),
     personalProviderApiKey: createField(values.apiKey || ''),
-    personalProviderModel: createField(values.model || ''),
+    personalProviderModel: {
+      ...createField(values.model || ''),
+      disabled: true,
+      replaceChildren: jest.fn(),
+    },
     personalProviderForm: { hidden: true },
     personalProviderSummary: { textContent: '' },
     personalProviderStatus: { textContent: '', hidden: false, focus: jest.fn() },
     personalProviderError: { textContent: '', hidden: true, focus: jest.fn() },
     savePersonalProviderButton: { disabled: false },
+    loadPersonalProviderModelsButton: { disabled: false },
     clearPersonalProviderButton: { disabled: false },
   };
 }
@@ -115,6 +122,9 @@ describe('sidepanel personal-provider settings', () => {
       model: 'example-model',
     });
 
+    const modelService = { loadModels: jest.fn(async () => ['example-model']) };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'example-model';
     await handlePersonalProviderSave(elements);
 
     expect(store).toEqual(expect.objectContaining({
@@ -125,8 +135,92 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.personalProviderSummary.textContent).toBe('個人 · example-model');
     expect(elements.personalProviderForm.hidden).toBe(false);
     expect(elements.personalProviderSummary.textContent).not.toContain('personal-secret-key');
-    expect(elements.personalProviderApiKey.value).toBe('');
+    expect(elements.personalProviderApiKey.value).toBe('****************');
     expect(elements.personalProviderStatus.textContent).toContain('直接傳送至此提供者');
+    expect(global.chrome.permissions.request).toHaveBeenCalledTimes(1);
+  });
+
+  test('loads models into a required picker before allowing a staged profile to save', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => ['model-b', 'model-a']) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(modelService.loadModels).toHaveBeenCalledWith({
+      apiUrl: 'https://api.example.test/v1',
+      apiKey: 'personal-secret-key',
+    }, expect.objectContaining({ signal: expect.any(Object) }));
+    expect(elements.personalProviderModel.disabled).toBe(false);
+    expect(elements.personalProviderModel.value).toBe('');
+    expect(elements.personalProviderModel.replaceChildren).toHaveBeenCalled();
+
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toBeUndefined();
+
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({ model: 'model-a' }));
+  });
+
+  test('invalidates an in-flight catalog and removes a newly granted unsaved origin permission', async () => {
+    const { permissions } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    let resolveModels;
+    const modelService = { loadModels: jest.fn(() => new Promise((resolve) => { resolveModels = resolve; })) };
+
+    const loading = handlePersonalProviderLoadModels(elements, modelService);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    elements.personalProviderApiKey.value = 'replacement-key';
+    await invalidatePersonalProviderModelCatalog(elements);
+    resolveModels(['stale-model']);
+    await loading;
+
+    expect(elements.personalProviderModel.disabled).toBe(true);
+    expect(elements.personalProviderModel.value).toBe('');
+    expect(permissions.has('https://api.example.test/*')).toBe(false);
+    expect(global.chrome.permissions.remove).toHaveBeenCalledWith({
+      origins: ['https://api.example.test/*'],
+    });
+  });
+
+  test('re-enables model discovery after a catalog failure and releases its temporary permission', async () => {
+    const { permissions } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => {
+      throw new Error('無法取得模型');
+    }) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.loadPersonalProviderModelsButton.disabled).toBe(false);
+    expect(elements.personalProviderError.textContent).toContain('無法取得模型');
+    expect(permissions.has('https://api.example.test/*')).toBe(false);
+  });
+
+  test('refreshing a staged catalog retains its origin permission', async () => {
+    const { permissions } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => ['example-model']) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(permissions.has('https://api.example.test/*')).toBe(true);
+    expect(global.chrome.permissions.remove).not.toHaveBeenCalled();
+    expect(modelService.loadModels).toHaveBeenCalledTimes(2);
   });
 
   test('invalid setup remains managed, reports the issue, and moves focus to the missing field', async () => {
@@ -138,6 +232,56 @@ describe('sidepanel personal-provider settings', () => {
     expect(store[ANALYSIS_PROVIDER_MODE_KEY]).toBeUndefined();
     expect(elements.personalProviderError.textContent).toContain('API 金鑰');
     expect(elements.personalProviderApiKey.focus).toHaveBeenCalled();
+  });
+
+  test('uses a masked saved key for same-origin model discovery and preserves it on save', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'old-model',
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+    const modelService = { loadModels: jest.fn(async () => ['new-model']) };
+
+    await initializePersonalProviderSettings(elements);
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'new-model';
+    await handlePersonalProviderSave(elements);
+
+    expect(elements.personalProviderApiKey.value).toBe('****************');
+    expect(modelService.loadModels).toHaveBeenCalledWith({
+      apiUrl: 'https://api.example.test/v1',
+      apiKey: 'personal-secret-key',
+    }, expect.any(Object));
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({
+      apiKey: 'personal-secret-key',
+      model: 'new-model',
+    }));
+  });
+
+  test('does not send a masked key to a different provider origin', async () => {
+    setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'old-model',
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+    const modelService = { loadModels: jest.fn() };
+
+    await initializePersonalProviderSettings(elements);
+    elements.personalProviderApiUrl.value = 'https://another-provider.test/v1';
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(modelService.loadModels).not.toHaveBeenCalled();
+    expect(elements.personalProviderError.textContent).toContain('輸入新的 API 金鑰');
   });
 
   test('a revoked personal selection stays visibly personal and explains that analysis is unavailable', async () => {

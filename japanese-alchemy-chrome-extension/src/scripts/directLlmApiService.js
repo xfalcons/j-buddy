@@ -15,6 +15,36 @@ export function buildChatCompletionsUrl(apiUrl) {
   return `${String(apiUrl).replace(/\/+$/, '')}/chat/completions`;
 }
 
+export function buildModelsUrl(apiUrl) {
+  return `${String(apiUrl).replace(/\/+$/, '')}/models`;
+}
+
+function extractModelIds(payload) {
+  if (!Array.isArray(payload?.data)) {
+    throw new DirectLlmApiError(
+      '此提供者回傳了不支援的模型清單格式。',
+      'personal_provider_invalid_model_catalog'
+    );
+  }
+
+  const ids = [];
+  const seen = new Set();
+  payload.data.forEach((model) => {
+    const id = typeof model?.id === 'string' ? model.id.trim() : '';
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  });
+  if (!ids.length) {
+    throw new DirectLlmApiError(
+      '此提供者沒有可選擇的模型。',
+      'personal_provider_invalid_model_catalog'
+    );
+  }
+  return ids;
+}
+
 function errorDetailFromBody(body) {
   if (!body || typeof body !== 'object') return '';
   if (typeof body.error === 'string') return body.error;
@@ -191,6 +221,41 @@ export class DirectLlmApiService {
     // Window.fetch is receiver-sensitive in Chromium. Keep the injected
     // transport testable while always invoking it with the extension global.
     this.fetch = (...args) => fetchImpl.call(globalThis, ...args);
+  }
+
+  async loadModels(connection, { signal } = {}) {
+    let response;
+    try {
+      response = await this.fetch(buildModelsUrl(connection.apiUrl), {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${connection.apiKey}` },
+        signal,
+      });
+    } catch (error) {
+      if (isAbortError(error, signal)) throw error;
+      throw new DirectLlmApiError(
+        '無法取得提供者模型。請檢查網址、權限、API 金鑰與網路連線。',
+        'personal_provider_model_catalog_network_error'
+      );
+    }
+
+    if (!response?.ok) {
+      throw new DirectLlmApiError(
+        `無法取得提供者模型${Number.isInteger(response?.status) ? `（HTTP ${response.status}）` : ''}。請檢查設定後再試一次。`,
+        'personal_provider_model_catalog_http_error',
+        Number.isInteger(response?.status) ? response.status : null
+      );
+    }
+
+    try {
+      return extractModelIds(await response.json());
+    } catch (error) {
+      if (error instanceof DirectLlmApiError) throw error;
+      throw new DirectLlmApiError(
+        '此提供者回傳了不支援的模型清單格式。',
+        'personal_provider_invalid_model_catalog'
+      );
+    }
   }
 
   async request(profile, selectedText, promptVariant, context, stream, signal) {

@@ -37,6 +37,9 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('id="personalProviderApiUrl"');
     expect(html).toContain('id="personalProviderApiKey"');
     expect(html).toContain('id="personalProviderModel"');
+    expect(html).toContain('id="loadPersonalProviderModelsButton"');
+    expect(html).toContain('name="model"');
+    expect(html).toContain('<select id="personalProviderModel"');
     expect(html).toContain('<form id="personalProviderForm" novalidate hidden>');
     expect(html).toContain('儲存');
     expect(html).toContain('清除');
