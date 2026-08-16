@@ -340,6 +340,25 @@ describe('sidepanel personal-provider settings', () => {
     expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toBeUndefined();
   });
 
+  test('denied Responses host permission does not offer manual model entry', async () => {
+    setupChrome();
+    global.chrome.permissions.request.mockResolvedValue(false);
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+      protocol: RESPONSES_PROTOCOL,
+    });
+    const modelService = { loadModels: jest.fn() };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(modelService.loadModels).not.toHaveBeenCalled();
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModelField.hidden).toBe(true);
+    expect(elements.personalProviderManualModel.disabled).toBe(true);
+    expect(elements.personalProviderError.textContent).toContain('未取得提供者存取權');
+  });
+
   test('manual Responses model entry preserves a masked same-origin API key', async () => {
     const { store } = setupChrome({
       [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,

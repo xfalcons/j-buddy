@@ -1207,9 +1207,11 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
     setPersonalProviderFeedback(elements, '', 'error');
     setPersonalProviderFeedback(elements, '正在取得可用模型…', 'status');
 
+    let catalogAccessGranted = false;
     try {
         const granted = await pendingPermission.permissionRequest;
         if (!granted) throw new Error('未取得提供者存取權，無法載入模型。');
+        catalogAccessGranted = true;
         const modelIds = await modelService.loadModels(catalog.connection, { signal: controller.signal });
         if (stagedModelCatalog !== catalog || controller.signal.aborted) return null;
         catalog.modelIds = modelIds;
@@ -1222,7 +1224,7 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         stagedModelCatalog = null;
         replacePersonalProviderModelOptions(elements.personalProviderModel);
         await releaseStagedModelCatalogPermission(catalog);
-        if (catalog.connection.protocol === RESPONSES_PROTOCOL) {
+        if (catalogAccessGranted && catalog.connection.protocol === RESPONSES_PROTOCOL) {
             let currentValues;
             try {
                 currentValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
