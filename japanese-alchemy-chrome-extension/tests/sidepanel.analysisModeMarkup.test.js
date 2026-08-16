@@ -36,10 +36,16 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('data-provider-mode="personal"');
     expect(html).toContain('id="personalProviderApiUrl"');
     expect(html).toContain('id="personalProviderApiKey"');
+    expect(html).toContain('id="personalProviderProtocol"');
+    expect(html).toContain('Chat Completions-compatible');
+    expect(html).toContain('Responses-compatible');
     expect(html).toContain('id="personalProviderModel"');
     expect(html).toContain('id="loadPersonalProviderModelsButton"');
     expect(html).toContain('name="model"');
     expect(html).toContain('<select id="personalProviderModel"');
+    expect(html).toContain('id="personalProviderManualModelField"');
+    expect(html).toContain('id="personalProviderManualModel"');
+    expect(html).toContain('手動輸入模型 ID');
     expect(html).toContain('<form id="personalProviderForm" novalidate hidden>');
     expect(html).toContain('儲存');
     expect(html).toContain('清除');

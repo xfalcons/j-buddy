@@ -1,6 +1,8 @@
 import {
   MANAGED_PROVIDER_MODE,
+  CHAT_COMPLETIONS_PROTOCOL,
   PERSONAL_PROVIDER_MODE,
+  RESPONSES_PROTOCOL,
   ANALYSIS_PROVIDER_MODE_KEY,
   PERSONAL_PROVIDER_PROFILE_KEY,
   PERSONAL_PROVIDER_REVISION_KEY,
@@ -79,10 +81,17 @@ function createElements(values = {}) {
     personalProviderModeButton: personalButton,
     personalProviderApiUrl: createField(values.apiUrl || ''),
     personalProviderApiKey: createField(values.apiKey || ''),
+    personalProviderProtocol: createField(values.protocol || CHAT_COMPLETIONS_PROTOCOL),
     personalProviderModel: {
       ...createField(values.model || ''),
       disabled: true,
       replaceChildren: jest.fn(),
+    },
+    personalProviderCatalogModelField: { hidden: false },
+    personalProviderManualModelField: { hidden: true },
+    personalProviderManualModel: {
+      ...createField(values.manualModel || ''),
+      disabled: true,
     },
     personalProviderForm: { hidden: true },
     personalProviderSummary: { textContent: '' },
@@ -140,6 +149,52 @@ describe('sidepanel personal-provider settings', () => {
     expect(global.chrome.permissions.request).toHaveBeenCalledTimes(1);
   });
 
+  test('renders a saved Responses-compatible protocol while keeping the API key masked', async () => {
+    setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'responses-model',
+        protocol: RESPONSES_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 1,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+
+    await initializePersonalProviderSettings(elements);
+
+    expect(elements.personalProviderProtocol.value).toBe(RESPONSES_PROTOCOL);
+    expect(elements.personalProviderApiKey.value).toBe('****************');
+  });
+
+  test('saves a catalog-selected Responses-compatible provider through the existing permission flow', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+      protocol: RESPONSES_PROTOCOL,
+    });
+    const modelService = { loadModels: jest.fn(async () => ['responses-model']) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'responses-model';
+    await handlePersonalProviderSave(elements);
+
+    expect(modelService.loadModels).toHaveBeenCalledWith({
+      apiUrl: 'https://api.example.test/v1',
+      apiKey: 'personal-secret-key',
+      protocol: RESPONSES_PROTOCOL,
+    }, expect.any(Object));
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({
+      model: 'responses-model',
+      protocol: RESPONSES_PROTOCOL,
+    }));
+    expect(global.chrome.permissions.request).toHaveBeenCalledWith({
+      origins: ['https://api.example.test/*'],
+    });
+  });
+
   test('loads models into a required picker before allowing a staged profile to save', async () => {
     const { store } = setupChrome();
     const elements = createElements({
@@ -153,6 +208,7 @@ describe('sidepanel personal-provider settings', () => {
     expect(modelService.loadModels).toHaveBeenCalledWith({
       apiUrl: 'https://api.example.test/v1',
       apiKey: 'personal-secret-key',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
     }, expect.objectContaining({ signal: expect.any(Object) }));
     expect(elements.personalProviderModel.disabled).toBe(false);
     expect(elements.personalProviderModel.value).toBe('');
@@ -164,6 +220,23 @@ describe('sidepanel personal-provider settings', () => {
     elements.personalProviderModel.value = 'model-a';
     await handlePersonalProviderSave(elements);
     expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({ model: 'model-a' }));
+  });
+
+  test('requires a fresh catalog selection after the personal-provider protocol changes', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => ['shared-model']) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'shared-model';
+    elements.personalProviderProtocol.value = RESPONSES_PROTOCOL;
+    await handlePersonalProviderSave(elements);
+
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toBeUndefined();
+    expect(elements.personalProviderError.textContent).toContain('請使用目前的 API 網址與 API 金鑰載入模型');
   });
 
   test('invalidates an in-flight catalog and removes a newly granted unsaved origin permission', async () => {
@@ -205,6 +278,114 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.loadPersonalProviderModelsButton.disabled).toBe(false);
     expect(elements.personalProviderError.textContent).toContain('無法取得模型');
     expect(permissions.has('https://api.example.test/*')).toBe(false);
+  });
+
+  test('a Responses catalog failure reveals manual model entry and saves it through host permission', async () => {
+    const { store, permissions } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+      protocol: RESPONSES_PROTOCOL,
+    });
+    const modelService = { loadModels: jest.fn(async () => {
+      throw new Error('此提供者不支援模型目錄');
+    }) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(true);
+    expect(elements.personalProviderManualModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModel.disabled).toBe(false);
+    expect(elements.personalProviderError.textContent).toContain('手動輸入模型 ID');
+    expect(permissions.has('https://api.example.test/*')).toBe(false);
+
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toBeUndefined();
+    expect(elements.personalProviderManualModel.focus).toHaveBeenCalled();
+    expect(global.chrome.permissions.request).toHaveBeenCalledTimes(1);
+
+    elements.personalProviderManualModel.value = 'manual-responses-model';
+    await handlePersonalProviderSave(elements);
+
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({
+      model: 'manual-responses-model',
+      protocol: RESPONSES_PROTOCOL,
+      apiKey: 'personal-secret-key',
+    }));
+    expect(elements.personalProviderApiKey.value).toBe('****************');
+    expect(elements.personalProviderStatus.textContent).toContain('直接傳送至此提供者');
+    expect(global.chrome.permissions.request).toHaveBeenCalledTimes(2);
+    expect(global.chrome.permissions.request).toHaveBeenLastCalledWith({
+      origins: ['https://api.example.test/*'],
+    });
+  });
+
+  test('a Chat Completions catalog failure keeps manual model entry unavailable', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => {
+      throw new Error('無法取得模型');
+    }) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModelField.hidden).toBe(true);
+    expect(elements.personalProviderManualModel.disabled).toBe(true);
+    elements.personalProviderManualModel.value = 'must-not-save';
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toBeUndefined();
+  });
+
+  test('denied Responses host permission does not offer manual model entry', async () => {
+    setupChrome();
+    global.chrome.permissions.request.mockResolvedValue(false);
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+      protocol: RESPONSES_PROTOCOL,
+    });
+    const modelService = { loadModels: jest.fn() };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(modelService.loadModels).not.toHaveBeenCalled();
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModelField.hidden).toBe(true);
+    expect(elements.personalProviderManualModel.disabled).toBe(true);
+    expect(elements.personalProviderError.textContent).toContain('未取得提供者存取權');
+  });
+
+  test('manual Responses model entry preserves a masked same-origin API key', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'old-model',
+        protocol: RESPONSES_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+    const modelService = { loadModels: jest.fn(async () => {
+      throw new Error('此提供者不支援模型目錄');
+    }) };
+
+    await initializePersonalProviderSettings(elements);
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderManualModel.value = 'manual-responses-model';
+    await handlePersonalProviderSave(elements);
+
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({
+      apiKey: 'personal-secret-key',
+      model: 'manual-responses-model',
+      protocol: RESPONSES_PROTOCOL,
+    }));
+    expect(elements.personalProviderApiKey.value).toBe('****************');
   });
 
   test('refreshing a staged catalog retains its origin permission', async () => {
@@ -256,6 +437,7 @@ describe('sidepanel personal-provider settings', () => {
     expect(modelService.loadModels).toHaveBeenCalledWith({
       apiUrl: 'https://api.example.test/v1',
       apiKey: 'personal-secret-key',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
     }, expect.any(Object));
     expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({
       apiKey: 'personal-secret-key',

@@ -1,9 +1,11 @@
 import {
   ANALYSIS_PROVIDER_MODE_KEY,
+  CHAT_COMPLETIONS_PROTOCOL,
   MANAGED_PROVIDER_MODE,
   PERSONAL_PROVIDER_MODE,
   PERSONAL_PROVIDER_PROFILE_KEY,
   PERSONAL_PROVIDER_REVISION_KEY,
+  RESPONSES_PROTOCOL,
   clearPersonalProvider,
   getOriginPermission,
   getPersonalProviderState,
@@ -93,6 +95,22 @@ describe('personal provider state', () => {
     });
   });
 
+  test('normalizes legacy profiles to Chat Completions-compatible and preserves Responses-compatible profiles', async () => {
+    setupChrome({
+      [PERSONAL_PROVIDER_PROFILE_KEY]: profile,
+    }, ['https://api.example.test/*']);
+
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      profile: expect.objectContaining({ protocol: CHAT_COMPLETIONS_PROTOCOL }),
+    }));
+
+    await expect(savePersonalProvider({ ...profile, protocol: RESPONSES_PROTOCOL })).resolves.toEqual(
+      expect.objectContaining({
+        profile: expect.objectContaining({ protocol: RESPONSES_PROTOCOL }),
+      })
+    );
+  });
+
   test('saves only after it obtains the exact provider origin permission', async () => {
     const { store } = setupChrome();
 
@@ -106,6 +124,7 @@ describe('personal provider state', () => {
         apiUrl: 'https://api.example.test/v1',
         apiKey: 'personal-secret-key',
         model: 'example-model',
+        protocol: CHAT_COMPLETIONS_PROTOCOL,
       },
       revision: 1,
     });
@@ -151,6 +170,7 @@ describe('personal provider state', () => {
       apiUrl: 'https://api.example.test/v1',
       apiKey: 'personal-secret-key',
       model: 'example-model',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
     };
     setupChrome({
       [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,

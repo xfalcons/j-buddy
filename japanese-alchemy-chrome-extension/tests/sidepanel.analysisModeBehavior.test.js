@@ -649,6 +649,50 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(managedService).not.toHaveBeenCalled();
   });
 
+  test('a manually configured Responses-compatible provider completes analysis through the existing sidepanel flow', async () => {
+    const text = '成長を後押しする';
+    setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 5,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1',
+        apiKey: 'personal-secret-key',
+        model: 'manual-responses-model',
+        protocol: 'responses',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    const managedService = jest.fn();
+    global.JaAlchemyApiService = managedService;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({
+        status: 'completed',
+        output: [{
+          type: 'message',
+          content: [{ type: 'output_text', text: '### 單字分析\n#### <單字>成長' }],
+        }],
+      }),
+    }));
+    const { prose } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://llm.example/v1/responses',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer personal-secret-key' }) })
+    );
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(expect.objectContaining({
+      store: false,
+      stream: true,
+    }));
+    expect(prose.innerHTML).toContain('成長');
+    expect(global.localStorage.getItem('lastAnalysisKey')).toContain('personal:5');
+    expect(managedService).not.toHaveBeenCalled();
+  });
+
   test('a ready personal-provider cache hit is sanitized before it renders and never calls Firebase', async () => {
     const text = '成長を後押しする';
     const cacheKey = buildContextCacheKey({
