@@ -36,6 +36,9 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('data-provider-mode="personal"');
     expect(html).toContain('id="personalProviderApiUrl"');
     expect(html).toContain('id="personalProviderApiKey"');
+    expect(html).toContain('id="personalProviderProtocol"');
+    expect(html).toContain('Chat Completions-compatible');
+    expect(html).toContain('Responses-compatible');
     expect(html).toContain('id="personalProviderModel"');
     expect(html).toContain('id="loadPersonalProviderModelsButton"');
     expect(html).toContain('name="model"');

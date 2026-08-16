@@ -12,9 +12,15 @@ export const PERSONAL_PROVIDER_REVISION_KEY = 'personalProviderRevision';
 
 export const MANAGED_PROVIDER_MODE = 'managed';
 export const PERSONAL_PROVIDER_MODE = 'personal';
+export const CHAT_COMPLETIONS_PROTOCOL = 'chat_completions';
+export const RESPONSES_PROTOCOL = 'responses';
 export const VALID_PROVIDER_MODES = Object.freeze([
   MANAGED_PROVIDER_MODE,
   PERSONAL_PROVIDER_MODE,
+]);
+export const VALID_PERSONAL_PROVIDER_PROTOCOLS = Object.freeze([
+  CHAT_COMPLETIONS_PROTOCOL,
+  RESPONSES_PROTOCOL,
 ]);
 
 const TRUSTED_CONTEXTS = 'TRUSTED_CONTEXTS';
@@ -29,6 +35,16 @@ export class PersonalProviderError extends Error {
 
 export function isValidProviderMode(mode) {
   return VALID_PROVIDER_MODES.includes(mode);
+}
+
+export function normalizePersonalProviderProtocol(protocol) {
+  if (protocol === undefined || protocol === null || protocol === '') {
+    return CHAT_COMPLETIONS_PROTOCOL;
+  }
+  if (!VALID_PERSONAL_PROVIDER_PROTOCOLS.includes(protocol)) {
+    throw new PersonalProviderError('個人提供者通訊協定無效。', 'invalid_protocol');
+  }
+  return protocol;
 }
 
 function requireLocalStorage() {
@@ -113,6 +129,7 @@ export function normalizePersonalProviderProfile(profile) {
     apiUrl: normalizeApiBaseUrl(profile.apiUrl),
     apiKey,
     model,
+    protocol: normalizePersonalProviderProtocol(profile.protocol),
   });
 }
 
@@ -129,6 +146,7 @@ export function normalizePersonalProviderConnection(connection) {
   return Object.freeze({
     apiUrl: normalizeApiBaseUrl(connection.apiUrl),
     apiKey,
+    protocol: normalizePersonalProviderProtocol(connection.protocol),
   });
 }
 

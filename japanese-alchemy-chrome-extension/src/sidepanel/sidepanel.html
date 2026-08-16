@@ -857,6 +857,13 @@
             API 金鑰 — 金鑰僅儲存在本機並於本機使用，不會經過代理或伺服器。
             <input id="personalProviderApiKey" name="apiKey" type="password" autocomplete="off" placeholder="輸入以儲存或更換" aria-describedby="personalProviderError" required>
           </label>
+          <label class="provider-form-field" for="personalProviderProtocol">
+            個人提供者通訊協定
+            <select id="personalProviderProtocol" name="protocol" aria-describedby="personalProviderError" required>
+              <option value="chat_completions" selected>Chat Completions-compatible</option>
+              <option value="responses">Responses-compatible</option>
+            </select>
+          </label>
           <button id="loadPersonalProviderModelsButton" class="provider-action" type="button" disabled>載入模型</button>
           <label class="provider-form-field" for="personalProviderModel">
             模型

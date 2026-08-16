@@ -6,6 +6,7 @@ import {
     setPromptVariant,
 } from '../scripts/promptVariant.js';
 import {
+    CHAT_COMPLETIONS_PROTOCOL,
     MANAGED_PROVIDER_MODE,
     PERSONAL_PROVIDER_MODE,
     clearPersonalProvider,
@@ -1129,7 +1130,8 @@ function connectionMatchesFormValues(connection, values) {
     try {
         const normalizedConnection = normalizePersonalProviderConnection(values);
         return normalizedConnection.apiUrl === connection.apiUrl
-            && normalizedConnection.apiKey === connection.apiKey;
+            && normalizedConnection.apiKey === connection.apiKey
+            && normalizedConnection.protocol === connection.protocol;
     } catch {
         return false;
     }
@@ -1243,6 +1245,9 @@ export function renderPersonalProviderState(elements, state) {
     if (elements.personalProviderApiKey) {
         elements.personalProviderApiKey.value = profile ? MASKED_API_KEY : '';
     }
+    if (elements.personalProviderProtocol) {
+        elements.personalProviderProtocol.value = profile?.protocol || CHAT_COMPLETIONS_PROTOCOL;
+    }
     if (elements.clearPersonalProviderButton) {
         elements.clearPersonalProviderButton.disabled = !profile;
     }
@@ -1286,6 +1291,7 @@ function getPersonalProviderFormValues(elements) {
         apiUrl: elements.personalProviderApiUrl?.value || '',
         apiKey: elements.personalProviderApiKey?.value || '',
         model: elements.personalProviderModel?.value || '',
+        protocol: elements.personalProviderProtocol?.value || CHAT_COMPLETIONS_PROTOCOL,
     };
 }
 
@@ -1467,6 +1473,7 @@ async function initElements() {
     personalProviderForm: document.getElementById('personalProviderForm'),
     personalProviderApiUrl: document.getElementById('personalProviderApiUrl'),
     personalProviderApiKey: document.getElementById('personalProviderApiKey'),
+    personalProviderProtocol: document.getElementById('personalProviderProtocol'),
     personalProviderModel: document.getElementById('personalProviderModel'),
     loadPersonalProviderModelsButton: document.getElementById('loadPersonalProviderModelsButton'),
     personalProviderSummary: document.getElementById('personalProviderSummary'),
@@ -1639,6 +1646,9 @@ async function setupEventListeners() {
         }
         await invalidatePersonalProviderModelCatalog(elements);
       });
+    });
+    elements.personalProviderProtocol?.addEventListener('change', async () => {
+      await invalidatePersonalProviderModelCatalog(elements);
     });
     elements.clearPersonalProviderButton?.addEventListener('click', async () => {
       await handlePersonalProviderClear(elements);
