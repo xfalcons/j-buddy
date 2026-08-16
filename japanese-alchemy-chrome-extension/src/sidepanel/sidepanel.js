@@ -9,6 +9,7 @@ import {
     CHAT_COMPLETIONS_PROTOCOL,
     MANAGED_PROVIDER_MODE,
     PERSONAL_PROVIDER_MODE,
+    RESPONSES_PROTOCOL,
     clearPersonalProvider,
     getOriginPermission,
     getPersonalProviderState,
@@ -43,6 +44,7 @@ const COMPLETED_ANALYSIS_RESULT_STORAGE_KEY = 'lastAnalysisResult';
 const CONTROLLED_CHECKBOX_PATTERN = /<input type="checkbox" name="(words|grammars)" value="([^"<>]*)">/g;
 const MASKED_API_KEY = '****************';
 let stagedModelCatalog = null;
+let manualModelConnection = null;
 let maskedApiKeyState = null;
 
 function getDomPurify() {
@@ -1065,6 +1067,21 @@ function replacePersonalProviderModelOptions(modelSelect, modelIds = []) {
     modelSelect.disabled = modelIds.length === 0;
 }
 
+function setManualPersonalProviderModelMode(elements, connection = null) {
+    const enabled = connection?.protocol === RESPONSES_PROTOCOL;
+    manualModelConnection = enabled ? connection : null;
+    if (elements.personalProviderCatalogModelField) {
+        elements.personalProviderCatalogModelField.hidden = enabled;
+    }
+    if (elements.personalProviderManualModelField) {
+        elements.personalProviderManualModelField.hidden = !enabled;
+    }
+    if (elements.personalProviderManualModel) {
+        elements.personalProviderManualModel.disabled = !enabled;
+        if (!enabled) elements.personalProviderManualModel.value = '';
+    }
+}
+
 function updateLoadPersonalProviderModelsButton(elements) {
     if (!elements.loadPersonalProviderModelsButton) return;
     const values = getPersonalProviderFormValues(elements);
@@ -1111,6 +1128,7 @@ async function releaseStagedModelCatalogPermission(catalog, retainedPermission =
 export async function invalidatePersonalProviderModelCatalog(elements, retainedPermission = null) {
     const catalog = stagedModelCatalog;
     stagedModelCatalog = null;
+    setManualPersonalProviderModelMode(elements);
     catalog?.controller?.abort();
     if (!catalog && elements.personalProviderModel?.disabled && !elements.personalProviderModel.value) {
         updateLoadPersonalProviderModelsButton(elements);
@@ -1124,6 +1142,12 @@ export async function invalidatePersonalProviderModelCatalog(elements, retainedP
 function catalogMatchesFormValues(catalog, values) {
     if (!catalog || !connectionMatchesFormValues(catalog.connection, values)) return false;
     return catalog.modelIds.includes(values.model.trim());
+}
+
+function manualModelMatchesFormValues(connection, values) {
+    return connection?.protocol === RESPONSES_PROTOCOL
+        && connectionMatchesFormValues(connection, values)
+        && Boolean(values.model.trim());
 }
 
 function connectionMatchesFormValues(connection, values) {
@@ -1189,6 +1213,7 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         const modelIds = await modelService.loadModels(catalog.connection, { signal: controller.signal });
         if (stagedModelCatalog !== catalog || controller.signal.aborted) return null;
         catalog.modelIds = modelIds;
+        setManualPersonalProviderModelMode(elements);
         replacePersonalProviderModelOptions(elements.personalProviderModel, modelIds);
         setPersonalProviderFeedback(elements, '請選擇模型後再儲存設定。', 'status');
         return modelIds;
@@ -1197,7 +1222,25 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         stagedModelCatalog = null;
         replacePersonalProviderModelOptions(elements.personalProviderModel);
         await releaseStagedModelCatalogPermission(catalog);
-        setPersonalProviderFeedback(elements, error.message || '無法取得提供者模型。', 'error', true);
+        if (catalog.connection.protocol === RESPONSES_PROTOCOL) {
+            let currentValues;
+            try {
+                currentValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+            } catch {
+                currentValues = null;
+            }
+            if (!connectionMatchesFormValues(catalog.connection, currentValues)) return null;
+            setManualPersonalProviderModelMode(elements, catalog.connection);
+            const catalogError = error.message || '無法取得提供者模型。';
+            setPersonalProviderFeedback(
+                elements,
+                `模型目錄無法使用（${catalogError}）。請手動輸入模型 ID 後儲存。`,
+                'error',
+                true
+            );
+        } else {
+            setPersonalProviderFeedback(elements, error.message || '無法取得提供者模型。', 'error', true);
+        }
         return null;
     } finally {
         if (!stagedModelCatalog || stagedModelCatalog === catalog) {
@@ -1241,6 +1284,7 @@ export function renderPersonalProviderState(elements, state) {
         elements.personalProviderApiUrl.value = profile?.apiUrl || '';
     }
     replacePersonalProviderModelOptions(elements.personalProviderModel);
+    setManualPersonalProviderModelMode(elements);
     setMaskedApiKeyState(profile);
     if (elements.personalProviderApiKey) {
         elements.personalProviderApiKey.value = profile ? MASKED_API_KEY : '';
@@ -1287,10 +1331,14 @@ export async function initializePersonalProviderSettings(elements) {
 }
 
 function getPersonalProviderFormValues(elements) {
+    const useManualModel = manualModelConnection
+        && !elements.personalProviderManualModel?.disabled;
     return {
         apiUrl: elements.personalProviderApiUrl?.value || '',
         apiKey: elements.personalProviderApiKey?.value || '',
-        model: elements.personalProviderModel?.value || '',
+        model: useManualModel
+            ? (elements.personalProviderManualModel?.value || '')
+            : (elements.personalProviderModel?.value || ''),
         protocol: elements.personalProviderProtocol?.value || CHAT_COMPLETIONS_PROTOCOL,
     };
 }
@@ -1298,6 +1346,9 @@ function getPersonalProviderFormValues(elements) {
 function focusPersonalProviderField(elements, values) {
     if (!values.apiUrl.trim()) return elements.personalProviderApiUrl?.focus();
     if (!values.apiKey.trim()) return elements.personalProviderApiKey?.focus();
+    if (manualModelConnection && !elements.personalProviderManualModel?.disabled) {
+        return elements.personalProviderManualModel?.focus();
+    }
     return elements.personalProviderModel?.focus();
 }
 
@@ -1322,7 +1373,9 @@ export async function handlePersonalProviderSave(elements) {
         return null;
     }
 
-    if (!catalogMatchesFormValues(stagedModelCatalog, values)) {
+    const catalogSelection = catalogMatchesFormValues(stagedModelCatalog, values);
+    const manualSelection = manualModelMatchesFormValues(manualModelConnection, values);
+    if (!catalogSelection && !manualSelection) {
         setPersonalProviderFeedback(
             elements,
             '請使用目前的 API 網址與 API 金鑰載入模型，並從清單中選擇模型後再儲存。',
@@ -1334,11 +1387,19 @@ export async function handlePersonalProviderSave(elements) {
 
     let pendingPermission;
     try {
-        pendingPermission = {
-            normalizedProfile: normalizePersonalProviderProfile(values),
-            permission: stagedModelCatalog.permission,
-            permissionRequest: stagedModelCatalog.permissionRequest,
-        };
+        const normalizedProfile = normalizePersonalProviderProfile(values);
+        if (catalogSelection) {
+            pendingPermission = {
+                normalizedProfile,
+                permission: stagedModelCatalog.permission,
+                permissionRequest: stagedModelCatalog.permissionRequest,
+            };
+        } else {
+            pendingPermission = {
+                ...requestPersonalProviderConnectionPermission(values),
+                normalizedProfile,
+            };
+        }
     } catch (error) {
         setPersonalProviderFeedback(elements, error.message, 'error', true);
         return null;
@@ -1351,6 +1412,7 @@ export async function handlePersonalProviderSave(elements) {
         await savePersonalProvider(values, pendingPermission);
         await setAnalysisProviderMode(PERSONAL_PROVIDER_MODE);
         stagedModelCatalog = null;
+        setManualPersonalProviderModelMode(elements);
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
         setPersonalProviderFeedback(
@@ -1474,7 +1536,10 @@ async function initElements() {
     personalProviderApiUrl: document.getElementById('personalProviderApiUrl'),
     personalProviderApiKey: document.getElementById('personalProviderApiKey'),
     personalProviderProtocol: document.getElementById('personalProviderProtocol'),
+    personalProviderCatalogModelField: document.getElementById('personalProviderCatalogModelField'),
     personalProviderModel: document.getElementById('personalProviderModel'),
+    personalProviderManualModelField: document.getElementById('personalProviderManualModelField'),
+    personalProviderManualModel: document.getElementById('personalProviderManualModel'),
     loadPersonalProviderModelsButton: document.getElementById('loadPersonalProviderModelsButton'),
     personalProviderSummary: document.getElementById('personalProviderSummary'),
     personalProviderStatus: document.getElementById('personalProviderStatus'),

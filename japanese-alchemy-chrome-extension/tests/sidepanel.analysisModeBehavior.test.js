@@ -649,7 +649,7 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(managedService).not.toHaveBeenCalled();
   });
 
-  test('a saved Responses-compatible provider completes analysis through the existing sidepanel flow', async () => {
+  test('a manually configured Responses-compatible provider completes analysis through the existing sidepanel flow', async () => {
     const text = '成長を後押しする';
     setupStorage({
       promptVariant: 'v2',
@@ -658,7 +658,7 @@ describe('sidepanel analysis-mode behavior', () => {
       personalProviderProfile: {
         apiUrl: 'https://llm.example/v1',
         apiKey: 'personal-secret-key',
-        model: 'learner-model',
+        model: 'manual-responses-model',
         protocol: 'responses',
       },
     });

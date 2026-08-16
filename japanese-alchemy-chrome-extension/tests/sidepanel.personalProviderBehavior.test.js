@@ -87,6 +87,12 @@ function createElements(values = {}) {
       disabled: true,
       replaceChildren: jest.fn(),
     },
+    personalProviderCatalogModelField: { hidden: false },
+    personalProviderManualModelField: { hidden: true },
+    personalProviderManualModel: {
+      ...createField(values.manualModel || ''),
+      disabled: true,
+    },
     personalProviderForm: { hidden: true },
     personalProviderSummary: { textContent: '' },
     personalProviderStatus: { textContent: '', hidden: false, focus: jest.fn() },
@@ -272,6 +278,95 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.loadPersonalProviderModelsButton.disabled).toBe(false);
     expect(elements.personalProviderError.textContent).toContain('無法取得模型');
     expect(permissions.has('https://api.example.test/*')).toBe(false);
+  });
+
+  test('a Responses catalog failure reveals manual model entry and saves it through host permission', async () => {
+    const { store, permissions } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+      protocol: RESPONSES_PROTOCOL,
+    });
+    const modelService = { loadModels: jest.fn(async () => {
+      throw new Error('此提供者不支援模型目錄');
+    }) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(true);
+    expect(elements.personalProviderManualModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModel.disabled).toBe(false);
+    expect(elements.personalProviderError.textContent).toContain('手動輸入模型 ID');
+    expect(permissions.has('https://api.example.test/*')).toBe(false);
+
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toBeUndefined();
+    expect(elements.personalProviderManualModel.focus).toHaveBeenCalled();
+    expect(global.chrome.permissions.request).toHaveBeenCalledTimes(1);
+
+    elements.personalProviderManualModel.value = 'manual-responses-model';
+    await handlePersonalProviderSave(elements);
+
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({
+      model: 'manual-responses-model',
+      protocol: RESPONSES_PROTOCOL,
+      apiKey: 'personal-secret-key',
+    }));
+    expect(elements.personalProviderApiKey.value).toBe('****************');
+    expect(elements.personalProviderStatus.textContent).toContain('直接傳送至此提供者');
+    expect(global.chrome.permissions.request).toHaveBeenCalledTimes(2);
+    expect(global.chrome.permissions.request).toHaveBeenLastCalledWith({
+      origins: ['https://api.example.test/*'],
+    });
+  });
+
+  test('a Chat Completions catalog failure keeps manual model entry unavailable', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => {
+      throw new Error('無法取得模型');
+    }) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModelField.hidden).toBe(true);
+    expect(elements.personalProviderManualModel.disabled).toBe(true);
+    elements.personalProviderManualModel.value = 'must-not-save';
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toBeUndefined();
+  });
+
+  test('manual Responses model entry preserves a masked same-origin API key', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'old-model',
+        protocol: RESPONSES_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+    const modelService = { loadModels: jest.fn(async () => {
+      throw new Error('此提供者不支援模型目錄');
+    }) };
+
+    await initializePersonalProviderSettings(elements);
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderManualModel.value = 'manual-responses-model';
+    await handlePersonalProviderSave(elements);
+
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({
+      apiKey: 'personal-secret-key',
+      model: 'manual-responses-model',
+      protocol: RESPONSES_PROTOCOL,
+    }));
+    expect(elements.personalProviderApiKey.value).toBe('****************');
   });
 
   test('refreshing a staged catalog retains its origin permission', async () => {

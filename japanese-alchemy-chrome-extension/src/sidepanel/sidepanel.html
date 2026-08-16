@@ -865,11 +865,15 @@
             </select>
           </label>
           <button id="loadPersonalProviderModelsButton" class="provider-action" type="button" disabled>載入模型</button>
-          <label class="provider-form-field" for="personalProviderModel">
+          <label id="personalProviderCatalogModelField" class="provider-form-field" for="personalProviderModel">
             模型
             <select id="personalProviderModel" name="model" aria-describedby="personalProviderError" required disabled>
               <option value="" selected>請先載入模型</option>
             </select>
+          </label>
+          <label id="personalProviderManualModelField" class="provider-form-field" for="personalProviderManualModel" hidden>
+            手動輸入模型 ID
+            <input id="personalProviderManualModel" name="manualModel" type="text" autocomplete="off" placeholder="例如：gpt-5" aria-describedby="personalProviderError" required disabled>
           </label>
           <div class="provider-actions">
             <button id="savePersonalProviderButton" class="provider-action primary" type="submit">儲存</button>

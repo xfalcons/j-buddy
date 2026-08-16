@@ -43,6 +43,9 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('id="loadPersonalProviderModelsButton"');
     expect(html).toContain('name="model"');
     expect(html).toContain('<select id="personalProviderModel"');
+    expect(html).toContain('id="personalProviderManualModelField"');
+    expect(html).toContain('id="personalProviderManualModel"');
+    expect(html).toContain('手動輸入模型 ID');
     expect(html).toContain('<form id="personalProviderForm" novalidate hidden>');
     expect(html).toContain('儲存');
     expect(html).toContain('清除');
