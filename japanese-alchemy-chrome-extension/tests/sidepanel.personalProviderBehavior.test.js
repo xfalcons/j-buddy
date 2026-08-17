@@ -145,6 +145,7 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.personalProviderForm.hidden).toBe(false);
     expect(elements.personalProviderSummary.textContent).not.toContain('personal-secret-key');
     expect(elements.personalProviderApiKey.value).toBe('****************');
+    expect(elements.personalProviderModel.value).toBe('example-model');
     expect(elements.personalProviderStatus.textContent).toContain('直接傳送至此提供者');
     expect(global.chrome.permissions.request).toHaveBeenCalledTimes(1);
   });
@@ -166,6 +167,101 @@ describe('sidepanel personal-provider settings', () => {
 
     expect(elements.personalProviderProtocol.value).toBe(RESPONSES_PROTOCOL);
     expect(elements.personalProviderApiKey.value).toBe('****************');
+  });
+
+  test('restores a cacheless saved model as the selected saved-only option', async () => {
+    setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'saved-model',
+        protocol: CHAT_COMPLETIONS_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 1,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+
+    await initializePersonalProviderSettings(elements);
+
+    expect(elements.personalProviderModel.disabled).toBe(false);
+    expect(elements.personalProviderModel.value).toBe('saved-model');
+    const renderedOptions = elements.personalProviderModel.replaceChildren.mock.calls.at(-1);
+    expect(renderedOptions).toHaveLength(2);
+    expect(renderedOptions[1]).toEqual(expect.objectContaining({
+      value: 'saved-model',
+      textContent: 'saved-model（已儲存）',
+    }));
+  });
+
+  test('saves an unchanged saved-only selection without rediscovering models', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'saved-model',
+        protocol: CHAT_COMPLETIONS_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 1,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+
+    await initializePersonalProviderSettings(elements);
+    const state = await handlePersonalProviderSave(elements);
+
+    expect(state).not.toBeNull();
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({
+      model: 'saved-model',
+    }));
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(2);
+    expect(elements.personalProviderError.textContent).toBe('');
+    expect(elements.personalProviderStatus.textContent).toContain('直接傳送至此提供者');
+  });
+
+  test('does not treat a new arbitrary model as the unchanged saved selection', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'saved-model',
+        protocol: CHAT_COMPLETIONS_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 1,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+
+    await initializePersonalProviderSettings(elements);
+    elements.personalProviderModel.value = 'unverified-model';
+    const state = await handlePersonalProviderSave(elements);
+
+    expect(state).toBeNull();
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY].model).toBe('saved-model');
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(1);
+    expect(elements.personalProviderError.textContent).toContain('載入模型');
+  });
+
+  test('preserves the saved model across managed and personal mode renders', async () => {
+    setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'saved-model',
+        protocol: CHAT_COMPLETIONS_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 1,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+
+    await initializePersonalProviderSettings(elements);
+    await handlePersonalProviderModeChange(elements, MANAGED_PROVIDER_MODE);
+    expect(elements.personalProviderModel.value).toBe('saved-model');
+
+    await handlePersonalProviderModeChange(elements, PERSONAL_PROVIDER_MODE);
+    expect(elements.personalProviderModel.value).toBe('saved-model');
+    expect(elements.personalProviderForm.hidden).toBe(false);
   });
 
   test('saves a catalog-selected Responses-compatible provider through the existing permission flow', async () => {

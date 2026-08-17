@@ -46,6 +46,7 @@ const MASKED_API_KEY = '****************';
 let stagedModelCatalog = null;
 let manualModelConnection = null;
 let maskedApiKeyState = null;
+let savedPersonalProviderProfile = null;
 
 function getDomPurify() {
     // The production side panel always has a real browser window. The guarded
@@ -1045,7 +1046,7 @@ function setPersonalProviderFeedback(elements, message = '', type = 'status', fo
     }
 }
 
-function replacePersonalProviderModelOptions(modelSelect, modelIds = []) {
+function replacePersonalProviderModelOptions(modelSelect, modelIds = [], savedModel = '') {
     if (!modelSelect) return;
     const createOption = (value, label, disabled = false) => {
         const option = globalThis.document?.createElement?.('option') || {};
@@ -1055,16 +1056,24 @@ function replacePersonalProviderModelOptions(modelSelect, modelIds = []) {
         return option;
     };
     const placeholder = createOption('', modelIds.length ? '請選擇模型' : '請先載入模型', true);
-    placeholder.selected = true;
-    const options = [placeholder, ...modelIds.map((modelId) => createOption(modelId, modelId))];
+    placeholder.selected = !savedModel;
+    const savedOption = savedModel
+        ? createOption(savedModel, `${savedModel}（已儲存）`)
+        : null;
+    if (savedOption) savedOption.selected = true;
+    const options = [
+        placeholder,
+        ...(savedOption ? [savedOption] : []),
+        ...modelIds.map((modelId) => createOption(modelId, modelId)),
+    ];
     if (typeof modelSelect.replaceChildren === 'function') {
         modelSelect.replaceChildren(...options);
     } else {
         modelSelect.innerHTML = '';
         options.forEach((option) => modelSelect.appendChild?.(option));
     }
-    modelSelect.value = '';
-    modelSelect.disabled = modelIds.length === 0;
+    modelSelect.value = savedModel;
+    modelSelect.disabled = modelIds.length === 0 && !savedModel;
 }
 
 function setManualPersonalProviderModelMode(elements, connection = null) {
@@ -1142,6 +1151,12 @@ export async function invalidatePersonalProviderModelCatalog(elements, retainedP
 function catalogMatchesFormValues(catalog, values) {
     if (!catalog || !connectionMatchesFormValues(catalog.connection, values)) return false;
     return catalog.modelIds.includes(values.model.trim());
+}
+
+function savedProfileMatchesFormValues(profile, values) {
+    return Boolean(profile)
+        && connectionMatchesFormValues(profile, values)
+        && profile.model === values.model.trim();
 }
 
 function manualModelMatchesFormValues(connection, values) {
@@ -1268,6 +1283,7 @@ export function updatePersonalProviderModeUi(elements, mode, isPersonalReady) {
 
 export function renderPersonalProviderState(elements, state) {
     const { mode, profile, isPersonalReady, personalError } = state;
+    savedPersonalProviderProfile = profile || null;
     updatePersonalProviderModeUi(elements, mode, isPersonalReady);
 
     if (elements.personalProviderForm) {
@@ -1285,7 +1301,7 @@ export function renderPersonalProviderState(elements, state) {
     if (elements.personalProviderApiUrl) {
         elements.personalProviderApiUrl.value = profile?.apiUrl || '';
     }
-    replacePersonalProviderModelOptions(elements.personalProviderModel);
+    replacePersonalProviderModelOptions(elements.personalProviderModel, [], profile?.model || '');
     setManualPersonalProviderModelMode(elements);
     setMaskedApiKeyState(profile);
     if (elements.personalProviderApiKey) {
@@ -1377,7 +1393,8 @@ export async function handlePersonalProviderSave(elements) {
 
     const catalogSelection = catalogMatchesFormValues(stagedModelCatalog, values);
     const manualSelection = manualModelMatchesFormValues(manualModelConnection, values);
-    if (!catalogSelection && !manualSelection) {
+    const savedSelection = savedProfileMatchesFormValues(savedPersonalProviderProfile, values);
+    if (!catalogSelection && !manualSelection && !savedSelection) {
         setPersonalProviderFeedback(
             elements,
             '請使用目前的 API 網址與 API 金鑰載入模型，並從清單中選擇模型後再儲存。',
