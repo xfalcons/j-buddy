@@ -1111,6 +1111,9 @@ function replacePersonalProviderModelOptions(
     absentModelLabel = ''
 ) {
     if (!modelSelect) return;
+    const sortedModelIds = [...modelIds].sort((firstModelId, secondModelId) => (
+        firstModelId.localeCompare(secondModelId)
+    ));
     const createOption = (value, label, disabled = false) => {
         const option = globalThis.document?.createElement?.('option') || {};
         option.value = value;
@@ -1118,20 +1121,20 @@ function replacePersonalProviderModelOptions(
         option.disabled = disabled;
         return option;
     };
-    const placeholder = createOption('', modelIds.length ? '請選擇模型' : '請先載入模型', true);
+    const placeholder = createOption('', sortedModelIds.length ? '請選擇模型' : '請先載入模型', true);
     placeholder.selected = !selectedModel;
-    const savedOption = selectedModel && !modelIds.includes(selectedModel)
+    const savedOption = selectedModel && !sortedModelIds.includes(selectedModel)
         ? createOption(
             selectedModel,
             absentModelLabel || `${selectedModel}（已儲存）`
         )
         : null;
-    const selectedCatalogOption = modelIds.includes(selectedModel) ? selectedModel : '';
+    const selectedCatalogOption = sortedModelIds.includes(selectedModel) ? selectedModel : '';
     if (savedOption) savedOption.selected = true;
     const options = [
         placeholder,
         ...(savedOption ? [savedOption] : []),
-        ...modelIds.map((modelId) => {
+        ...sortedModelIds.map((modelId) => {
             const option = createOption(modelId, modelId);
             option.selected = modelId === selectedCatalogOption;
             return option;
@@ -1144,7 +1147,7 @@ function replacePersonalProviderModelOptions(
         options.forEach((option) => modelSelect.appendChild?.(option));
     }
     modelSelect.value = selectedModel;
-    modelSelect.disabled = modelIds.length === 0 && !selectedModel;
+    modelSelect.disabled = sortedModelIds.length === 0 && !selectedModel;
 }
 
 function setManualPersonalProviderModelMode(elements, connection = null, selectedModel = '') {
