@@ -17,5 +17,13 @@ A learner-supplied model identifier for a personal provider whose model catalog 
 _Avoid_: free-text model, custom model name
 
 **Cached model catalog**:
-The last successfully discovered model catalog retained for a saved personal provider generation. It remains applicable only while that generation's protocol, normalized full API URL, and credential identity match the current saved profile.
+The last successfully discovered model catalog retained for a saved personal provider profile. It remains valid only while that profile's protocol, normalized API URL, and credential identity are unchanged.
 _Avoid_: model list, remembered models
+
+**Saved model selection**:
+The model identifier already persisted in a personal provider profile. It remains visible as the learner's configured choice even when it is absent from, or cannot yet be checked against, the current model catalog.
+_Avoid_: default model, cached model
+
+**Model source**:
+Whether a saved model selection came from model-catalog discovery or, for an eligible Responses-compatible provider, manual model ID entry.
+_Avoid_: model type, selection mode
