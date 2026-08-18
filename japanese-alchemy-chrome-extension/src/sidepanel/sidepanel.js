@@ -46,7 +46,7 @@ const MASKED_API_KEY = '****************';
 let stagedModelCatalog = null;
 let manualModelConnection = null;
 let maskedApiKeyState = null;
-let savedPersonalProviderProfile = null;
+let savedPersonalProviderState = null;
 
 function getDomPurify() {
     // The production side panel always has a real browser window. The guarded
@@ -1057,14 +1057,19 @@ function replacePersonalProviderModelOptions(modelSelect, modelIds = [], savedMo
     };
     const placeholder = createOption('', modelIds.length ? '請選擇模型' : '請先載入模型', true);
     placeholder.selected = !savedModel;
-    const savedOption = savedModel
+    const savedOption = savedModel && !modelIds.includes(savedModel)
         ? createOption(savedModel, `${savedModel}（已儲存）`)
         : null;
+    const selectedCatalogOption = modelIds.includes(savedModel) ? savedModel : '';
     if (savedOption) savedOption.selected = true;
     const options = [
         placeholder,
         ...(savedOption ? [savedOption] : []),
-        ...modelIds.map((modelId) => createOption(modelId, modelId)),
+        ...modelIds.map((modelId) => {
+            const option = createOption(modelId, modelId);
+            option.selected = modelId === selectedCatalogOption;
+            return option;
+        }),
     ];
     if (typeof modelSelect.replaceChildren === 'function') {
         modelSelect.replaceChildren(...options);
@@ -1091,13 +1096,16 @@ function setManualPersonalProviderModelMode(elements, connection = null) {
     }
 }
 
-function updateLoadPersonalProviderModelsButton(elements) {
+function updateLoadPersonalProviderModelsButton(elements, hasApplicableCatalog = false) {
     if (!elements.loadPersonalProviderModelsButton) return;
     const values = getPersonalProviderFormValues(elements);
     const disabled = !values.apiUrl.trim() || !values.apiKey.trim();
     if (elements.loadPersonalProviderModelsButton.disabled !== disabled) {
         elements.loadPersonalProviderModelsButton.disabled = disabled;
     }
+    elements.loadPersonalProviderModelsButton.textContent = hasApplicableCatalog
+        ? '重新載入模型'
+        : '載入模型';
 }
 
 function setMaskedApiKeyState(profile) {
@@ -1139,12 +1147,7 @@ export async function invalidatePersonalProviderModelCatalog(elements, retainedP
     stagedModelCatalog = null;
     setManualPersonalProviderModelMode(elements);
     catalog?.controller?.abort();
-    if (!catalog && elements.personalProviderModel?.disabled && !elements.personalProviderModel.value) {
-        updateLoadPersonalProviderModelsButton(elements);
-        return;
-    }
-    replacePersonalProviderModelOptions(elements.personalProviderModel);
-    updateLoadPersonalProviderModelsButton(elements);
+    projectSavedPersonalProviderModel(elements);
     await releaseStagedModelCatalogPermission(catalog, retainedPermission);
 }
 
@@ -1174,6 +1177,28 @@ function connectionMatchesFormValues(connection, values) {
     } catch {
         return false;
     }
+}
+
+function projectSavedPersonalProviderModel(elements) {
+    const profile = savedPersonalProviderState?.profile;
+    let matchesSavedConnection = false;
+    if (profile) {
+        try {
+            const values = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+            matchesSavedConnection = connectionMatchesFormValues(profile, values);
+        } catch {
+            matchesSavedConnection = false;
+        }
+    }
+    const modelCatalog = matchesSavedConnection
+        ? savedPersonalProviderState?.modelCatalog
+        : null;
+    replacePersonalProviderModelOptions(
+        elements.personalProviderModel,
+        modelCatalog?.modelIds || [],
+        matchesSavedConnection ? profile.model : ''
+    );
+    updateLoadPersonalProviderModelsButton(elements, Boolean(modelCatalog));
 }
 
 export async function handlePersonalProviderLoadModels(elements, modelService = new DirectLlmApiService()) {
@@ -1283,7 +1308,7 @@ export function updatePersonalProviderModeUi(elements, mode, isPersonalReady) {
 
 export function renderPersonalProviderState(elements, state) {
     const { mode, profile, isPersonalReady, personalError } = state;
-    savedPersonalProviderProfile = profile || null;
+    savedPersonalProviderState = state;
     updatePersonalProviderModeUi(elements, mode, isPersonalReady);
 
     if (elements.personalProviderForm) {
@@ -1301,8 +1326,6 @@ export function renderPersonalProviderState(elements, state) {
     if (elements.personalProviderApiUrl) {
         elements.personalProviderApiUrl.value = profile?.apiUrl || '';
     }
-    replacePersonalProviderModelOptions(elements.personalProviderModel, [], profile?.model || '');
-    setManualPersonalProviderModelMode(elements);
     setMaskedApiKeyState(profile);
     if (elements.personalProviderApiKey) {
         elements.personalProviderApiKey.value = profile ? MASKED_API_KEY : '';
@@ -1310,10 +1333,11 @@ export function renderPersonalProviderState(elements, state) {
     if (elements.personalProviderProtocol) {
         elements.personalProviderProtocol.value = profile?.protocol || CHAT_COMPLETIONS_PROTOCOL;
     }
+    projectSavedPersonalProviderModel(elements);
+    setManualPersonalProviderModelMode(elements);
     if (elements.clearPersonalProviderButton) {
         elements.clearPersonalProviderButton.disabled = !profile;
     }
-    updateLoadPersonalProviderModelsButton(elements);
 
     const unavailableMessage = mode === PERSONAL_PROVIDER_MODE && !isPersonalReady
         ? `已選取個人分析，但目前無法使用：${personalError?.message || '請先完成提供者設定。'}`
@@ -1393,7 +1417,7 @@ export async function handlePersonalProviderSave(elements) {
 
     const catalogSelection = catalogMatchesFormValues(stagedModelCatalog, values);
     const manualSelection = manualModelMatchesFormValues(manualModelConnection, values);
-    const savedSelection = savedProfileMatchesFormValues(savedPersonalProviderProfile, values);
+    const savedSelection = savedProfileMatchesFormValues(savedPersonalProviderState?.profile, values);
     if (!catalogSelection && !manualSelection && !savedSelection) {
         setPersonalProviderFeedback(
             elements,
@@ -1428,7 +1452,11 @@ export async function handlePersonalProviderSave(elements) {
     setPersonalProviderFeedback(elements, '', 'error');
     setPersonalProviderFeedback(elements, '正在要求提供者存取權…', 'status');
     try {
-        await savePersonalProvider(values, pendingPermission);
+        await savePersonalProvider(
+            values,
+            pendingPermission,
+            catalogSelection ? stagedModelCatalog.modelIds : null
+        );
         await setAnalysisProviderMode(PERSONAL_PROVIDER_MODE);
         stagedModelCatalog = null;
         setManualPersonalProviderModelMode(elements);

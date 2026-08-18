@@ -3,6 +3,8 @@ import {
   CHAT_COMPLETIONS_PROTOCOL,
   MANAGED_PROVIDER_MODE,
   PERSONAL_PROVIDER_MODE,
+  PERSONAL_PROVIDER_CATALOG_KEY_PREFIX,
+  PERSONAL_PROVIDER_CATALOG_REF_KEY,
   PERSONAL_PROVIDER_PROFILE_KEY,
   PERSONAL_PROVIDER_REVISION_KEY,
   RESPONSES_PROTOCOL,
@@ -111,6 +113,28 @@ describe('personal provider state', () => {
     );
   });
 
+  test('materializes an explicit absent catalog reference for an existing saved generation', async () => {
+    const { store } = setupChrome({
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'example-model',
+        protocol: CHAT_COMPLETIONS_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 7,
+    }, ['https://api.example.test/*']);
+
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      revision: 7,
+      modelCatalog: null,
+    }));
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY]).toEqual({
+      version: 1,
+      generation: 7,
+      status: 'absent',
+    });
+  });
+
   test('saves only after it obtains the exact provider origin permission', async () => {
     const { store } = setupChrome();
 
@@ -131,8 +155,104 @@ describe('personal provider state', () => {
     expect(store).toEqual(expect.objectContaining({
       [PERSONAL_PROVIDER_PROFILE_KEY]: saved.profile,
       [PERSONAL_PROVIDER_REVISION_KEY]: 1,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: {
+        version: 1,
+        generation: 1,
+        status: 'absent',
+      },
     }));
     expect(global.chrome.storage.sync).toBeUndefined();
+  });
+
+  test('round-trips a versioned catalog for the saved profile without copying credentials', async () => {
+    const { store } = setupChrome();
+
+    await savePersonalProvider(profile, null, ['model-b', 'example-model', 'model-a']);
+    const state = await getPersonalProviderState();
+
+    expect(state.modelCatalog).toEqual({
+      modelIds: ['model-b', 'example-model', 'model-a'],
+    });
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY]).toEqual({
+      version: 1,
+      generation: 1,
+      status: 'available',
+    });
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]).toEqual({
+      version: 1,
+      generation: 1,
+      apiUrl: 'https://api.example.test/v1',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
+      modelIds: ['model-b', 'example-model', 'model-a'],
+    });
+    const rawCatalog = JSON.stringify(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]);
+    expect(rawCatalog).not.toContain('personal-secret-key');
+    expect(rawCatalog).not.toContain('apiKey');
+  });
+
+  test('carries a catalog across the same connection and drops it for a replacement connection', async () => {
+    const { store } = setupChrome();
+    await savePersonalProvider(profile, null, ['model-b', 'example-model']);
+
+    await savePersonalProvider({ ...profile, model: 'model-b' });
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      revision: 2,
+      modelCatalog: { modelIds: ['model-b', 'example-model'] },
+    }));
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}2`]).toEqual(expect.objectContaining({
+      generation: 2,
+      modelIds: ['model-b', 'example-model'],
+    }));
+
+    await savePersonalProvider({
+      ...profile,
+      apiKey: 'replacement-secret-key',
+    });
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      revision: 3,
+      modelCatalog: null,
+    }));
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY]).toEqual({
+      version: 1,
+      generation: 3,
+      status: 'absent',
+    });
+  });
+
+  test('ignores malformed or mismatched catalog records without harming the saved profile', async () => {
+    const normalizedProfile = {
+      apiUrl: 'https://api.example.test/v1',
+      apiKey: 'personal-secret-key',
+      model: 'example-model',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
+    };
+    const { store } = setupChrome({
+      [PERSONAL_PROVIDER_PROFILE_KEY]: normalizedProfile,
+      [PERSONAL_PROVIDER_REVISION_KEY]: 4,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: {
+        version: 99,
+        generation: 4,
+        status: 'available',
+      },
+      [`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}4`]: {
+        version: 1,
+        generation: 4,
+        apiUrl: 'https://other.example.test/v1',
+        protocol: CHAT_COMPLETIONS_PROTOCOL,
+        modelIds: ['wrong-model'],
+        unexpected: 'provider residue',
+      },
+    }, ['https://api.example.test/*']);
+
+    const unknownVersionState = await getPersonalProviderState();
+    expect(unknownVersionState.profile).toEqual(normalizedProfile);
+    expect(unknownVersionState.modelCatalog).toBeNull();
+
+    store[PERSONAL_PROVIDER_CATALOG_REF_KEY].version = 1;
+    const state = await getPersonalProviderState();
+
+    expect(state.profile).toEqual(normalizedProfile);
+    expect(state.modelCatalog).toBeNull();
   });
 
   test('starts the permission request before any asynchronous storage work when called from a form gesture', async () => {
@@ -228,9 +348,44 @@ describe('personal provider state', () => {
 
     await clearPersonalProvider();
 
-    expect(store).toEqual({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE });
+    expect(store).toEqual({
+      [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+    });
     expect(global.chrome.permissions.remove).toHaveBeenCalledWith({
       origins: ['https://api.example.test/*'],
     });
+  });
+
+  test('does not reuse a saved-profile generation after clear and recreate', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: profile,
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+    }, ['https://api.example.test/*']);
+
+    await clearPersonalProvider();
+    await savePersonalProvider(profile);
+
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(3);
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY]).toEqual({
+      version: 1,
+      generation: 3,
+      status: 'absent',
+    });
+  });
+
+  test('clearing a saved profile removes catalog reachability while preserving its generation', async () => {
+    const { store } = setupChrome();
+    await savePersonalProvider(profile, null, ['example-model']);
+
+    await clearPersonalProvider();
+    const state = await getPersonalProviderState();
+
+    expect(state.profile).toBeNull();
+    expect(state.modelCatalog).toBeNull();
+    expect(state.revision).toBe(1);
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY]).toBeUndefined();
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]).toBeDefined();
   });
 });

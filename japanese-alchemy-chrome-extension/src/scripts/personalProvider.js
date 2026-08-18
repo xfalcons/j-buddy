@@ -9,6 +9,8 @@
 export const PERSONAL_PROVIDER_PROFILE_KEY = 'personalProviderProfile';
 export const ANALYSIS_PROVIDER_MODE_KEY = 'analysisProviderMode';
 export const PERSONAL_PROVIDER_REVISION_KEY = 'personalProviderRevision';
+export const PERSONAL_PROVIDER_CATALOG_REF_KEY = 'personalProviderModelCatalogRef';
+export const PERSONAL_PROVIDER_CATALOG_KEY_PREFIX = 'personalProviderModelCatalog:';
 
 export const MANAGED_PROVIDER_MODE = 'managed';
 export const PERSONAL_PROVIDER_MODE = 'personal';
@@ -24,6 +26,9 @@ export const VALID_PERSONAL_PROVIDER_PROTOCOLS = Object.freeze([
 ]);
 
 const TRUSTED_CONTEXTS = 'TRUSTED_CONTEXTS';
+const MODEL_CATALOG_VERSION = 1;
+const CATALOG_AVAILABLE = 'available';
+const CATALOG_ABSENT = 'absent';
 
 export class PersonalProviderError extends Error {
   constructor(message, code) {
@@ -154,12 +159,66 @@ function normalizeRevision(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
 
+function getModelCatalogStorageKey(generation) {
+  return `${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${generation}`;
+}
+
+function normalizeModelIds(modelIds) {
+  if (!Array.isArray(modelIds) || modelIds.length === 0) return null;
+  const normalized = [];
+  const seen = new Set();
+  for (const modelId of modelIds) {
+    if (typeof modelId !== 'string' || !modelId.trim()) return null;
+    const value = modelId.trim();
+    if (!seen.has(value)) {
+      seen.add(value);
+      normalized.push(value);
+    }
+  }
+  return normalized.length ? Object.freeze(normalized) : null;
+}
+
+function hasOnlyKeys(value, allowedKeys) {
+  return Object.keys(value).every((key) => allowedKeys.includes(key));
+}
+
+function connectionsMatch(first, second) {
+  return first?.apiUrl === second?.apiUrl
+    && first?.apiKey === second?.apiKey
+    && first?.protocol === second?.protocol;
+}
+
+async function readStoredModelCatalog(stored, profile, generation) {
+  const ref = stored?.[PERSONAL_PROVIDER_CATALOG_REF_KEY];
+  if (!profile || !generation || !ref || typeof ref !== 'object' || Array.isArray(ref)) return null;
+  if (!hasOnlyKeys(ref, ['version', 'generation', 'status'])) return null;
+  if (ref.version !== MODEL_CATALOG_VERSION || ref.generation !== generation) return null;
+  if (ref.status === CATALOG_ABSENT) return null;
+  if (ref.status !== CATALOG_AVAILABLE) return null;
+
+  const storageKey = getModelCatalogStorageKey(generation);
+  const catalogValues = await requireLocalStorage().get([storageKey]);
+  const catalog = catalogValues?.[storageKey];
+  if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) return null;
+  if (!hasOnlyKeys(catalog, ['version', 'generation', 'apiUrl', 'protocol', 'modelIds'])) return null;
+  const modelIds = normalizeModelIds(catalog.modelIds);
+  if (!modelIds || modelIds.length !== catalog.modelIds.length) return null;
+  if (catalog.version !== MODEL_CATALOG_VERSION
+      || catalog.generation !== generation
+      || catalog.apiUrl !== profile.apiUrl
+      || catalog.protocol !== profile.protocol) {
+    return null;
+  }
+  return Object.freeze({ modelIds });
+}
+
 async function getStoredProviderValues() {
   await restrictLocalStorageToTrustedContexts();
   return requireLocalStorage().get([
     PERSONAL_PROVIDER_PROFILE_KEY,
     ANALYSIS_PROVIDER_MODE_KEY,
     PERSONAL_PROVIDER_REVISION_KEY,
+    PERSONAL_PROVIDER_CATALOG_REF_KEY,
   ]);
 }
 
@@ -207,10 +266,29 @@ export async function getPersonalProviderState() {
   }
 
   const readiness = await readProfileReadiness(stored?.[PERSONAL_PROVIDER_PROFILE_KEY]);
+  const revision = normalizeRevision(stored?.[PERSONAL_PROVIDER_REVISION_KEY]);
+  let catalogRef = stored?.[PERSONAL_PROVIDER_CATALOG_REF_KEY];
+  if (readiness.profile && revision && catalogRef === undefined) {
+    catalogRef = {
+      version: MODEL_CATALOG_VERSION,
+      generation: revision,
+      status: CATALOG_ABSENT,
+    };
+    await requireLocalStorage().set({
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: catalogRef,
+    });
+  }
+  const modelCatalog = catalogRef
+    ? await readStoredModelCatalog({
+      ...stored,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: catalogRef,
+    }, readiness.profile, revision)
+    : null;
   return {
     mode,
     profile: readiness.profile,
-    revision: normalizeRevision(stored?.[PERSONAL_PROVIDER_REVISION_KEY]),
+    revision,
+    modelCatalog,
     isPersonalReady: readiness.ready,
     personalError: readiness.error,
   };
@@ -269,7 +347,7 @@ export async function releasePersonalProviderOriginPermission(permission) {
  * Request the exact provider origin before saving a replacement profile. The
  * previous origin is released only after the new profile has committed.
  */
-export async function savePersonalProvider(profile, pendingPermission = null) {
+export async function savePersonalProvider(profile, pendingPermission = null, catalogModelIds = null) {
   const normalizedProfile = pendingPermission?.normalizedProfile
     || normalizePersonalProviderProfile(profile);
   const nextPermission = pendingPermission?.permission
@@ -277,6 +355,12 @@ export async function savePersonalProvider(profile, pendingPermission = null) {
   const stored = await getStoredProviderValues();
   const currentReadiness = await readProfileReadiness(stored?.[PERSONAL_PROVIDER_PROFILE_KEY]);
   const previousPermission = currentReadiness.permission;
+  const currentRevision = normalizeRevision(stored?.[PERSONAL_PROVIDER_REVISION_KEY]);
+  const currentCatalog = await readStoredModelCatalog(
+    stored,
+    currentReadiness.profile,
+    currentRevision
+  );
 
   const permissions = requirePermissions();
   const granted = await (pendingPermission?.permissionRequest
@@ -288,11 +372,37 @@ export async function savePersonalProvider(profile, pendingPermission = null) {
     );
   }
 
-  const revision = normalizeRevision(stored?.[PERSONAL_PROVIDER_REVISION_KEY]) + 1;
-  await requireLocalStorage().set({
+  const suppliedModelIds = catalogModelIds === null
+    ? null
+    : normalizeModelIds(catalogModelIds);
+  if (catalogModelIds !== null && !suppliedModelIds) {
+    throw new PersonalProviderError('模型目錄無效。', 'invalid_model_catalog');
+  }
+  const modelIds = suppliedModelIds
+    || (connectionsMatch(currentReadiness.profile, normalizedProfile)
+      ? currentCatalog?.modelIds
+      : null);
+  const revision = currentRevision + 1;
+  const catalogRef = {
+    version: MODEL_CATALOG_VERSION,
+    generation: revision,
+    status: modelIds ? CATALOG_AVAILABLE : CATALOG_ABSENT,
+  };
+  const nextStoredValues = {
     [PERSONAL_PROVIDER_PROFILE_KEY]: normalizedProfile,
     [PERSONAL_PROVIDER_REVISION_KEY]: revision,
-  });
+    [PERSONAL_PROVIDER_CATALOG_REF_KEY]: catalogRef,
+  };
+  if (modelIds) {
+    nextStoredValues[getModelCatalogStorageKey(revision)] = {
+      version: MODEL_CATALOG_VERSION,
+      generation: revision,
+      apiUrl: normalizedProfile.apiUrl,
+      protocol: normalizedProfile.protocol,
+      modelIds: [...modelIds],
+    };
+  }
+  await requireLocalStorage().set(nextStoredValues);
 
   if (previousPermission && previousPermission !== nextPermission) {
     await permissions.remove({ origins: [previousPermission] });
@@ -315,7 +425,7 @@ export async function clearPersonalProvider() {
   await requireLocalStorage().set({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE });
   await requireLocalStorage().remove([
     PERSONAL_PROVIDER_PROFILE_KEY,
-    PERSONAL_PROVIDER_REVISION_KEY,
+    PERSONAL_PROVIDER_CATALOG_REF_KEY,
   ]);
 
   if (readiness.permission) {

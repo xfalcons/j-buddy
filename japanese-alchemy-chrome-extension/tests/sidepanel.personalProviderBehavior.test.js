@@ -150,6 +150,73 @@ describe('sidepanel personal-provider settings', () => {
     expect(global.chrome.permissions.request).toHaveBeenCalledTimes(1);
   });
 
+  test('reopens a saved Model catalog offline with provider order and selection intact', async () => {
+    setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => ['model-b', 'model-a']) };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+    global.chrome.permissions.request.mockClear();
+
+    const reopenedElements = createElements();
+    await initializePersonalProviderSettings(reopenedElements);
+
+    expect(reopenedElements.personalProviderModel.disabled).toBe(false);
+    expect(reopenedElements.personalProviderModel.value).toBe('model-a');
+    const renderedOptions = reopenedElements.personalProviderModel.replaceChildren.mock.calls.at(-1);
+    expect(renderedOptions.map((option) => option.value)).toEqual(['', 'model-b', 'model-a']);
+    expect(reopenedElements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
+    expect(modelService.loadModels).toHaveBeenCalledTimes(1);
+    expect(global.chrome.permissions.request).not.toHaveBeenCalled();
+  });
+
+  test('hides an inapplicable saved catalog and restores it when the connection identity is reverted', async () => {
+    setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => ['model-b', 'model-a']) };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+
+    elements.personalProviderApiUrl.value = 'https://api.example.test/v2';
+    await invalidatePersonalProviderModelCatalog(elements);
+    expect(elements.personalProviderModel.disabled).toBe(true);
+    expect(elements.personalProviderModel.value).toBe('');
+    expect(elements.loadPersonalProviderModelsButton.textContent).toBe('載入模型');
+
+    elements.personalProviderApiUrl.value = 'https://api.example.test/v1';
+    await invalidatePersonalProviderModelCatalog(elements);
+    expect(elements.personalProviderModel.disabled).toBe(false);
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    const restoredOptions = elements.personalProviderModel.replaceChildren.mock.calls.at(-1);
+    expect(restoredOptions.map((option) => option.value)).toEqual(['', 'model-b', 'model-a']);
+    expect(elements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
+    expect(modelService.loadModels).toHaveBeenCalledTimes(1);
+
+    elements.personalProviderProtocol.value = RESPONSES_PROTOCOL;
+    await invalidatePersonalProviderModelCatalog(elements);
+    expect(elements.personalProviderModel.value).toBe('');
+    elements.personalProviderProtocol.value = CHAT_COMPLETIONS_PROTOCOL;
+    await invalidatePersonalProviderModelCatalog(elements);
+    expect(elements.personalProviderModel.value).toBe('model-a');
+
+    elements.personalProviderApiKey.value = 'replacement-secret-key';
+    await invalidatePersonalProviderModelCatalog(elements);
+    expect(elements.personalProviderModel.value).toBe('');
+    elements.personalProviderApiKey.value = 'personal-secret-key';
+    await invalidatePersonalProviderModelCatalog(elements);
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    expect(modelService.loadModels).toHaveBeenCalledTimes(1);
+  });
+
   test('renders a saved Responses-compatible protocol while keeping the API key masked', async () => {
     setupChrome({
       [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
@@ -596,7 +663,10 @@ describe('sidepanel personal-provider settings', () => {
     expect(store[ANALYSIS_PROVIDER_MODE_KEY]).toBe(PERSONAL_PROVIDER_MODE);
 
     expect(await handlePersonalProviderClear(elements, () => true)).toBe(true);
-    expect(store).toEqual({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE });
+    expect(store).toEqual({
+      [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+    });
     expect(elements.personalProviderForm.hidden).toBe(true);
     expect(elements.personalProviderStatus.textContent).toContain('已清除');
   });
