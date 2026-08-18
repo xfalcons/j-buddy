@@ -7,9 +7,11 @@ import {
 } from '../scripts/promptVariant.js';
 import {
     CHAT_COMPLETIONS_PROTOCOL,
+    CATALOG_MODEL_SOURCE,
     MANAGED_PROVIDER_MODE,
     PERSONAL_PROVIDER_MODE,
     RESPONSES_PROTOCOL,
+    MANUAL_MODEL_SOURCE,
     clearPersonalProvider,
     getOriginPermission,
     getPersonalProviderState,
@@ -1091,7 +1093,7 @@ function replacePersonalProviderModelOptions(
     modelSelect.disabled = modelIds.length === 0 && !selectedModel;
 }
 
-function setManualPersonalProviderModelMode(elements, connection = null) {
+function setManualPersonalProviderModelMode(elements, connection = null, selectedModel = '') {
     const enabled = connection?.protocol === RESPONSES_PROTOCOL;
     manualModelConnection = enabled ? connection : null;
     if (elements.personalProviderCatalogModelField) {
@@ -1102,7 +1104,7 @@ function setManualPersonalProviderModelMode(elements, connection = null) {
     }
     if (elements.personalProviderManualModel) {
         elements.personalProviderManualModel.disabled = !enabled;
-        if (!enabled) elements.personalProviderManualModel.value = '';
+        elements.personalProviderManualModel.value = enabled ? selectedModel : '';
     }
 }
 
@@ -1209,8 +1211,27 @@ function projectSavedPersonalProviderModel(elements, preferredModel = '') {
     } catch {
         matchesSavedConnection = false;
     }
-    const modelCatalog = getApplicablePersonalProviderCatalog(values);
     const selectedModel = preferredModel || (matchesSavedConnection ? profile.model : '');
+    const stagedCatalog = connectionMatchesFormValues(stagedModelCatalog?.connection, values)
+        ? stagedModelCatalog
+        : null;
+    const useSavedManualModel = !stagedCatalog
+        && matchesSavedConnection
+        && savedPersonalProviderState?.modelSource === MANUAL_MODEL_SOURCE;
+    if (useSavedManualModel) {
+        setManualPersonalProviderModelMode(elements, profile, selectedModel);
+        replacePersonalProviderModelOptions(elements.personalProviderModel);
+        updateLoadPersonalProviderModelsButton(elements, false);
+        return;
+    }
+
+    setManualPersonalProviderModelMode(elements);
+    const modelCatalog = stagedCatalog || (
+        matchesSavedConnection
+        && savedPersonalProviderState?.modelSource === CATALOG_MODEL_SOURCE
+            ? savedPersonalProviderState?.modelCatalog
+            : null
+    );
     const selectedModelIsAbsent = Boolean(
         selectedModel
         && modelCatalog?.modelIds?.length
@@ -1231,7 +1252,8 @@ function getApplicablePersonalProviderCatalog(values) {
     if (connectionMatchesFormValues(stagedModelCatalog?.connection, values)) {
         return stagedModelCatalog;
     }
-    if (connectionMatchesFormValues(savedPersonalProviderState?.profile, values)) {
+    if (savedPersonalProviderState?.modelSource === CATALOG_MODEL_SOURCE
+        && connectionMatchesFormValues(savedPersonalProviderState?.profile, values)) {
         return savedPersonalProviderState?.modelCatalog || null;
     }
     return null;
@@ -1310,7 +1332,7 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         modelIds: [],
         controller,
     };
-    const selectionAtStart = elements.personalProviderModel?.value || '';
+    const selectionAtStart = getPersonalProviderFormValues(elements).model;
     activeModelCatalogRequest = catalog;
     if (elements.loadPersonalProviderModelsButton) elements.loadPersonalProviderModelsButton.disabled = true;
     setPersonalProviderFeedback(elements, '', 'error');
@@ -1339,7 +1361,6 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         catalog.modelIds = modelIds;
         stagedModelCatalog = catalog;
         activeModelCatalogRequest = null;
-        setManualPersonalProviderModelMode(elements);
         const persistence = await persistRefreshedPersonalProviderCatalog(catalog);
         projectSavedPersonalProviderModel(elements, selectedModel);
 
@@ -1379,7 +1400,11 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
             && catalog.connection.protocol === RESPONSES_PROTOCOL
             && !hasUsableCatalog) {
             if (!connectionMatchesFormValues(catalog.connection, failureValues)) return null;
-            setManualPersonalProviderModelMode(elements, catalog.connection);
+            setManualPersonalProviderModelMode(
+                elements,
+                catalog.connection,
+                failureValues?.model || selectionAtStart
+            );
             const catalogError = error.message || '無法取得提供者模型。';
             setPersonalProviderFeedback(
                 elements,
@@ -1453,7 +1478,6 @@ export function renderPersonalProviderState(elements, state) {
         elements.personalProviderProtocol.value = profile?.protocol || CHAT_COMPLETIONS_PROTOCOL;
     }
     projectSavedPersonalProviderModel(elements);
-    setManualPersonalProviderModelMode(elements);
     if (elements.clearPersonalProviderButton) {
         elements.clearPersonalProviderButton.disabled = !profile;
     }
@@ -1574,11 +1598,15 @@ export async function handlePersonalProviderSave(elements) {
         await savePersonalProvider(
             values,
             pendingPermission,
-            catalogSelection ? stagedModelCatalog.modelIds : null
+            catalogSelection ? stagedModelCatalog.modelIds : null,
+            catalogSelection
+                ? CATALOG_MODEL_SOURCE
+                : (manualSelection
+                    ? MANUAL_MODEL_SOURCE
+                    : savedPersonalProviderState?.modelSource)
         );
         await setAnalysisProviderMode(PERSONAL_PROVIDER_MODE);
         stagedModelCatalog = null;
-        setManualPersonalProviderModelMode(elements);
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
         setPersonalProviderFeedback(

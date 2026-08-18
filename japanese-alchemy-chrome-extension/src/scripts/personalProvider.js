@@ -11,11 +11,14 @@ export const ANALYSIS_PROVIDER_MODE_KEY = 'analysisProviderMode';
 export const PERSONAL_PROVIDER_REVISION_KEY = 'personalProviderRevision';
 export const PERSONAL_PROVIDER_CATALOG_REF_KEY = 'personalProviderModelCatalogRef';
 export const PERSONAL_PROVIDER_CATALOG_KEY_PREFIX = 'personalProviderModelCatalog:';
+export const PERSONAL_PROVIDER_MODEL_SOURCE_KEY = 'personalProviderModelSource';
 
 export const MANAGED_PROVIDER_MODE = 'managed';
 export const PERSONAL_PROVIDER_MODE = 'personal';
 export const CHAT_COMPLETIONS_PROTOCOL = 'chat_completions';
 export const RESPONSES_PROTOCOL = 'responses';
+export const CATALOG_MODEL_SOURCE = 'catalog';
+export const MANUAL_MODEL_SOURCE = 'manual';
 export const VALID_PROVIDER_MODES = Object.freeze([
   MANAGED_PROVIDER_MODE,
   PERSONAL_PROVIDER_MODE,
@@ -188,6 +191,17 @@ function connectionsMatch(first, second) {
     && first?.protocol === second?.protocol;
 }
 
+function resolveModelSource(profile, modelCatalog, storedSource) {
+  if (!profile) return null;
+  if (profile.protocol !== RESPONSES_PROTOCOL) return CATALOG_MODEL_SOURCE;
+  if ([CATALOG_MODEL_SOURCE, MANUAL_MODEL_SOURCE].includes(storedSource)) {
+    return storedSource;
+  }
+  return modelCatalog?.modelIds?.includes(profile.model)
+    ? CATALOG_MODEL_SOURCE
+    : MANUAL_MODEL_SOURCE;
+}
+
 async function readStoredModelCatalog(stored, profile, generation) {
   const ref = stored?.[PERSONAL_PROVIDER_CATALOG_REF_KEY];
   if (!profile || !generation || !ref || typeof ref !== 'object' || Array.isArray(ref)) return null;
@@ -219,6 +233,7 @@ async function getStoredProviderValues() {
     ANALYSIS_PROVIDER_MODE_KEY,
     PERSONAL_PROVIDER_REVISION_KEY,
     PERSONAL_PROVIDER_CATALOG_REF_KEY,
+    PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
   ]);
 }
 
@@ -284,11 +299,17 @@ export async function getPersonalProviderState() {
       [PERSONAL_PROVIDER_CATALOG_REF_KEY]: catalogRef,
     }, readiness.profile, revision)
     : null;
+  const modelSource = resolveModelSource(
+    readiness.profile,
+    modelCatalog,
+    stored?.[PERSONAL_PROVIDER_MODEL_SOURCE_KEY]
+  );
   return {
     mode,
     profile: readiness.profile,
     revision,
     modelCatalog,
+    modelSource,
     isPersonalReady: readiness.ready,
     personalError: readiness.error,
   };
@@ -390,7 +411,12 @@ export async function persistPersonalProviderModelCatalog({ generation, connecti
  * Request the exact provider origin before saving a replacement profile. The
  * previous origin is released only after the new profile has committed.
  */
-export async function savePersonalProvider(profile, pendingPermission = null, catalogModelIds = null) {
+export async function savePersonalProvider(
+  profile,
+  pendingPermission = null,
+  catalogModelIds = null,
+  requestedModelSource = null
+) {
   const normalizedProfile = pendingPermission?.normalizedProfile
     || normalizePersonalProviderProfile(profile);
   const nextPermission = pendingPermission?.permission
@@ -403,6 +429,11 @@ export async function savePersonalProvider(profile, pendingPermission = null, ca
     stored,
     currentReadiness.profile,
     currentRevision
+  );
+  const currentModelSource = resolveModelSource(
+    currentReadiness.profile,
+    currentCatalog,
+    stored?.[PERSONAL_PROVIDER_MODEL_SOURCE_KEY]
   );
 
   const permissions = requirePermissions();
@@ -425,6 +456,25 @@ export async function savePersonalProvider(profile, pendingPermission = null, ca
     || (connectionsMatch(currentReadiness.profile, normalizedProfile)
       ? currentCatalog?.modelIds
       : null);
+  let modelSource = CATALOG_MODEL_SOURCE;
+  if (normalizedProfile.protocol === RESPONSES_PROTOCOL) {
+    if ([CATALOG_MODEL_SOURCE, MANUAL_MODEL_SOURCE].includes(requestedModelSource)) {
+      modelSource = requestedModelSource;
+    } else if (suppliedModelIds?.includes(normalizedProfile.model)) {
+      modelSource = CATALOG_MODEL_SOURCE;
+    } else if (connectionsMatch(currentReadiness.profile, normalizedProfile)
+        && currentReadiness.profile?.model === normalizedProfile.model
+        && currentModelSource) {
+      modelSource = currentModelSource;
+    } else {
+      modelSource = MANUAL_MODEL_SOURCE;
+    }
+  }
+  if (modelSource === CATALOG_MODEL_SOURCE
+      && normalizedProfile.protocol === RESPONSES_PROTOCOL
+      && !modelIds?.includes(normalizedProfile.model)) {
+    throw new PersonalProviderError('選取的模型不在模型目錄中。', 'invalid_model_source');
+  }
   const revision = currentRevision + 1;
   const catalogRef = {
     version: MODEL_CATALOG_VERSION,
@@ -435,6 +485,7 @@ export async function savePersonalProvider(profile, pendingPermission = null, ca
     [PERSONAL_PROVIDER_PROFILE_KEY]: normalizedProfile,
     [PERSONAL_PROVIDER_REVISION_KEY]: revision,
     [PERSONAL_PROVIDER_CATALOG_REF_KEY]: catalogRef,
+    [PERSONAL_PROVIDER_MODEL_SOURCE_KEY]: modelSource,
   };
   if (modelIds) {
     nextStoredValues[getModelCatalogStorageKey(revision)] = {
@@ -469,6 +520,7 @@ export async function clearPersonalProvider() {
   await requireLocalStorage().remove([
     PERSONAL_PROVIDER_PROFILE_KEY,
     PERSONAL_PROVIDER_CATALOG_REF_KEY,
+    PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
   ]);
 
   if (readiness.permission) {

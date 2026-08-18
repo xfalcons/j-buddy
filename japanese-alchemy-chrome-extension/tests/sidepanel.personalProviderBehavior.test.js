@@ -5,8 +5,12 @@ import {
   RESPONSES_PROTOCOL,
   ANALYSIS_PROVIDER_MODE_KEY,
   PERSONAL_PROVIDER_CATALOG_KEY_PREFIX,
+  PERSONAL_PROVIDER_CATALOG_REF_KEY,
+  PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
   PERSONAL_PROVIDER_PROFILE_KEY,
   PERSONAL_PROVIDER_REVISION_KEY,
+  CATALOG_MODEL_SOURCE,
+  MANUAL_MODEL_SOURCE,
 } from '../src/scripts/personalProvider.js';
 import {
   handlePersonalProviderClear,
@@ -174,6 +178,77 @@ describe('sidepanel personal-provider settings', () => {
     expect(reopenedElements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
     expect(modelService.loadModels).toHaveBeenCalledTimes(1);
     expect(global.chrome.permissions.request).not.toHaveBeenCalled();
+  });
+
+  test('reopens a saved manual Responses model in the manual control even with a matching catalog', async () => {
+    setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'manual-responses-model',
+        protocol: RESPONSES_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 3,
+      [PERSONAL_PROVIDER_MODEL_SOURCE_KEY]: MANUAL_MODEL_SOURCE,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: {
+        version: 1,
+        generation: 3,
+        status: 'available',
+      },
+      [`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}3`]: {
+        version: 1,
+        generation: 3,
+        apiUrl: 'https://api.example.test/v1',
+        protocol: RESPONSES_PROTOCOL,
+        modelIds: ['manual-responses-model', 'catalog-model'],
+      },
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+
+    await initializePersonalProviderSettings(elements);
+
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(true);
+    expect(elements.personalProviderManualModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModel.disabled).toBe(false);
+    expect(elements.personalProviderManualModel.value).toBe('manual-responses-model');
+    expect(elements.loadPersonalProviderModelsButton.textContent).toBe('載入模型');
+  });
+
+  test('discovery temporarily projects a picker for a manual Responses profile until Save', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'manual-responses-model',
+        protocol: RESPONSES_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+      [PERSONAL_PROVIDER_MODEL_SOURCE_KEY]: MANUAL_MODEL_SOURCE,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+    const modelService = { loadModels: jest.fn(async () => ['catalog-model']) };
+
+    await initializePersonalProviderSettings(elements);
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModelField.hidden).toBe(true);
+    expect(store[PERSONAL_PROVIDER_MODEL_SOURCE_KEY]).toBe(MANUAL_MODEL_SOURCE);
+
+    await invalidatePersonalProviderModelCatalog(elements);
+    const reopenedElements = createElements();
+    await initializePersonalProviderSettings(reopenedElements);
+    expect(reopenedElements.personalProviderManualModel.value).toBe('manual-responses-model');
+    expect(reopenedElements.personalProviderManualModelField.hidden).toBe(false);
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'catalog-model';
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_MODEL_SOURCE_KEY]).toBe(CATALOG_MODEL_SOURCE);
+    expect(elements.personalProviderModel.value).toBe('catalog-model');
+    expect(elements.personalProviderCatalogModelField.hidden).toBe(false);
   });
 
   test('hides an inapplicable saved catalog and restores it when the connection identity is reverted', async () => {
@@ -710,6 +785,32 @@ describe('sidepanel personal-provider settings', () => {
     });
   });
 
+  test('refresh failure preserves a saved manual Responses projection and source', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'manual-responses-model',
+        protocol: RESPONSES_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+      [PERSONAL_PROVIDER_MODEL_SOURCE_KEY]: MANUAL_MODEL_SOURCE,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+    const modelService = { loadModels: jest.fn(async () => {
+      throw new Error('目錄暫時無法使用');
+    }) };
+
+    await initializePersonalProviderSettings(elements);
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderManualModelField.hidden).toBe(false);
+    expect(elements.personalProviderManualModel.value).toBe('manual-responses-model');
+    expect(store[PERSONAL_PROVIDER_MODEL_SOURCE_KEY]).toBe(MANUAL_MODEL_SOURCE);
+    expect(elements.personalProviderError.textContent).toContain('目錄暫時無法使用');
+  });
+
   test('a Chat Completions catalog failure keeps manual model entry unavailable', async () => {
     const { store } = setupChrome();
     const elements = createElements({
@@ -740,6 +841,10 @@ describe('sidepanel personal-provider settings', () => {
     });
     const modelService = { loadModels: jest.fn() };
 
+    await initializePersonalProviderSettings(elements);
+    elements.personalProviderApiUrl.value = 'https://api.example.test/v1/';
+    elements.personalProviderApiKey.value = 'personal-secret-key';
+    elements.personalProviderProtocol.value = RESPONSES_PROTOCOL;
     await handlePersonalProviderLoadModels(elements, modelService);
 
     expect(modelService.loadModels).not.toHaveBeenCalled();

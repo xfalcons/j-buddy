@@ -5,8 +5,11 @@ import {
   PERSONAL_PROVIDER_MODE,
   PERSONAL_PROVIDER_CATALOG_KEY_PREFIX,
   PERSONAL_PROVIDER_CATALOG_REF_KEY,
+  PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
   PERSONAL_PROVIDER_PROFILE_KEY,
   PERSONAL_PROVIDER_REVISION_KEY,
+  CATALOG_MODEL_SOURCE,
+  MANUAL_MODEL_SOURCE,
   RESPONSES_PROTOCOL,
   clearPersonalProvider,
   getOriginPermission,
@@ -112,6 +115,74 @@ describe('personal provider state', () => {
         profile: expect.objectContaining({ protocol: RESPONSES_PROTOCOL }),
       })
     );
+  });
+
+  test('stores Responses model source beside the transport profile', async () => {
+    const { store } = setupChrome();
+    const responsesProfile = { ...profile, protocol: RESPONSES_PROTOCOL };
+
+    const manual = await savePersonalProvider(responsesProfile, null, null, MANUAL_MODEL_SOURCE);
+    expect(manual.profile).not.toHaveProperty('modelSource');
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).not.toHaveProperty('modelSource');
+    expect(store[PERSONAL_PROVIDER_MODEL_SOURCE_KEY]).toBe(MANUAL_MODEL_SOURCE);
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      profile: manual.profile,
+      modelSource: MANUAL_MODEL_SOURCE,
+    }));
+
+    const catalog = await savePersonalProvider(
+      responsesProfile,
+      null,
+      ['example-model'],
+      CATALOG_MODEL_SOURCE
+    );
+    expect(catalog.profile).not.toHaveProperty('modelSource');
+    expect(store[PERSONAL_PROVIDER_MODEL_SOURCE_KEY]).toBe(CATALOG_MODEL_SOURCE);
+  });
+
+  test('infers legacy Responses model source from an applicable catalog containing the saved model', async () => {
+    const responsesProfile = {
+      apiUrl: 'https://api.example.test/v1',
+      apiKey: 'personal-secret-key',
+      model: 'example-model',
+      protocol: RESPONSES_PROTOCOL,
+    };
+    setupChrome({
+      [PERSONAL_PROVIDER_PROFILE_KEY]: responsesProfile,
+      [PERSONAL_PROVIDER_REVISION_KEY]: 4,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: {
+        version: 1,
+        generation: 4,
+        status: 'available',
+      },
+      [`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}4`]: {
+        version: 1,
+        generation: 4,
+        apiUrl: responsesProfile.apiUrl,
+        protocol: RESPONSES_PROTOCOL,
+        modelIds: ['other-model', 'example-model'],
+      },
+    }, ['https://api.example.test/*']);
+
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      modelSource: CATALOG_MODEL_SOURCE,
+    }));
+  });
+
+  test('infers a legacy Responses model without a matching catalog as manual', async () => {
+    setupChrome({
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'manual-model',
+        protocol: RESPONSES_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 4,
+    }, ['https://api.example.test/*']);
+
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      modelSource: MANUAL_MODEL_SOURCE,
+    }));
   });
 
   test('materializes an explicit absent catalog reference for an existing saved generation', async () => {
