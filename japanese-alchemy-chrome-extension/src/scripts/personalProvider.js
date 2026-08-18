@@ -14,6 +14,7 @@ export const PERSONAL_PROVIDER_REVISION_KEY = 'personalProviderRevision';
 export const PERSONAL_PROVIDER_CATALOG_REF_KEY = 'personalProviderModelCatalogRef';
 export const PERSONAL_PROVIDER_CATALOG_KEY_PREFIX = 'personalProviderModelCatalog:';
 export const PERSONAL_PROVIDER_MODEL_SOURCE_KEY = 'personalProviderModelSource';
+export const PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY = 'personalProviderPendingPermissionCleanup';
 
 export const MANAGED_PROVIDER_MODE = 'managed';
 export const PERSONAL_PROVIDER_MODE = 'personal';
@@ -34,6 +35,10 @@ const TRUSTED_CONTEXTS = 'TRUSTED_CONTEXTS';
 const MODEL_CATALOG_VERSION = 1;
 const CATALOG_AVAILABLE = 'available';
 const CATALOG_ABSENT = 'absent';
+const MAX_PENDING_PERMISSION_CLEANUP_ORIGINS = 32;
+const MAX_CATALOG_GC_RECORDS = 32;
+const PROVIDER_MUTATION_LOCK = 'j-buddy-personal-provider-state';
+let providerMutationQueue = Promise.resolve();
 
 export class PersonalProviderError extends Error {
   constructor(message, code) {
@@ -71,6 +76,15 @@ function requirePermissions() {
     throw new PersonalProviderError('Chrome 主機權限無法使用。', 'permissions_unavailable');
   }
   return permissions;
+}
+
+function withProviderMutationLock(task) {
+  if (globalThis.navigator?.locks?.request) {
+    return globalThis.navigator.locks.request(PROVIDER_MUTATION_LOCK, task);
+  }
+  const result = providerMutationQueue.then(task, task);
+  providerMutationQueue = result.catch(() => undefined);
+  return result;
 }
 
 /**
@@ -122,6 +136,35 @@ export function normalizeApiBaseUrl(value) {
 export function getOriginPermission(apiUrl) {
   const normalizedApiUrl = normalizeApiBaseUrl(apiUrl);
   return `${new URL(normalizedApiUrl).origin}/*`;
+}
+
+function normalizePendingPermissionOrigins(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((origin) => {
+    if (typeof origin !== 'string' || !origin.endsWith('/*')) return false;
+    try {
+      return getOriginPermission(origin.slice(0, -2)) === origin;
+    } catch {
+      return false;
+    }
+  }))].slice(0, MAX_PENDING_PERMISSION_CLEANUP_ORIGINS);
+}
+
+function nextPendingPermissionOrigins(storedValue, obsoletePermission, activePermission) {
+  const pending = normalizePendingPermissionOrigins(storedValue)
+    .filter((permission) => permission !== activePermission);
+  if (obsoletePermission
+      && obsoletePermission !== activePermission
+      && !pending.includes(obsoletePermission)) {
+    pending.push(obsoletePermission);
+  }
+  if (pending.length > MAX_PENDING_PERMISSION_CLEANUP_ORIGINS) {
+    throw new PersonalProviderError(
+      '尚有太多舊提供者權限等待清理，請稍後再試。',
+      'permission_cleanup_capacity'
+    );
+  }
+  return pending;
 }
 
 export function normalizePersonalProviderProfile(profile) {
@@ -228,7 +271,91 @@ async function getStoredProviderValues() {
     PERSONAL_PROVIDER_REVISION_KEY,
     PERSONAL_PROVIDER_CATALOG_REF_KEY,
     PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
+    PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY,
   ]);
+}
+
+async function retryPendingPermissionCleanupUnlocked() {
+  const stored = await getStoredProviderValues();
+  let activePermission = null;
+  try {
+    activePermission = getOriginPermission(
+      normalizePersonalProviderProfile(stored?.[PERSONAL_PROVIDER_PROFILE_KEY]).apiUrl
+    );
+  } catch {
+    // A cleared or malformed profile has no active origin to retain.
+  }
+  const pending = normalizePendingPermissionOrigins(
+    stored?.[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]
+  ).filter((permission) => permission !== activePermission);
+  const remaining = [];
+  for (const permission of pending) {
+    try {
+      const stillGranted = await requirePermissions().contains({ origins: [permission] });
+      if (!stillGranted) continue;
+      const removed = await requirePermissions().remove({ origins: [permission] });
+      if (!removed) remaining.push(permission);
+    } catch {
+      remaining.push(permission);
+    }
+  }
+  if (JSON.stringify(remaining) !== JSON.stringify(
+    stored?.[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY] || []
+  )) {
+    try {
+      await requireLocalStorage().set({
+        [PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]: remaining,
+      });
+    } catch {
+      return pending;
+    }
+  }
+  return remaining;
+}
+
+async function garbageCollectModelCatalogsUnlocked({ clearAll = false } = {}) {
+  const local = requireLocalStorage();
+  const [stored, allStored] = await Promise.all([
+    getStoredProviderValues(),
+    local.get(null),
+  ]);
+  const currentRevision = normalizeRevision(stored?.[PERSONAL_PROVIDER_REVISION_KEY]);
+  const currentRef = stored?.[PERSONAL_PROVIDER_CATALOG_REF_KEY];
+  const hasCurrentProfile = Boolean(stored?.[PERSONAL_PROVIDER_PROFILE_KEY]);
+  const reachableKey = hasCurrentProfile
+      && currentRef?.version === MODEL_CATALOG_VERSION
+      && currentRef?.generation === currentRevision
+    ? getModelCatalogStorageKey(currentRevision)
+    : null;
+  const allCandidates = Object.keys(allStored || {})
+    .filter((key) => key.startsWith(PERSONAL_PROVIDER_CATALOG_KEY_PREFIX))
+    .filter((key) => key !== reachableKey);
+  const candidates = clearAll
+    ? allCandidates
+    : allCandidates.slice(0, MAX_CATALOG_GC_RECORDS);
+  if (!candidates.length) return [];
+  try {
+    await local.remove(candidates);
+    return [];
+  } catch {
+    return candidates;
+  }
+}
+
+async function runProviderMaintenanceUnlocked(options = {}) {
+  let pendingPermissionCleanup = options.fallbackPendingPermissionCleanup || [];
+  let pendingCatalogCleanup = [];
+  try {
+    pendingPermissionCleanup = await retryPendingPermissionCleanupUnlocked();
+  } catch {
+    // The canonical transition retains cleanup intent for a later retry.
+  }
+  try {
+    pendingCatalogCleanup = await garbageCollectModelCatalogsUnlocked(options);
+  } catch {
+    pendingCatalogCleanup = ['retry-required'];
+  }
+  return { pendingPermissionCleanup, pendingCatalogCleanup };
 }
 
 async function readProfileReadiness(profile) {
@@ -262,7 +389,10 @@ async function readProfileReadiness(profile) {
  * A malformed/revoked profile therefore remains visibly personal and callers can
  * block the request with the returned readiness error instead of falling back.
  */
-export async function getPersonalProviderState() {
+export async function getPersonalProviderState({ performMaintenance = true } = {}) {
+  const maintenance = performMaintenance
+    ? await withProviderMutationLock(() => runProviderMaintenanceUnlocked())
+    : { pendingCatalogCleanup: [] };
   const stored = await getStoredProviderValues();
   const mode = isValidProviderMode(stored?.[ANALYSIS_PROVIDER_MODE_KEY])
     ? stored[ANALYSIS_PROVIDER_MODE_KEY]
@@ -304,6 +434,10 @@ export async function getPersonalProviderState() {
     revision,
     modelCatalog,
     modelSource,
+    pendingPermissionCleanup: normalizePendingPermissionOrigins(
+      stored?.[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]
+    ),
+    hasPendingCatalogCleanup: maintenance.pendingCatalogCleanup.length > 0,
     isPersonalReady: readiness.ready,
     personalError: readiness.error,
   };
@@ -363,7 +497,7 @@ export async function releasePersonalProviderOriginPermission(permission) {
  * profile generation. Edited/new connections deliberately return false so the
  * side panel can keep their successful catalogs session-staged until Save.
  */
-export async function persistPersonalProviderModelCatalog({ generation, connection, modelIds }) {
+async function persistPersonalProviderModelCatalogUnlocked({ generation, connection, modelIds }) {
   const expectedGeneration = normalizeRevision(generation);
   const normalizedConnection = normalizePersonalProviderConnection(connection);
   const normalizedModelIds = normalizeModelIds(modelIds);
@@ -412,11 +546,16 @@ export async function persistPersonalProviderModelCatalog({ generation, connecti
   return stillOwned;
 }
 
+export function persistPersonalProviderModelCatalog(catalog) {
+  return persistPersonalProviderModelCatalogUnlocked(catalog);
+}
+
 /**
  * Request the exact provider origin before saving a replacement profile. The
- * previous origin is released only after the new profile has committed.
+ * previous origin becomes unreachable in the canonical state transition, then
+ * remains in the bounded cleanup ledger until permission removal succeeds.
  */
-export async function savePersonalProvider(
+async function savePersonalProviderUnlocked(
   profile,
   pendingPermission = null,
   catalogModelIds = null,
@@ -440,17 +579,6 @@ export async function savePersonalProvider(
     currentCatalog,
     stored?.[PERSONAL_PROVIDER_MODEL_SOURCE_KEY]
   );
-
-  const permissions = requirePermissions();
-  const granted = await (pendingPermission?.permissionRequest
-    || permissions.request({ origins: [nextPermission] }));
-  if (!granted) {
-    throw new PersonalProviderError(
-      '未取得提供者存取權，個人設定未儲存。',
-      'origin_permission_denied'
-    );
-  }
-
   const suppliedModelIds = catalogModelIds === null
     ? null
     : normalizeModelIds(catalogModelIds);
@@ -480,6 +608,23 @@ export async function savePersonalProvider(
       && !modelIds?.includes(normalizedProfile.model)) {
     throw new PersonalProviderError('選取的模型不在模型目錄中。', 'invalid_model_source');
   }
+  const pendingPermissionCleanup = nextPendingPermissionOrigins(
+    stored?.[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY],
+    previousPermission,
+    nextPermission
+  );
+  const permissions = requirePermissions();
+  const hadNextPermission = await (pendingPermission?.hadPermission
+    || permissions.contains({ origins: [nextPermission] }));
+  const granted = await (pendingPermission?.permissionRequest
+    || permissions.request({ origins: [nextPermission] }));
+  if (!granted) {
+    throw new PersonalProviderError(
+      '未取得提供者存取權，個人設定未儲存。',
+      'origin_permission_denied'
+    );
+  }
+
   const revision = currentRevision + 1;
   const catalogRef = {
     version: MODEL_CATALOG_VERSION,
@@ -491,6 +636,7 @@ export async function savePersonalProvider(
     [PERSONAL_PROVIDER_REVISION_KEY]: revision,
     [PERSONAL_PROVIDER_CATALOG_REF_KEY]: catalogRef,
     [PERSONAL_PROVIDER_MODEL_SOURCE_KEY]: modelSource,
+    [PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]: pendingPermissionCleanup,
   };
   if (modelIds) {
     nextStoredValues[getModelCatalogStorageKey(revision)] = {
@@ -501,36 +647,67 @@ export async function savePersonalProvider(
       modelIds: [...modelIds],
     };
   }
-  await requireLocalStorage().set(nextStoredValues);
-
-  if (previousPermission && previousPermission !== nextPermission) {
-    await permissions.remove({ origins: [previousPermission] });
+  try {
+    await requireLocalStorage().set(nextStoredValues);
+  } catch (error) {
+    if (!hadNextPermission && nextPermission !== previousPermission) {
+      try {
+        await permissions.remove({ origins: [nextPermission] });
+      } catch {
+        // Preserve the storage failure as the primary error.
+      }
+    }
+    throw error;
   }
+  const maintenance = await runProviderMaintenanceUnlocked({
+    fallbackPendingPermissionCleanup: pendingPermissionCleanup,
+  });
 
   return {
     profile: normalizedProfile,
     revision,
+    ...maintenance,
   };
 }
 
+export function savePersonalProvider(profile, pendingPermission, catalogModelIds, modelSource) {
+  return withProviderMutationLock(() => savePersonalProviderUnlocked(
+    profile,
+    pendingPermission,
+    catalogModelIds,
+    modelSource
+  ));
+}
+
 /**
- * Explicitly clearing personal credentials always returns the persistent route
- * to managed analysis, then relinquishes the old origin permission.
+ * Explicitly clearing personal credentials commits managed-route tombstones
+ * before retrying obsolete permissions and unreachable catalog records.
  */
-export async function clearPersonalProvider() {
+async function clearPersonalProviderUnlocked() {
   const stored = await getStoredProviderValues();
   const readiness = await readProfileReadiness(stored?.[PERSONAL_PROVIDER_PROFILE_KEY]);
+  const revision = normalizeRevision(stored?.[PERSONAL_PROVIDER_REVISION_KEY]);
+  const pendingPermissionCleanup = nextPendingPermissionOrigins(
+    stored?.[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY],
+    readiness.permission,
+    null
+  );
 
-  await requireLocalStorage().set({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE });
-  await requireLocalStorage().remove([
-    PERSONAL_PROVIDER_PROFILE_KEY,
-    PERSONAL_PROVIDER_CATALOG_REF_KEY,
-    PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
-  ]);
+  await requireLocalStorage().set({
+    [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE,
+    [PERSONAL_PROVIDER_PROFILE_KEY]: null,
+    [PERSONAL_PROVIDER_REVISION_KEY]: revision,
+    [PERSONAL_PROVIDER_CATALOG_REF_KEY]: null,
+    [PERSONAL_PROVIDER_MODEL_SOURCE_KEY]: null,
+    [PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]: pendingPermissionCleanup,
+  });
+  const maintenance = await runProviderMaintenanceUnlocked({
+    clearAll: true,
+    fallbackPendingPermissionCleanup: pendingPermissionCleanup,
+  });
+  return { mode: MANAGED_PROVIDER_MODE, ...maintenance };
+}
 
-  if (readiness.permission) {
-    await requirePermissions().remove({ origins: [readiness.permission] });
-  }
-
-  return MANAGED_PROVIDER_MODE;
+export function clearPersonalProvider() {
+  return withProviderMutationLock(clearPersonalProviderUnlocked);
 }

@@ -489,7 +489,7 @@ export async function handleSidepanelStorageChanges(
         if (providerIdentityChanged && panelElements) {
             await invalidatePersonalProviderModelCatalog(panelElements);
         }
-        const state = await getPersonalProviderState();
+        const state = await getPersonalProviderState({ performMaintenance: false });
         if (requestId === settingsProjectionRequestId) {
             savedPersonalProviderState = state;
             if (panelElements) renderPersonalProviderState(panelElements, state);
@@ -608,7 +608,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     try {
         promptVariant = options.promptVariant || await getPromptVariant();
         if (!isLatestAnalysis(requestId)) return;
-        providerState = await getPersonalProviderState();
+        providerState = await getPersonalProviderState({ performMaintenance: false });
     } catch (error) {
         if (isLatestAnalysis(requestId)) {
             activeAnalysisRequestIdentity = null;
@@ -1086,6 +1086,22 @@ function setPersonalProviderFeedback(elements, message = '', type = 'status', fo
     if (focus && message && typeof feedbackElement.focus === 'function') {
         feedbackElement.focus();
     }
+}
+
+function setPersonalProviderCleanupWarning(elements, state) {
+    const pendingOrigins = state?.pendingPermissionCleanup?.length || 0;
+    const catalogCleanupPending = Boolean(state?.hasPendingCatalogCleanup);
+    if (!pendingOrigins && !catalogCleanupPending) return false;
+    const details = [
+        pendingOrigins ? `${pendingOrigins} 個舊提供者權限` : '',
+        catalogCleanupPending ? '舊模型快取' : '',
+    ].filter(Boolean).join('與');
+    setPersonalProviderFeedback(
+        elements,
+        `設定已更新，但${details}仍等待清理；J-Buddy 會在之後重新嘗試。`,
+        'error'
+    );
+    return true;
 }
 
 function replacePersonalProviderModelOptions(
@@ -1668,6 +1684,7 @@ export async function handlePersonalProviderSave(elements) {
                 normalizedProfile,
                 permission: stagedModelCatalog.permission,
                 permissionRequest: stagedModelCatalog.permissionRequest,
+                hadPermission: stagedModelCatalog.hadOriginPermission,
             };
         } else {
             pendingPermission = {
@@ -1698,6 +1715,7 @@ export async function handlePersonalProviderSave(elements) {
         stagedModelCatalog = null;
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
+        setPersonalProviderCleanupWarning(elements, state);
         setPersonalProviderFeedback(
             elements,
             '個人提供者已儲存並選取。之後的分析會直接傳送至此提供者。',
@@ -1745,6 +1763,7 @@ export async function handlePersonalProviderClear(elements, confirmClear = globa
         await clearPersonalProvider();
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
+        setPersonalProviderCleanupWarning(elements, state);
         setPersonalProviderFeedback(elements, '個人提供者設定已清除，並已選取代管分析。', 'status', true);
         return true;
     } catch (error) {

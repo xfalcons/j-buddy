@@ -101,6 +101,7 @@ function setupElements() {
 function setupStorage(initial = {}) {
   const store = { ...initial };
   global.chrome.storage.local.get = jest.fn(async (key) => {
+    if (key === null) return { ...store };
     if (Array.isArray(key)) {
       return key.reduce((acc, item) => {
         acc[item] = store[item];

@@ -7,6 +7,7 @@ import {
   PERSONAL_PROVIDER_CATALOG_KEY_PREFIX,
   PERSONAL_PROVIDER_CATALOG_REF_KEY,
   PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
+  PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY,
   PERSONAL_PROVIDER_PROFILE_KEY,
   PERSONAL_PROVIDER_REVISION_KEY,
   CATALOG_MODEL_SOURCE,
@@ -43,10 +44,12 @@ function setupChrome(initial = {}, permittedOrigins = []) {
   global.chrome = {
     storage: {
       local: {
-        get: jest.fn(async (keys) => keys.reduce((result, key) => ({
-          ...result,
-          [key]: store[key],
-        }), {})),
+        get: jest.fn(async (keys) => keys === null
+          ? { ...store }
+          : keys.reduce((result, key) => ({
+            ...result,
+            [key]: store[key],
+          }), {})),
         set: jest.fn(async (values) => Object.assign(store, values)),
         remove: jest.fn(async (keys) => keys.forEach((key) => delete store[key])),
         setAccessLevel: jest.fn(async () => undefined),
@@ -1146,10 +1149,38 @@ describe('sidepanel personal-provider settings', () => {
     expect(await handlePersonalProviderClear(elements, () => true)).toBe(true);
     expect(store).toEqual({
       [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: null,
       [PERSONAL_PROVIDER_REVISION_KEY]: 2,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: null,
+      [PERSONAL_PROVIDER_MODEL_SOURCE_KEY]: null,
+      [PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]: [],
     });
     expect(elements.personalProviderForm.hidden).toBe(true);
     expect(elements.personalProviderStatus.textContent).toContain('已清除');
+  });
+
+  test('permission cleanup failure keeps a committed clear visible with a distinct pending warning', async () => {
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'example-model',
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 3,
+    }, ['https://api.example.test/*']);
+    global.chrome.permissions.remove.mockResolvedValue(false);
+    const elements = createElements();
+
+    expect(await handlePersonalProviderClear(elements, () => true)).toBe(true);
+
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toBeNull();
+    expect(store[ANALYSIS_PROVIDER_MODE_KEY]).toBe(MANAGED_PROVIDER_MODE);
+    expect(store[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY])
+      .toEqual(['https://api.example.test/*']);
+    expect(elements.personalProviderForm.hidden).toBe(true);
+    expect(elements.personalProviderStatus.textContent).toContain('已清除');
+    expect(elements.personalProviderError.textContent).toContain('等待清理');
   });
 
   test('personal route cannot be selected until its provider is ready and does not start analysis', async () => {
