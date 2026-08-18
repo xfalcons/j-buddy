@@ -405,6 +405,28 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.personalProviderError.textContent).toContain('provider unavailable');
   });
 
+  test('rejects unsafe refreshed model IDs before staging or rendering them', async () => {
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    setupChrome();
+    const modelService = {
+      loadModels: jest.fn()
+        .mockResolvedValueOnce(['model-a'])
+        .mockResolvedValueOnce(['misleading\u202emodel']),
+    };
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    expect(elements.personalProviderModel.replaceChildren.mock.calls.at(-1).map((option) => option.value))
+      .toEqual(['', 'model-a']);
+    expect(elements.personalProviderError.textContent).toContain('模型目錄無效');
+  });
+
   test('retains the last-known-good catalog when Reload permission is denied', async () => {
     setupChrome();
     const elements = createElements({

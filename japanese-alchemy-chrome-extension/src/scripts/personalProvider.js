@@ -1,3 +1,5 @@
+import { normalizeModelCatalogIds } from './modelCatalog.js';
+
 /**
  * Device-local configuration for one learner-owned OpenAI-compatible provider.
  *
@@ -166,19 +168,12 @@ function getModelCatalogStorageKey(generation) {
   return `${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${generation}`;
 }
 
-function normalizeModelIds(modelIds) {
-  if (!Array.isArray(modelIds) || modelIds.length === 0) return null;
-  const normalized = [];
-  const seen = new Set();
-  for (const modelId of modelIds) {
-    if (typeof modelId !== 'string' || !modelId.trim()) return null;
-    const value = modelId.trim();
-    if (!seen.has(value)) {
-      seen.add(value);
-      normalized.push(value);
-    }
+function normalizeModelIds(modelIds, options) {
+  try {
+    return normalizeModelCatalogIds(modelIds, options);
+  } catch {
+    return null;
   }
-  return normalized.length ? Object.freeze(normalized) : null;
 }
 
 function hasOnlyKeys(value, allowedKeys) {
@@ -214,8 +209,8 @@ async function readStoredModelCatalog(stored, profile, generation) {
   const catalog = catalogValues?.[storageKey];
   if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) return null;
   if (!hasOnlyKeys(catalog, ['version', 'generation', 'apiUrl', 'protocol', 'modelIds'])) return null;
-  const modelIds = normalizeModelIds(catalog.modelIds);
-  if (!modelIds || modelIds.length !== catalog.modelIds.length) return null;
+  const modelIds = normalizeModelIds(catalog.modelIds, { requireCanonical: true });
+  if (!modelIds) return null;
   if (catalog.version !== MODEL_CATALOG_VERSION
       || catalog.generation !== generation
       || catalog.apiUrl !== profile.apiUrl

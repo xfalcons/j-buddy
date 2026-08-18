@@ -496,6 +496,57 @@ describe('personal provider state', () => {
     expect(state.modelCatalog).toBeNull();
   });
 
+  test.each([
+    ['too many IDs', Array.from({ length: 2001 }, (_, index) => `model-${index}`)],
+    ['an overlong ID', ['模'.repeat(513)]],
+    ['oversized aggregate ID data', Array.from({ length: 1025 }, (_, index) => (
+      `${String(index).padStart(4, '0')}${'a'.repeat(508)}`
+    ))],
+    ['a control character', ['model\u0007label']],
+    ['a bidirectional formatting character', ['model\u202elabel']],
+  ])('treats a stored catalog with %s as absent without harming its profile', async (_description, modelIds) => {
+    const normalizedProfile = {
+      apiUrl: 'https://api.example.test/v1',
+      apiKey: 'personal-secret-key',
+      model: 'example-model',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
+    };
+    setupChrome({
+      [PERSONAL_PROVIDER_PROFILE_KEY]: normalizedProfile,
+      [PERSONAL_PROVIDER_REVISION_KEY]: 6,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: {
+        version: 1,
+        generation: 6,
+        status: 'available',
+      },
+      [`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}6`]: {
+        version: 1,
+        generation: 6,
+        apiUrl: normalizedProfile.apiUrl,
+        protocol: normalizedProfile.protocol,
+        modelIds,
+      },
+    }, ['https://api.example.test/*']);
+
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      profile: normalizedProfile,
+      modelCatalog: null,
+    }));
+  });
+
+  test('rejects an unsafe catalog before persistence', async () => {
+    const { store } = setupChrome();
+    const saved = await savePersonalProvider(profile);
+    const priorStore = structuredClone(store);
+
+    await expect(persistPersonalProviderModelCatalog({
+      generation: saved.revision,
+      connection: saved.profile,
+      modelIds: ['safe-model', 'misleading\u202emodel'],
+    })).rejects.toMatchObject({ code: 'invalid_model_catalog' });
+    expect(store).toEqual(priorStore);
+  });
+
   test('starts the permission request before any asynchronous storage work when called from a form gesture', async () => {
     const events = [];
     global.chrome.storage.local.get.mockImplementation(async () => {

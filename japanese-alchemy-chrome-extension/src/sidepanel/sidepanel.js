@@ -31,6 +31,7 @@ import {
     setAnalysisProviderMode,
 } from '../scripts/personalProvider.js';
 import { DirectLlmApiService } from '../scripts/directLlmApiService.js';
+import { normalizeModelCatalogIds } from '../scripts/modelCatalog.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
 
@@ -1392,7 +1393,9 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         const granted = await pendingPermission.permissionRequest;
         if (!granted) throw new Error('未取得提供者存取權，無法載入模型。');
         catalogAccessGranted = true;
-        const modelIds = await modelService.loadModels(catalog.connection, { signal: controller.signal });
+        const modelIds = normalizeModelCatalogIds(
+            await modelService.loadModels(catalog.connection, { signal: controller.signal })
+        );
         if (activeModelCatalogRequest !== catalog || controller.signal.aborted) return null;
         let completedValues;
         try {
