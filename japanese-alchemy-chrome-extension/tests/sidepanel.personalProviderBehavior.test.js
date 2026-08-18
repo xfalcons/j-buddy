@@ -159,8 +159,8 @@ describe('sidepanel personal-provider settings', () => {
     expect(global.chrome.permissions.request).toHaveBeenCalledTimes(1);
   });
 
-  test('reopens a saved Model catalog offline with provider order and selection intact', async () => {
-    setupChrome();
+  test('reopens a saved model catalog with sorted options and selection intact', async () => {
+    const { store } = setupChrome();
     const elements = createElements({
       apiUrl: 'https://api.example.test/v1/',
       apiKey: 'personal-secret-key',
@@ -172,13 +172,16 @@ describe('sidepanel personal-provider settings', () => {
     await handlePersonalProviderSave(elements);
     global.chrome.permissions.request.mockClear();
 
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`].modelIds)
+      .toEqual(['model-b', 'model-a']);
+
     const reopenedElements = createElements();
     await initializePersonalProviderSettings(reopenedElements);
 
     expect(reopenedElements.personalProviderModel.disabled).toBe(false);
     expect(reopenedElements.personalProviderModel.value).toBe('model-a');
     const renderedOptions = reopenedElements.personalProviderModel.replaceChildren.mock.calls.at(-1);
-    expect(renderedOptions.map((option) => option.value)).toEqual(['', 'model-b', 'model-a']);
+    expect(renderedOptions.map((option) => option.value)).toEqual(['', 'model-a', 'model-b']);
     expect(reopenedElements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
     expect(modelService.loadModels).toHaveBeenCalledTimes(1);
     expect(global.chrome.permissions.request).not.toHaveBeenCalled();
@@ -277,7 +280,7 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.personalProviderModel.disabled).toBe(false);
     expect(elements.personalProviderModel.value).toBe('model-a');
     const restoredOptions = elements.personalProviderModel.replaceChildren.mock.calls.at(-1);
-    expect(restoredOptions.map((option) => option.value)).toEqual(['', 'model-b', 'model-a']);
+    expect(restoredOptions.map((option) => option.value)).toEqual(['', 'model-a', 'model-b']);
     expect(elements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
     expect(modelService.loadModels).toHaveBeenCalledTimes(1);
 
@@ -403,7 +406,7 @@ describe('sidepanel personal-provider settings', () => {
 
     expect(elements.personalProviderModel.value).toBe('model-a');
     const options = elements.personalProviderModel.replaceChildren.mock.calls.at(-1);
-    expect(options.map((option) => option.value)).toEqual(['', 'model-b', 'model-a']);
+    expect(options.map((option) => option.value)).toEqual(['', 'model-a', 'model-b']);
     expect(elements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
     expect(elements.personalProviderError.textContent).toContain('provider unavailable');
   });
@@ -495,7 +498,7 @@ describe('sidepanel personal-provider settings', () => {
 
     expect(elements.personalProviderModel.value).toBe('model-a');
     const options = elements.personalProviderModel.replaceChildren.mock.calls.at(-1);
-    expect(options.map((option) => option.value)).toEqual(['', 'model-b', 'model-a']);
+    expect(options.map((option) => option.value)).toEqual(['', 'model-a', 'model-b']);
     expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]).toEqual(priorCatalog);
     expect(elements.personalProviderError.textContent).toContain('重新開啟後不會保留');
 
