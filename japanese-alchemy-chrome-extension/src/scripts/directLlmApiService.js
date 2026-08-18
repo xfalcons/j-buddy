@@ -2,6 +2,11 @@ import {
   buildDirectCompletionRequest,
   buildDirectResponsesRequest,
 } from './directAnalysisContract.js';
+import {
+  MAX_MODEL_CATALOG_RESPONSE_BYTES,
+  ModelCatalogValidationError,
+  normalizeModelCatalogIds,
+} from './modelCatalog.js';
 
 const UNSUPPORTED_STREAMING = /\bstream(?:ing)?\b[\s\S]{0,80}\b(?:not supported|unsupported|not allowed|invalid|unknown)\b|\b(?:not supported|unsupported)\b[\s\S]{0,80}\bstream(?:ing)?\b/i;
 
@@ -34,22 +39,59 @@ function extractModelIds(payload) {
     );
   }
 
-  const ids = [];
-  const seen = new Set();
-  payload.data.forEach((model) => {
-    const id = typeof model?.id === 'string' ? model.id.trim() : '';
-    if (id && !seen.has(id)) {
-      seen.add(id);
-      ids.push(id);
-    }
-  });
-  if (!ids.length) {
+  try {
+    return normalizeModelCatalogIds(payload.data.map((model) => model?.id));
+  } catch (error) {
+    if (!(error instanceof ModelCatalogValidationError)) throw error;
     throw new DirectLlmApiError(
-      '此提供者沒有可選擇的模型。',
+      '此提供者回傳了無效或過大的模型目錄。',
       'personal_provider_invalid_model_catalog'
     );
   }
-  return ids;
+}
+
+function modelCatalogTooLargeError() {
+  return new DirectLlmApiError(
+    '此提供者回傳的模型目錄過大，無法安全載入。',
+    'personal_provider_invalid_model_catalog'
+  );
+}
+
+async function readModelCatalogJson(response) {
+  const declaredLength = Number(response?.headers?.get?.('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_MODEL_CATALOG_RESPONSE_BYTES) {
+    throw modelCatalogTooLargeError();
+  }
+
+  let text = '';
+  if (response?.body?.getReader) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let receivedBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value?.byteLength || 0;
+      if (receivedBytes > MAX_MODEL_CATALOG_RESPONSE_BYTES) {
+        await reader.cancel?.();
+        throw modelCatalogTooLargeError();
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } else if (typeof response?.text === 'function') {
+    text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_MODEL_CATALOG_RESPONSE_BYTES) {
+      throw modelCatalogTooLargeError();
+    }
+  } else {
+    const payload = await response.json();
+    text = JSON.stringify(payload);
+    if (new TextEncoder().encode(text).byteLength > MAX_MODEL_CATALOG_RESPONSE_BYTES) {
+      throw modelCatalogTooLargeError();
+    }
+  }
+  return JSON.parse(text);
 }
 
 function errorDetailFromBody(body) {
@@ -321,8 +363,9 @@ export class DirectLlmApiService {
     }
 
     try {
-      return extractModelIds(await response.json());
+      return extractModelIds(await readModelCatalogJson(response));
     } catch (error) {
+      if (isAbortError(error, signal)) throw error;
       if (error instanceof DirectLlmApiError) throw error;
       throw new DirectLlmApiError(
         '此提供者回傳了不支援的模型清單格式。',

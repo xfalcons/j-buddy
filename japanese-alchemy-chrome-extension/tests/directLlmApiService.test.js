@@ -57,6 +57,24 @@ function jsonResponse(payload) {
   };
 }
 
+function streamedCatalogResponse(chunks, contentLength = null) {
+  const queue = chunks.map((chunk) => (typeof chunk === 'string'
+    ? new TextEncoder().encode(chunk)
+    : chunk));
+  const reader = {
+    read: jest.fn(async () => queue.length
+      ? { done: false, value: queue.shift() }
+      : { done: true, value: undefined }),
+    cancel: jest.fn(async () => undefined),
+  };
+  return {
+    ok: true,
+    headers: { get: jest.fn((name) => name === 'content-length' ? contentLength : null) },
+    body: { getReader: () => reader },
+    reader,
+  };
+}
+
 function errorResponse(status, body) {
   return {
     ok: false,
@@ -92,6 +110,46 @@ describe('DirectLlmApiService', () => {
       apiUrl: profile.apiUrl,
       apiKey: profile.apiKey,
     })).rejects.toMatchObject({ code: 'personal_provider_invalid_model_catalog' });
+  });
+
+  test('rejects a declared model catalog larger than 2 MiB before reading its body', async () => {
+    const response = streamedCatalogResponse([], String((2 * 1024 * 1024) + 1));
+    const fetch = jest.fn(async () => response);
+
+    await expect(new DirectLlmApiService(fetch).loadModels(profile)).rejects.toMatchObject({
+      code: 'personal_provider_invalid_model_catalog',
+    });
+    expect(response.reader.read).not.toHaveBeenCalled();
+  });
+
+  test('caps a chunked model catalog body at 2 MiB', async () => {
+    const response = streamedCatalogResponse([
+      new Uint8Array(1024 * 1024),
+      new Uint8Array((1024 * 1024) + 1),
+    ]);
+    const fetch = jest.fn(async () => response);
+
+    await expect(new DirectLlmApiService(fetch).loadModels(profile)).rejects.toMatchObject({
+      code: 'personal_provider_invalid_model_catalog',
+    });
+    expect(response.reader.cancel).toHaveBeenCalled();
+  });
+
+  test.each([
+    ['more than 2,000 IDs', Array.from({ length: 2001 }, (_, index) => ({ id: `model-${index}` }))],
+    ['an ID longer than 512 Unicode code points', [{ id: '模'.repeat(513) }]],
+    ['more than 512 KiB of aggregate ID data', Array.from({ length: 1025 }, (_, index) => ({
+      id: `${String(index).padStart(4, '0')}${'a'.repeat(508)}`,
+    }))],
+    ['a control character', [{ id: 'model\u0007label' }]],
+    ['a leading newline control character', [{ id: '\nmodel' }]],
+    ['a bidirectional formatting character', [{ id: 'model\u202elabel' }]],
+  ])('rejects a catalog containing %s', async (_description, data) => {
+    const fetch = jest.fn(async () => jsonResponse({ data }));
+
+    await expect(new DirectLlmApiService(fetch).loadModels(profile)).rejects.toMatchObject({
+      code: 'personal_provider_invalid_model_catalog',
+    });
   });
 
   test('forwards abort signals while loading models', async () => {
