@@ -302,6 +302,135 @@ describe('personal provider state', () => {
     expect(store).toEqual(priorStore);
   });
 
+  test('a stale refresh cannot overwrite a newer saved generation catalog', async () => {
+    const { store } = setupChrome();
+    const first = await savePersonalProvider(profile, null, ['first-catalog']);
+    let releaseStaleWrite;
+    let staleWriteStarted;
+    const staleWriteReady = new Promise((resolve) => { staleWriteStarted = resolve; });
+    const originalSet = global.chrome.storage.local.set;
+    global.chrome.storage.local.set = jest.fn(async (values) => {
+      const oldCatalogKey = `${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${first.revision}`;
+      if (Object.keys(values).length === 1 && values[oldCatalogKey]) {
+        staleWriteStarted();
+        await new Promise((resolve) => { releaseStaleWrite = resolve; });
+      }
+      return originalSet(values);
+    });
+
+    const stalePersistence = persistPersonalProviderModelCatalog({
+      generation: first.revision,
+      connection: first.profile,
+      modelIds: ['stale-catalog'],
+    });
+    await staleWriteReady;
+    const second = await savePersonalProvider(profile, null, ['newer-catalog']);
+    releaseStaleWrite();
+
+    await expect(stalePersistence).resolves.toBe(false);
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(second.revision);
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY]).toEqual({
+      version: 1,
+      generation: second.revision,
+      status: 'available',
+    });
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${second.revision}`].modelIds)
+      .toEqual(['newer-catalog']);
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${first.revision}`]).toBeUndefined();
+  });
+
+  test('clear and recreate of the same connection rejects the earlier incarnation refresh', async () => {
+    const { store } = setupChrome();
+    const first = await savePersonalProvider(profile);
+    let releaseStaleWrite;
+    let staleWriteStarted;
+    const staleWriteReady = new Promise((resolve) => { staleWriteStarted = resolve; });
+    const originalSet = global.chrome.storage.local.set;
+    global.chrome.storage.local.set = jest.fn(async (values) => {
+      const oldCatalogKey = `${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${first.revision}`;
+      if (Object.keys(values).length === 1 && values[oldCatalogKey]) {
+        staleWriteStarted();
+        await new Promise((resolve) => { releaseStaleWrite = resolve; });
+      }
+      return originalSet(values);
+    });
+
+    const stalePersistence = persistPersonalProviderModelCatalog({
+      generation: first.revision,
+      connection: first.profile,
+      modelIds: ['stale-catalog'],
+    });
+    await staleWriteReady;
+    await clearPersonalProvider();
+    const recreated = await savePersonalProvider(profile, null, ['current-catalog']);
+    releaseStaleWrite();
+
+    await expect(stalePersistence).resolves.toBe(false);
+    expect(recreated.revision).toBe(first.revision + 1);
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY].generation).toBe(recreated.revision);
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${recreated.revision}`].modelIds)
+      .toEqual(['current-catalog']);
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${first.revision}`]).toBeUndefined();
+  });
+
+  test('an absent saved generation becomes readable when refresh writes only its owned payload', async () => {
+    const { store } = setupChrome();
+    const saved = await savePersonalProvider(profile);
+
+    await expect(persistPersonalProviderModelCatalog({
+      generation: saved.revision,
+      connection: saved.profile,
+      modelIds: ['refreshed-model'],
+    })).resolves.toBe(true);
+
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY]).toEqual({
+      version: 1,
+      generation: saved.revision,
+      status: 'absent',
+    });
+    await expect(getPersonalProviderState()).resolves.toEqual(expect.objectContaining({
+      modelCatalog: { modelIds: ['refreshed-model'] },
+    }));
+  });
+
+  test('concurrent refreshes for one generation use completion-order last-write-wins', async () => {
+    const { store } = setupChrome();
+    const saved = await savePersonalProvider(profile);
+    const originalSet = global.chrome.storage.local.set;
+    const releases = [];
+    let writesStarted = 0;
+    let bothWritesStarted;
+    const ready = new Promise((resolve) => { bothWritesStarted = resolve; });
+    global.chrome.storage.local.set = jest.fn(async (values) => {
+      const key = `${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${saved.revision}`;
+      if (Object.keys(values).length === 1 && values[key]) {
+        const writeIndex = writesStarted++;
+        if (writesStarted === 2) bothWritesStarted();
+        await new Promise((resolve) => { releases[writeIndex] = resolve; });
+      }
+      return originalSet(values);
+    });
+
+    const first = persistPersonalProviderModelCatalog({
+      generation: saved.revision,
+      connection: saved.profile,
+      modelIds: ['first-completion'],
+    });
+    const second = persistPersonalProviderModelCatalog({
+      generation: saved.revision,
+      connection: saved.profile,
+      modelIds: ['second-completion'],
+    });
+    await ready;
+    releases[1]();
+    await second;
+    releases[0]();
+    await first;
+
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}${saved.revision}`].modelIds)
+      .toEqual(['first-completion']);
+  });
+
   test('carries a catalog across the same connection and drops it for a replacement connection', async () => {
     const { store } = setupChrome();
     await savePersonalProvider(profile, null, ['model-b', 'example-model']);

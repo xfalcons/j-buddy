@@ -2,6 +2,7 @@ import {
   analizingSelectedText,
   handleCancelAnalysis,
   handleAnalysisModeChange,
+  handleSidepanelStorageChanges,
   isValidSelection,
   setSidepanelElementsForTesting,
 } from '../src/sidepanel/sidepanel.js';
@@ -347,6 +348,22 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(global.localStorage.getItem('lastAnalysisResult')).toBeNull();
 
     apiCalls[0].onDone('# stale response');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('a cache-only provider storage update does not cancel active analysis', async () => {
+    const apiCalls = setupDeferredApi();
+    const { elements } = setupElements();
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    await handleSidepanelStorageChanges({
+      'personalProviderModelCatalog:3': { oldValue: null, newValue: { version: 1 } },
+    }, 'local', elements);
+
+    expect(apiCalls[0].options.signal.aborted).toBe(false);
+    apiCalls[0].onDone('# completed response');
     apiCalls[0].resolve();
     await request;
   });

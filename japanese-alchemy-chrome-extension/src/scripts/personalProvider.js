@@ -207,8 +207,7 @@ async function readStoredModelCatalog(stored, profile, generation) {
   if (!profile || !generation || !ref || typeof ref !== 'object' || Array.isArray(ref)) return null;
   if (!hasOnlyKeys(ref, ['version', 'generation', 'status'])) return null;
   if (ref.version !== MODEL_CATALOG_VERSION || ref.generation !== generation) return null;
-  if (ref.status === CATALOG_ABSENT) return null;
-  if (ref.status !== CATALOG_AVAILABLE) return null;
+  if (![CATALOG_ABSENT, CATALOG_AVAILABLE].includes(ref.status)) return null;
 
   const storageKey = getModelCatalogStorageKey(generation);
   const catalogValues = await requireLocalStorage().get([storageKey]);
@@ -391,11 +390,6 @@ export async function persistPersonalProviderModelCatalog({ generation, connecti
   }
 
   await requireLocalStorage().set({
-    [PERSONAL_PROVIDER_CATALOG_REF_KEY]: {
-      version: MODEL_CATALOG_VERSION,
-      generation: expectedGeneration,
-      status: CATALOG_AVAILABLE,
-    },
     [getModelCatalogStorageKey(expectedGeneration)]: {
       version: MODEL_CATALOG_VERSION,
       generation: expectedGeneration,
@@ -404,7 +398,23 @@ export async function persistPersonalProviderModelCatalog({ generation, connecti
       modelIds: [...normalizedModelIds],
     },
   });
-  return true;
+
+  const current = await getStoredProviderValues();
+  let latestProfile = null;
+  try {
+    latestProfile = normalizePersonalProviderProfile(current?.[PERSONAL_PROVIDER_PROFILE_KEY]);
+  } catch {
+    // A cleared or replaced profile cannot own this generation's payload.
+  }
+  const latestRef = current?.[PERSONAL_PROVIDER_CATALOG_REF_KEY];
+  const stillOwned = normalizeRevision(current?.[PERSONAL_PROVIDER_REVISION_KEY]) === expectedGeneration
+    && latestRef?.version === MODEL_CATALOG_VERSION
+    && latestRef?.generation === expectedGeneration
+    && connectionsMatch(latestProfile, normalizedConnection);
+  if (!stillOwned && latestRef?.generation !== expectedGeneration) {
+    await requireLocalStorage().remove([getModelCatalogStorageKey(expectedGeneration)]);
+  }
+  return stillOwned;
 }
 
 /**

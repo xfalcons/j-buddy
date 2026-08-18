@@ -8,8 +8,14 @@ import {
 import {
     CHAT_COMPLETIONS_PROTOCOL,
     CATALOG_MODEL_SOURCE,
+    ANALYSIS_PROVIDER_MODE_KEY,
     MANAGED_PROVIDER_MODE,
+    PERSONAL_PROVIDER_CATALOG_KEY_PREFIX,
+    PERSONAL_PROVIDER_CATALOG_REF_KEY,
+    PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
     PERSONAL_PROVIDER_MODE,
+    PERSONAL_PROVIDER_PROFILE_KEY,
+    PERSONAL_PROVIDER_REVISION_KEY,
     RESPONSES_PROTOCOL,
     MANUAL_MODEL_SOURCE,
     clearPersonalProvider,
@@ -51,6 +57,7 @@ let activeModelCatalogRequest = null;
 let manualModelConnection = null;
 let maskedApiKeyState = null;
 let savedPersonalProviderState = null;
+let settingsProjectionRequestId = 0;
 
 function getDomPurify() {
     // The production side panel always has a real browser window. The guarded
@@ -398,25 +405,9 @@ async function loadSelectedText() {
   await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
 }
 
-// Update when new selections arrive
-chrome.storage.onChanged.addListener(async (changes) => {
-    console.log('Storage changes...');
-  if (changes.personalProviderProfile || changes.analysisProviderMode || changes.personalProviderRevision) {
-    // A profile, permission route, or revision changed while a request was in
-    // flight. Invalidate its callbacks before it can overwrite the panel or
-    // cache a response under the wrong provider identity.
-    cancelActiveAnalysis();
-    analysisRequestId += 1;
-    isAnalizing = false;
-    activeAnalysisKey = null;
-    setCompletedAnalysisAvailable(false);
-  }
-  if (changes.selectedText || changes.contextBefore || changes.contextAfter) {
-    cancelActiveAnalysis();
-    const { selectedText, contextBefore = '', contextAfter = '' } =
-      await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
-    await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
-  }
+// Update when new selections or provider-state transitions arrive.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    void handleSidepanelStorageChanges(changes, areaName);
 });
 
 // Handle messages from background scripts
@@ -464,6 +455,52 @@ function cancelActiveAnalysis() {
     activeAnalysisController = null;
     activeAnalysisRequestIdentity = null;
     setAnalysisCancellationAvailable(false);
+}
+
+export async function handleSidepanelStorageChanges(
+    changes,
+    areaName = 'local',
+    panelElements = elements
+) {
+    if (areaName !== 'local' || !changes || typeof changes !== 'object') return;
+
+    const changedKeys = Object.keys(changes);
+    const providerIdentityChanged = changedKeys.some((key) => [
+        PERSONAL_PROVIDER_PROFILE_KEY,
+        PERSONAL_PROVIDER_REVISION_KEY,
+        ANALYSIS_PROVIDER_MODE_KEY,
+    ].includes(key));
+    const providerStateChanged = providerIdentityChanged || changedKeys.some((key) => [
+        PERSONAL_PROVIDER_CATALOG_REF_KEY,
+        PERSONAL_PROVIDER_MODEL_SOURCE_KEY,
+    ].includes(key) || key.startsWith(PERSONAL_PROVIDER_CATALOG_KEY_PREFIX));
+
+    if (providerIdentityChanged) {
+        cancelActiveAnalysis();
+        analysisRequestId += 1;
+        isAnalizing = false;
+        activeAnalysisKey = null;
+        setCompletedAnalysisAvailable(false);
+    }
+
+    if (providerStateChanged) {
+        const requestId = ++settingsProjectionRequestId;
+        if (providerIdentityChanged && panelElements) {
+            await invalidatePersonalProviderModelCatalog(panelElements);
+        }
+        const state = await getPersonalProviderState();
+        if (requestId === settingsProjectionRequestId) {
+            savedPersonalProviderState = state;
+            if (panelElements) renderPersonalProviderState(panelElements, state);
+        }
+    }
+
+    if (changes.selectedText || changes.contextBefore || changes.contextAfter) {
+        cancelActiveAnalysis();
+        const { selectedText, contextBefore = '', contextAfter = '' } =
+            await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
+        await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
+    }
 }
 
 function analysisSourceIdentity(providerState) {
@@ -1199,6 +1236,15 @@ function connectionMatchesFormValues(connection, values) {
     }
 }
 
+function savedProviderSnapshotMatches(expected, current) {
+    if ((expected?.revision || 0) !== (current?.revision || 0)) return false;
+    const expectedProfile = expected?.profile || null;
+    const currentProfile = current?.profile || null;
+    if (!expectedProfile || !currentProfile) return expectedProfile === currentProfile;
+    return connectionMatchesFormValues(expectedProfile, currentProfile)
+        && expectedProfile.model === currentProfile.model;
+}
+
 function projectSavedPersonalProviderModel(elements, preferredModel = '') {
     const profile = savedPersonalProviderState?.profile;
     let values = null;
@@ -1260,26 +1306,23 @@ function getApplicablePersonalProviderCatalog(values) {
 }
 
 async function persistRefreshedPersonalProviderCatalog(catalog) {
-    const savedState = savedPersonalProviderState;
-    if (!savedState?.profile
-        || !connectionMatchesFormValues(savedState.profile, catalog.connection)) {
+    const savedSnapshot = catalog.savedProviderSnapshot;
+    if (!savedSnapshot?.profile
+        || !connectionMatchesFormValues(savedSnapshot.profile, catalog.connection)) {
         return { persisted: false, error: null };
     }
     try {
         const persisted = await persistPersonalProviderModelCatalog({
-            generation: savedState.revision,
+            generation: savedSnapshot.revision,
             connection: catalog.connection,
             modelIds: catalog.modelIds,
         });
-        if (persisted) {
-            savedPersonalProviderState = {
-                ...savedState,
-                modelCatalog: { modelIds: [...catalog.modelIds] },
-            };
-        }
-        return { persisted, error: null };
+        const latestState = await getPersonalProviderState();
+        const stillOwned = persisted && savedProviderSnapshotMatches(savedSnapshot, latestState);
+        savedPersonalProviderState = latestState;
+        return { persisted: stillOwned, stale: !stillOwned, error: null };
     } catch (error) {
-        return { persisted: false, error };
+        return { persisted: false, stale: false, error };
     }
 }
 
@@ -1309,6 +1352,8 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
             pendingPermission.permission
         );
     }
+    const requestSavedState = await getPersonalProviderState();
+    savedPersonalProviderState = requestSavedState;
     let currentValues;
     try {
         currentValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
@@ -1331,6 +1376,10 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         permissionRequest: pendingPermission.permissionRequest,
         modelIds: [],
         controller,
+        savedProviderSnapshot: {
+            revision: requestSavedState.revision || 0,
+            profile: requestSavedState.profile || null,
+        },
     };
     const selectionAtStart = getPersonalProviderFormValues(elements).model;
     activeModelCatalogRequest = catalog;
@@ -1357,11 +1406,48 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
             return null;
         }
 
+        const latestSavedState = await getPersonalProviderState();
+        if (activeModelCatalogRequest !== catalog || controller.signal.aborted) return null;
+        try {
+            completedValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+        } catch {
+            completedValues = null;
+        }
+        if (!connectionMatchesFormValues(catalog.connection, completedValues)) {
+            activeModelCatalogRequest = null;
+            await releaseStagedModelCatalogPermission(catalog, stagedModelCatalog?.permission);
+            return null;
+        }
+        if (!savedProviderSnapshotMatches(catalog.savedProviderSnapshot, latestSavedState)) {
+            activeModelCatalogRequest = null;
+            savedPersonalProviderState = latestSavedState;
+            renderPersonalProviderState(elements, latestSavedState);
+            await releaseStagedModelCatalogPermission(catalog, stagedModelCatalog?.permission);
+            return null;
+        }
+
         const selectedModel = elements.personalProviderModel?.value || selectionAtStart;
         catalog.modelIds = modelIds;
+        const persistence = await persistRefreshedPersonalProviderCatalog(catalog);
+        if (activeModelCatalogRequest !== catalog || controller.signal.aborted) return null;
+        try {
+            completedValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+        } catch {
+            completedValues = null;
+        }
+        if (!connectionMatchesFormValues(catalog.connection, completedValues)) {
+            activeModelCatalogRequest = null;
+            await releaseStagedModelCatalogPermission(catalog, stagedModelCatalog?.permission);
+            return null;
+        }
+        if (persistence.stale) {
+            activeModelCatalogRequest = null;
+            projectSavedPersonalProviderModel(elements);
+            await releaseStagedModelCatalogPermission(catalog, stagedModelCatalog?.permission);
+            return null;
+        }
         stagedModelCatalog = catalog;
         activeModelCatalogRequest = null;
-        const persistence = await persistRefreshedPersonalProviderCatalog(catalog);
         projectSavedPersonalProviderModel(elements, selectedModel);
 
         const selectionOmitted = Boolean(selectedModel && !modelIds.includes(selectedModel));

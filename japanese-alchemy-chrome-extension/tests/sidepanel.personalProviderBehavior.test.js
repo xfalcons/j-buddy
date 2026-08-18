@@ -17,6 +17,7 @@ import {
   handlePersonalProviderLoadModels,
   handlePersonalProviderModeChange,
   handlePersonalProviderSave,
+  handleSidepanelStorageChanges,
   invalidatePersonalProviderModelCatalog,
   initializePersonalProviderSettings,
   redactPersonalProviderApiKey,
@@ -350,6 +351,36 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.personalProviderError.textContent).toContain('model-a');
     expect(elements.personalProviderError.focus).not.toHaveBeenCalled();
     expect(store[PERSONAL_PROVIDER_PROFILE_KEY].model).toBe('model-a');
+  });
+
+  test('rejects a Reload completion after Save advances the saved generation', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    await handlePersonalProviderLoadModels(elements, {
+      loadModels: jest.fn(async () => ['saved-model']),
+    });
+    elements.personalProviderModel.value = 'saved-model';
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(1);
+
+    let resolveReload;
+    const reloading = handlePersonalProviderLoadModels(elements, {
+      loadModels: jest.fn(() => new Promise((resolve) => { resolveReload = resolve; })),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(2);
+    resolveReload(['stale-model']);
+    await reloading;
+
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(2);
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}2`].modelIds).toEqual(['saved-model']);
+    expect(elements.personalProviderModel.value).toBe('saved-model');
+    expect(elements.personalProviderModel.replaceChildren.mock.calls.at(-1).map((option) => option.value))
+      .toEqual(['', 'saved-model']);
   });
 
   test('retains the last-known-good catalog when Reload fails', async () => {
@@ -726,6 +757,102 @@ describe('sidepanel personal-provider settings', () => {
       origins: ['https://api.example.test/*'],
     });
     expect(elements.personalProviderModel.value).toBe('');
+  });
+
+  test('a profile storage change invalidates an incompatible staged catalog and reprojects saved state', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://staged.example.test/v1',
+      apiKey: 'staged-key',
+    });
+    await initializePersonalProviderSettings(elements);
+    elements.personalProviderApiUrl.value = 'https://staged.example.test/v1';
+    elements.personalProviderApiKey.value = 'staged-key';
+    await handlePersonalProviderLoadModels(elements, {
+      loadModels: jest.fn(async () => ['staged-model']),
+    });
+    expect(elements.personalProviderModel.disabled).toBe(false);
+
+    Object.assign(store, {
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://saved.example.test/v1',
+        apiKey: 'saved-key',
+        model: 'saved-model',
+        protocol: CHAT_COMPLETIONS_PROTOCOL,
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 8,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: {
+        version: 1,
+        generation: 8,
+        status: 'absent',
+      },
+    });
+
+    await handleSidepanelStorageChanges({
+      [PERSONAL_PROVIDER_PROFILE_KEY]: { oldValue: undefined, newValue: store[PERSONAL_PROVIDER_PROFILE_KEY] },
+      [PERSONAL_PROVIDER_REVISION_KEY]: { oldValue: 0, newValue: 8 },
+    }, 'local', elements);
+
+    expect(elements.personalProviderApiUrl.value).toBe('https://saved.example.test/v1');
+    expect(elements.personalProviderModel.value).toBe('saved-model');
+    expect(elements.personalProviderModel.replaceChildren.mock.calls.at(-1).map((option) => option.value))
+      .toEqual(['', 'saved-model']);
+  });
+
+  test('drops an older delayed settings projection after a newer storage read renders', async () => {
+    const oldProfile = {
+      apiUrl: 'https://old.example.test/v1',
+      apiKey: 'old-key',
+      model: 'old-model',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
+    };
+    const newProfile = {
+      apiUrl: 'https://new.example.test/v1',
+      apiKey: 'new-key',
+      model: 'new-model',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
+    };
+    const { store } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: oldProfile,
+      [PERSONAL_PROVIDER_REVISION_KEY]: 3,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: { version: 1, generation: 3, status: 'absent' },
+    }, ['https://old.example.test/*', 'https://new.example.test/*']);
+    const elements = createElements();
+    let releaseOldRead;
+    let oldReadStarted;
+    const oldReadReady = new Promise((resolve) => { oldReadStarted = resolve; });
+    const originalGet = global.chrome.storage.local.get;
+    let providerReadCount = 0;
+    global.chrome.storage.local.get = jest.fn(async (keys) => {
+      if (keys.includes(PERSONAL_PROVIDER_PROFILE_KEY) && providerReadCount++ === 0) {
+        const snapshot = keys.reduce((result, key) => ({ ...result, [key]: store[key] }), {});
+        oldReadStarted();
+        await new Promise((resolve) => { releaseOldRead = resolve; });
+        return snapshot;
+      }
+      return originalGet(keys);
+    });
+
+    const olderProjection = handleSidepanelStorageChanges({
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: { oldValue: null, newValue: store[PERSONAL_PROVIDER_CATALOG_REF_KEY] },
+    }, 'local', elements);
+    await oldReadReady;
+    Object.assign(store, {
+      [PERSONAL_PROVIDER_PROFILE_KEY]: newProfile,
+      [PERSONAL_PROVIDER_REVISION_KEY]: 4,
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: { version: 1, generation: 4, status: 'absent' },
+    });
+    await handleSidepanelStorageChanges({
+      [PERSONAL_PROVIDER_CATALOG_REF_KEY]: { oldValue: null, newValue: store[PERSONAL_PROVIDER_CATALOG_REF_KEY] },
+    }, 'local', elements);
+    expect(elements.personalProviderApiUrl.value).toBe(newProfile.apiUrl);
+
+    releaseOldRead();
+    await olderProjection;
+    expect(elements.personalProviderApiUrl.value).toBe(newProfile.apiUrl);
+    expect(elements.personalProviderModel.value).toBe(newProfile.model);
   });
 
   test('re-enables model discovery after a catalog failure and releases its temporary permission', async () => {
