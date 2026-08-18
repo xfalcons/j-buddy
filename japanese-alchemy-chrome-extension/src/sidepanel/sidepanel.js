@@ -16,6 +16,7 @@ import {
     normalizeApiBaseUrl,
     normalizePersonalProviderConnection,
     normalizePersonalProviderProfile,
+    persistPersonalProviderModelCatalog,
     releasePersonalProviderOriginPermission,
     requestPersonalProviderConnectionPermission,
     savePersonalProvider,
@@ -44,6 +45,7 @@ const COMPLETED_ANALYSIS_RESULT_STORAGE_KEY = 'lastAnalysisResult';
 const CONTROLLED_CHECKBOX_PATTERN = /<input type="checkbox" name="(words|grammars)" value="([^"<>]*)">/g;
 const MASKED_API_KEY = '****************';
 let stagedModelCatalog = null;
+let activeModelCatalogRequest = null;
 let manualModelConnection = null;
 let maskedApiKeyState = null;
 let savedPersonalProviderState = null;
@@ -1046,7 +1048,12 @@ function setPersonalProviderFeedback(elements, message = '', type = 'status', fo
     }
 }
 
-function replacePersonalProviderModelOptions(modelSelect, modelIds = [], savedModel = '') {
+function replacePersonalProviderModelOptions(
+    modelSelect,
+    modelIds = [],
+    selectedModel = '',
+    absentModelLabel = ''
+) {
     if (!modelSelect) return;
     const createOption = (value, label, disabled = false) => {
         const option = globalThis.document?.createElement?.('option') || {};
@@ -1056,11 +1063,14 @@ function replacePersonalProviderModelOptions(modelSelect, modelIds = [], savedMo
         return option;
     };
     const placeholder = createOption('', modelIds.length ? '請選擇模型' : '請先載入模型', true);
-    placeholder.selected = !savedModel;
-    const savedOption = savedModel && !modelIds.includes(savedModel)
-        ? createOption(savedModel, `${savedModel}（已儲存）`)
+    placeholder.selected = !selectedModel;
+    const savedOption = selectedModel && !modelIds.includes(selectedModel)
+        ? createOption(
+            selectedModel,
+            absentModelLabel || `${selectedModel}（已儲存）`
+        )
         : null;
-    const selectedCatalogOption = modelIds.includes(savedModel) ? savedModel : '';
+    const selectedCatalogOption = modelIds.includes(selectedModel) ? selectedModel : '';
     if (savedOption) savedOption.selected = true;
     const options = [
         placeholder,
@@ -1077,8 +1087,8 @@ function replacePersonalProviderModelOptions(modelSelect, modelIds = [], savedMo
         modelSelect.innerHTML = '';
         options.forEach((option) => modelSelect.appendChild?.(option));
     }
-    modelSelect.value = savedModel;
-    modelSelect.disabled = modelIds.length === 0 && !savedModel;
+    modelSelect.value = selectedModel;
+    modelSelect.disabled = modelIds.length === 0 && !selectedModel;
 }
 
 function setManualPersonalProviderModelMode(elements, connection = null) {
@@ -1144,11 +1154,19 @@ async function releaseStagedModelCatalogPermission(catalog, retainedPermission =
 
 export async function invalidatePersonalProviderModelCatalog(elements, retainedPermission = null) {
     const catalog = stagedModelCatalog;
+    const request = activeModelCatalogRequest;
     stagedModelCatalog = null;
+    activeModelCatalogRequest = null;
     setManualPersonalProviderModelMode(elements);
     catalog?.controller?.abort();
+    request?.controller?.abort();
     projectSavedPersonalProviderModel(elements);
-    await releaseStagedModelCatalogPermission(catalog, retainedPermission);
+    await Promise.all([
+        releaseStagedModelCatalogPermission(catalog, retainedPermission),
+        request === catalog
+            ? null
+            : releaseStagedModelCatalogPermission(request, retainedPermission),
+    ]);
 }
 
 function catalogMatchesFormValues(catalog, values) {
@@ -1179,26 +1197,68 @@ function connectionMatchesFormValues(connection, values) {
     }
 }
 
-function projectSavedPersonalProviderModel(elements) {
+function projectSavedPersonalProviderModel(elements, preferredModel = '') {
     const profile = savedPersonalProviderState?.profile;
+    let values = null;
     let matchesSavedConnection = false;
-    if (profile) {
-        try {
-            const values = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+    try {
+        values = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+        if (profile) {
             matchesSavedConnection = connectionMatchesFormValues(profile, values);
-        } catch {
-            matchesSavedConnection = false;
         }
+    } catch {
+        matchesSavedConnection = false;
     }
-    const modelCatalog = matchesSavedConnection
-        ? savedPersonalProviderState?.modelCatalog
-        : null;
+    const modelCatalog = getApplicablePersonalProviderCatalog(values);
+    const selectedModel = preferredModel || (matchesSavedConnection ? profile.model : '');
+    const selectedModelIsAbsent = Boolean(
+        selectedModel
+        && modelCatalog?.modelIds?.length
+        && !modelCatalog.modelIds.includes(selectedModel)
+    );
     replacePersonalProviderModelOptions(
         elements.personalProviderModel,
         modelCatalog?.modelIds || [],
-        matchesSavedConnection ? profile.model : ''
+        selectedModel,
+        selectedModelIsAbsent
+            ? `${selectedModel}（目前選擇，模型目錄中沒有）`
+            : ''
     );
     updateLoadPersonalProviderModelsButton(elements, Boolean(modelCatalog));
+}
+
+function getApplicablePersonalProviderCatalog(values) {
+    if (connectionMatchesFormValues(stagedModelCatalog?.connection, values)) {
+        return stagedModelCatalog;
+    }
+    if (connectionMatchesFormValues(savedPersonalProviderState?.profile, values)) {
+        return savedPersonalProviderState?.modelCatalog || null;
+    }
+    return null;
+}
+
+async function persistRefreshedPersonalProviderCatalog(catalog) {
+    const savedState = savedPersonalProviderState;
+    if (!savedState?.profile
+        || !connectionMatchesFormValues(savedState.profile, catalog.connection)) {
+        return { persisted: false, error: null };
+    }
+    try {
+        const persisted = await persistPersonalProviderModelCatalog({
+            generation: savedState.revision,
+            connection: catalog.connection,
+            modelIds: catalog.modelIds,
+        });
+        if (persisted) {
+            savedPersonalProviderState = {
+                ...savedState,
+                modelCatalog: { modelIds: [...catalog.modelIds] },
+            };
+        }
+        return { persisted, error: null };
+    } catch (error) {
+        return { persisted: false, error };
+    }
 }
 
 export async function handlePersonalProviderLoadModels(elements, modelService = new DirectLlmApiService()) {
@@ -1218,7 +1278,15 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         return null;
     }
 
-    await invalidatePersonalProviderModelCatalog(elements, pendingPermission.permission);
+    const supersededRequest = activeModelCatalogRequest;
+    if (supersededRequest) {
+        activeModelCatalogRequest = null;
+        supersededRequest.controller?.abort();
+        await releaseStagedModelCatalogPermission(
+            supersededRequest,
+            pendingPermission.permission
+        );
+    }
     let currentValues;
     try {
         currentValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
@@ -1242,7 +1310,8 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         modelIds: [],
         controller,
     };
-    stagedModelCatalog = catalog;
+    const selectionAtStart = elements.personalProviderModel?.value || '';
+    activeModelCatalogRequest = catalog;
     if (elements.loadPersonalProviderModelsButton) elements.loadPersonalProviderModelsButton.disabled = true;
     setPersonalProviderFeedback(elements, '', 'error');
     setPersonalProviderFeedback(elements, '正在取得可用模型…', 'status');
@@ -1253,25 +1322,63 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         if (!granted) throw new Error('未取得提供者存取權，無法載入模型。');
         catalogAccessGranted = true;
         const modelIds = await modelService.loadModels(catalog.connection, { signal: controller.signal });
-        if (stagedModelCatalog !== catalog || controller.signal.aborted) return null;
+        if (activeModelCatalogRequest !== catalog || controller.signal.aborted) return null;
+        let completedValues;
+        try {
+            completedValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+        } catch {
+            completedValues = null;
+        }
+        if (!connectionMatchesFormValues(catalog.connection, completedValues)) {
+            activeModelCatalogRequest = null;
+            await releaseStagedModelCatalogPermission(catalog, stagedModelCatalog?.permission);
+            return null;
+        }
+
+        const selectedModel = elements.personalProviderModel?.value || selectionAtStart;
         catalog.modelIds = modelIds;
+        stagedModelCatalog = catalog;
+        activeModelCatalogRequest = null;
         setManualPersonalProviderModelMode(elements);
-        replacePersonalProviderModelOptions(elements.personalProviderModel, modelIds);
-        setPersonalProviderFeedback(elements, '請選擇模型後再儲存設定。', 'status');
+        const persistence = await persistRefreshedPersonalProviderCatalog(catalog);
+        projectSavedPersonalProviderModel(elements, selectedModel);
+
+        const selectionOmitted = Boolean(selectedModel && !modelIds.includes(selectedModel));
+        const warnings = [];
+        if (selectionOmitted) {
+            warnings.push(`目前選擇的模型 ${selectedModel} 不在重新載入的模型目錄中；選擇仍保留。`);
+        }
+        if (persistence.error) {
+            warnings.push('無法更新本機快取；重新開啟後不會保留這次結果。');
+        } else if (savedPersonalProviderState?.profile
+            && connectionMatchesFormValues(savedPersonalProviderState.profile, catalog.connection)
+            && !persistence.persisted) {
+            warnings.push('已儲存的提供者設定已變更；這次結果只會保留到重新開啟前。');
+        }
+        setPersonalProviderFeedback(elements, warnings.join(' '), 'error');
+        setPersonalProviderFeedback(
+            elements,
+            persistence.persisted ? '模型目錄已重新載入並儲存。' : '模型目錄已載入。請選擇模型後再儲存設定。',
+            'status'
+        );
         return modelIds;
     } catch (error) {
-        if (stagedModelCatalog !== catalog || controller.signal.aborted) return null;
-        stagedModelCatalog = null;
-        replacePersonalProviderModelOptions(elements.personalProviderModel);
-        await releaseStagedModelCatalogPermission(catalog);
-        if (catalogAccessGranted && catalog.connection.protocol === RESPONSES_PROTOCOL) {
-            let currentValues;
-            try {
-                currentValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
-            } catch {
-                currentValues = null;
-            }
-            if (!connectionMatchesFormValues(catalog.connection, currentValues)) return null;
+        if (activeModelCatalogRequest !== catalog || controller.signal.aborted) return null;
+        activeModelCatalogRequest = null;
+        const selectedModel = elements.personalProviderModel?.value || selectionAtStart;
+        projectSavedPersonalProviderModel(elements, selectedModel);
+        await releaseStagedModelCatalogPermission(catalog, stagedModelCatalog?.permission);
+        let failureValues;
+        try {
+            failureValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+        } catch {
+            failureValues = null;
+        }
+        const hasUsableCatalog = Boolean(getApplicablePersonalProviderCatalog(failureValues));
+        if (catalogAccessGranted
+            && catalog.connection.protocol === RESPONSES_PROTOCOL
+            && !hasUsableCatalog) {
+            if (!connectionMatchesFormValues(catalog.connection, failureValues)) return null;
             setManualPersonalProviderModelMode(elements, catalog.connection);
             const catalogError = error.message || '無法取得提供者模型。';
             setPersonalProviderFeedback(
@@ -1285,8 +1392,20 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         }
         return null;
     } finally {
-        if (!stagedModelCatalog || stagedModelCatalog === catalog) {
-            updateLoadPersonalProviderModelsButton(elements);
+        if (activeModelCatalogRequest === catalog) {
+            activeModelCatalogRequest = null;
+        }
+        if (!activeModelCatalogRequest) {
+            let finalValues;
+            try {
+                finalValues = resolvePersonalProviderFormValues(getPersonalProviderFormValues(elements));
+            } catch {
+                finalValues = null;
+            }
+            updateLoadPersonalProviderModelsButton(
+                elements,
+                Boolean(getApplicablePersonalProviderCatalog(finalValues))
+            );
         }
     }
 }

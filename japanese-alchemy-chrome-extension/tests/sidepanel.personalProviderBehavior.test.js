@@ -4,6 +4,7 @@ import {
   PERSONAL_PROVIDER_MODE,
   RESPONSES_PROTOCOL,
   ANALYSIS_PROVIDER_MODE_KEY,
+  PERSONAL_PROVIDER_CATALOG_KEY_PREFIX,
   PERSONAL_PROVIDER_PROFILE_KEY,
   PERSONAL_PROVIDER_REVISION_KEY,
 } from '../src/scripts/personalProvider.js';
@@ -217,6 +218,188 @@ describe('sidepanel personal-provider settings', () => {
     expect(modelService.loadModels).toHaveBeenCalledTimes(1);
   });
 
+  test('keeps the current catalog visible while Reload runs and persists success immediately', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    let resolveReload;
+    const modelService = {
+      loadModels: jest.fn()
+        .mockResolvedValueOnce(['model-b', 'model-a'])
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveReload = resolve; })),
+    };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+
+    const reloading = handlePersonalProviderLoadModels(elements, modelService);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(elements.loadPersonalProviderModelsButton.disabled).toBe(true);
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    expect(modelService.loadModels).toHaveBeenCalledTimes(2);
+
+    resolveReload(['model-c', 'model-a']);
+    await reloading;
+
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(1);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY].model).toBe('model-a');
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`].modelIds)
+      .toEqual(['model-c', 'model-a']);
+    expect(elements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
+    expect(elements.personalProviderStatus.textContent).toContain('已重新載入');
+  });
+
+  test('keeps an omitted saved model selected and warns without changing the profile', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn()
+      .mockResolvedValueOnce(['model-b', 'model-a'])
+      .mockResolvedValueOnce(['model-b']) };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    const options = elements.personalProviderModel.replaceChildren.mock.calls.at(-1);
+    expect(options.map((option) => option.value)).toEqual(['', 'model-a', 'model-b']);
+    expect(options[1].textContent).toContain('目錄中沒有');
+    expect(elements.personalProviderError.textContent).toContain('model-a');
+    expect(elements.personalProviderError.focus).not.toHaveBeenCalled();
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY].model).toBe('model-a');
+  });
+
+  test('retains the last-known-good catalog when Reload fails', async () => {
+    setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn()
+      .mockResolvedValueOnce(['model-b', 'model-a'])
+      .mockRejectedValueOnce(new Error('provider unavailable')) };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    const options = elements.personalProviderModel.replaceChildren.mock.calls.at(-1);
+    expect(options.map((option) => option.value)).toEqual(['', 'model-b', 'model-a']);
+    expect(elements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
+    expect(elements.personalProviderError.textContent).toContain('provider unavailable');
+  });
+
+  test('retains the last-known-good catalog when Reload permission is denied', async () => {
+    setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn(async () => ['model-a']) };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+    global.chrome.permissions.request.mockResolvedValueOnce(false);
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(modelService.loadModels).toHaveBeenCalledTimes(1);
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    expect(elements.loadPersonalProviderModelsButton.textContent).toBe('重新載入模型');
+    expect(elements.personalProviderError.textContent).toContain('未取得提供者存取權');
+  });
+
+  test('preserves a model choice changed during Reload completion', async () => {
+    setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    let resolveReload;
+    const modelService = {
+      loadModels: jest.fn()
+        .mockResolvedValueOnce(['model-a', 'model-b'])
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveReload = resolve; })),
+    };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+
+    const reloading = handlePersonalProviderLoadModels(elements, modelService);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    elements.personalProviderModel.value = 'model-b';
+    resolveReload(['model-b', 'model-c']);
+    await reloading;
+
+    expect(elements.personalProviderModel.value).toBe('model-b');
+    expect(elements.personalProviderError.textContent).toBe('');
+  });
+
+  test('keeps refreshed models session-staged when immediate persistence fails', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn()
+      .mockResolvedValueOnce(['model-a'])
+      .mockResolvedValueOnce(['model-b', 'model-a']) };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+    const priorCatalog = structuredClone(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]);
+    global.chrome.storage.local.set.mockRejectedValueOnce(new Error('storage failed'));
+
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderModel.value).toBe('model-a');
+    const options = elements.personalProviderModel.replaceChildren.mock.calls.at(-1);
+    expect(options.map((option) => option.value)).toEqual(['', 'model-b', 'model-a']);
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]).toEqual(priorCatalog);
+    expect(elements.personalProviderError.textContent).toContain('重新開啟後不會保留');
+
+    elements.personalProviderModel.value = 'model-b';
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY].model).toBe('model-b');
+  });
+
+  test('keeps edited-connection discovery session-staged until Save', async () => {
+    const { store } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn()
+      .mockResolvedValueOnce(['model-a'])
+      .mockResolvedValueOnce(['edited-model']) };
+    await handlePersonalProviderLoadModels(elements, modelService);
+    elements.personalProviderModel.value = 'model-a';
+    await handlePersonalProviderSave(elements);
+    const priorCatalog = structuredClone(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]);
+
+    elements.personalProviderApiUrl.value = 'https://api.example.test/v2';
+    await invalidatePersonalProviderModelCatalog(elements);
+    await handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(elements.personalProviderModel.value).toBe('');
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(1);
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]).toEqual(priorCatalog);
+    elements.personalProviderModel.value = 'edited-model';
+    await handlePersonalProviderSave(elements);
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(2);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY].apiUrl).toBe('https://api.example.test/v2');
+  });
+
   test('renders a saved Responses-compatible protocol while keeping the API key masked', async () => {
     setupChrome({
       [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
@@ -385,6 +568,26 @@ describe('sidepanel personal-provider settings', () => {
     expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(expect.objectContaining({ model: 'model-a' }));
   });
 
+  test('starts the optional permission request synchronously from the Load gesture', async () => {
+    setupChrome();
+    let resolvePermission;
+    global.chrome.permissions.request.mockImplementationOnce(() => new Promise((resolve) => {
+      resolvePermission = resolve;
+    }));
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    const modelService = { loadModels: jest.fn() };
+
+    const loading = handlePersonalProviderLoadModels(elements, modelService);
+
+    expect(global.chrome.permissions.request).toHaveBeenCalledTimes(1);
+    expect(modelService.loadModels).not.toHaveBeenCalled();
+    resolvePermission(false);
+    await loading;
+  });
+
   test('requires a fresh catalog selection after the personal-provider protocol changes', async () => {
     const { store } = setupChrome();
     const elements = createElements({
@@ -424,6 +627,30 @@ describe('sidepanel personal-provider settings', () => {
     expect(global.chrome.permissions.remove).toHaveBeenCalledWith({
       origins: ['https://api.example.test/*'],
     });
+  });
+
+  test('releases newly granted permission when the form changes before discovery completes', async () => {
+    const { permissions } = setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1/',
+      apiKey: 'personal-secret-key',
+    });
+    let resolveModels;
+    const modelService = { loadModels: jest.fn(() => new Promise((resolve) => {
+      resolveModels = resolve;
+    })) };
+
+    const loading = handlePersonalProviderLoadModels(elements, modelService);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    elements.personalProviderApiUrl.value = 'https://api.example.test/v2';
+    resolveModels(['unused-model']);
+    await loading;
+
+    expect(permissions.has('https://api.example.test/*')).toBe(false);
+    expect(global.chrome.permissions.remove).toHaveBeenCalledWith({
+      origins: ['https://api.example.test/*'],
+    });
+    expect(elements.personalProviderModel.value).toBe('');
   });
 
   test('re-enables model discovery after a catalog failure and releases its temporary permission', async () => {

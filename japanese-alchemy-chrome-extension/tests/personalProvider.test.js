@@ -12,6 +12,7 @@ import {
   getOriginPermission,
   getPersonalProviderState,
   normalizeApiBaseUrl,
+  persistPersonalProviderModelCatalog,
   requestPersonalProviderOriginPermission,
   savePersonalProvider,
   setAnalysisProviderMode,
@@ -188,6 +189,46 @@ describe('personal provider state', () => {
     const rawCatalog = JSON.stringify(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]);
     expect(rawCatalog).not.toContain('personal-secret-key');
     expect(rawCatalog).not.toContain('apiKey');
+  });
+
+  test('replaces the current generation catalog without resaving or changing the profile', async () => {
+    const { store } = setupChrome();
+    const saved = await savePersonalProvider(profile, null, ['old-model', 'example-model']);
+
+    await expect(persistPersonalProviderModelCatalog({
+      generation: saved.revision,
+      connection: saved.profile,
+      modelIds: ['new-model', 'example-model'],
+    })).resolves.toBe(true);
+
+    expect(store[PERSONAL_PROVIDER_REVISION_KEY]).toBe(1);
+    expect(store[PERSONAL_PROVIDER_PROFILE_KEY]).toEqual(saved.profile);
+    expect(store[PERSONAL_PROVIDER_CATALOG_REF_KEY]).toEqual({
+      version: 1,
+      generation: 1,
+      status: 'available',
+    });
+    expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]).toEqual({
+      version: 1,
+      generation: 1,
+      apiUrl: 'https://api.example.test/v1',
+      protocol: CHAT_COMPLETIONS_PROTOCOL,
+      modelIds: ['new-model', 'example-model'],
+    });
+  });
+
+  test('does not persist a refreshed catalog for a different saved connection', async () => {
+    const { store } = setupChrome();
+    const saved = await savePersonalProvider(profile, null, ['old-model']);
+    const priorStore = structuredClone(store);
+
+    await expect(persistPersonalProviderModelCatalog({
+      generation: saved.revision,
+      connection: { ...saved.profile, apiKey: 'edited-secret-key' },
+      modelIds: ['edited-model'],
+    })).resolves.toBe(false);
+
+    expect(store).toEqual(priorStore);
   });
 
   test('carries a catalog across the same connection and drops it for a replacement connection', async () => {

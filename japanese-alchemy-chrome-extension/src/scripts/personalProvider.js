@@ -344,6 +344,49 @@ export async function releasePersonalProviderOriginPermission(permission) {
 }
 
 /**
+ * Persist model discovery for the current saved profile without creating a new
+ * profile generation. Edited/new connections deliberately return false so the
+ * side panel can keep their successful catalogs session-staged until Save.
+ */
+export async function persistPersonalProviderModelCatalog({ generation, connection, modelIds }) {
+  const expectedGeneration = normalizeRevision(generation);
+  const normalizedConnection = normalizePersonalProviderConnection(connection);
+  const normalizedModelIds = normalizeModelIds(modelIds);
+  if (!expectedGeneration || !normalizedModelIds) {
+    throw new PersonalProviderError('模型目錄無效。', 'invalid_model_catalog');
+  }
+
+  const stored = await getStoredProviderValues();
+  let currentProfile;
+  try {
+    currentProfile = normalizePersonalProviderProfile(stored?.[PERSONAL_PROVIDER_PROFILE_KEY]);
+  } catch {
+    return false;
+  }
+  const currentGeneration = normalizeRevision(stored?.[PERSONAL_PROVIDER_REVISION_KEY]);
+  if (currentGeneration !== expectedGeneration
+      || !connectionsMatch(currentProfile, normalizedConnection)) {
+    return false;
+  }
+
+  await requireLocalStorage().set({
+    [PERSONAL_PROVIDER_CATALOG_REF_KEY]: {
+      version: MODEL_CATALOG_VERSION,
+      generation: expectedGeneration,
+      status: CATALOG_AVAILABLE,
+    },
+    [getModelCatalogStorageKey(expectedGeneration)]: {
+      version: MODEL_CATALOG_VERSION,
+      generation: expectedGeneration,
+      apiUrl: normalizedConnection.apiUrl,
+      protocol: normalizedConnection.protocol,
+      modelIds: [...normalizedModelIds],
+    },
+  });
+  return true;
+}
+
+/**
  * Request the exact provider origin before saving a replacement profile. The
  * previous origin is released only after the new profile has committed.
  */
