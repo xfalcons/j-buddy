@@ -31,7 +31,7 @@ describe('formatAnalysisResult', () => {
       expect(result.html).toBe('');
     });
 
-    test('sanitizes provider markup and creates save controls only for J-Buddy headings', () => {
+    test('sanitizes provider markup and renders no save controls', () => {
       const markdown = `
 #### <單字>安全
   - 說明
@@ -45,9 +45,8 @@ describe('formatAnalysisResult', () => {
       expect(result.html).not.toContain('onclick=');
       expect(result.html).not.toContain('javascript:');
       expect(result.html).not.toContain('value="forged"');
-      expect(result.html).toContain('name="words"');
-      // Only the marker-prefixed heading receives the controlled checkbox.
-      expect((result.html.match(/type="checkbox"/g) || [])).toHaveLength(1);
+      expect(result.html).not.toContain('type="checkbox"');
+      expect(result.html).not.toContain('name="words"');
     });
 
     test('sanitizes streaming-preview markup before it enters the side panel', () => {

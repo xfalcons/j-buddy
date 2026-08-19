@@ -17,10 +17,11 @@ export async function saveItemsHandler(request: any): Promise<SaveItemsResponse>
     );
   }
 
-  const words = analysis.words || [];
-  const grammars = analysis.grammars || [];
-  const isShared = analysis.is_shared || false;
-  const metadata = analysis.metadata || {};
+   const words = analysis.words || [];
+   const grammars = analysis.grammars || [];
+    const page = analysis.page;
+   const isShared = analysis.is_shared || false;
+   const metadata = analysis.metadata || {};
 
   logger.info(`saveItems received`, {
     userId: userId || 'shared',
@@ -46,20 +47,25 @@ export async function saveItemsHandler(request: any): Promise<SaveItemsResponse>
 
     // Save grammar items
     const grammarsSaved = await firestoreService.saveGrammar(
-      safeUserId, 
-      grammars, 
-      isShared, 
+      safeUserId,
+      grammars,
+      isShared,
       metadata
     );
 
+    const pageSaved = page
+      ? await firestoreService.saveAnalysisPage(safeUserId, page, isShared, metadata)
+      : false;
+
     const response: SaveItemsResponse = {
       success: true,
-      message: isShared 
-        ? "Items saved to shared collection" 
+      message: isShared
+        ? "Items saved to shared collection"
         : "Items saved successfully",
       saved: {
         words_count: wordsSaved,
         grammars_count: grammarsSaved,
+        page_saved: pageSaved,
       },
     };
 

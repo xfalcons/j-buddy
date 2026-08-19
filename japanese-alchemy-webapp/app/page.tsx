@@ -10,12 +10,14 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { 
   getUserVocabularies, 
   getUserGrammars,
+  getUserAnalysisPages,
 } from '@/services/firestoreService';
-import { Vocabulary, Grammar } from '@/types';
+import { Vocabulary, Grammar, AnalysisPage } from '@/types';
 import { 
   parseFurigana, 
   renderVocabularyDetail,
-  renderGrammarExplanation 
+  renderGrammarExplanation,
+  markdownToHtml,
 } from '@/lib/textUtils';
 
 export default function Dashboard() {
@@ -24,6 +26,7 @@ export default function Dashboard() {
   
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [grammars, setGrammars] = useState<Grammar[]>([]);
+  const [analysisPages, setAnalysisPages] = useState<AnalysisPage[]>([]);
   const [activeTab, setActiveTab] = useState('vocabularies');
 
   useEffect(() => {
@@ -41,15 +44,16 @@ export default function Dashboard() {
   const loadData = async () => {
     if (!user) return;
     
-    // print user for debugging
     console.log('Loading data for user:', user);
     try {
-      const [vocabData, grammarData] = await Promise.all([
+      const [vocabData, grammarData, pagesData] = await Promise.all([
         getUserVocabularies(user.uid),
-        getUserGrammars(user.uid)
+        getUserGrammars(user.uid),
+        getUserAnalysisPages(user.uid)
       ]);
       setVocabularies(vocabData);
       setGrammars(grammarData);
+      setAnalysisPages(pagesData);
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -95,12 +99,15 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsList className="grid w-full grid-cols-3 max-w-md">
             <TabsTrigger value="vocabularies">
               Vocabularies ({vocabularies.length})
             </TabsTrigger>
             <TabsTrigger value="grammars">
               Grammars ({grammars.length})
+            </TabsTrigger>
+            <TabsTrigger value="pages">
+              Pages ({analysisPages.length})
             </TabsTrigger>
           </TabsList>
 
@@ -176,6 +183,56 @@ export default function Dashboard() {
                       <div 
                         className="text-sm markdown-content"
                         dangerouslySetInnerHTML={{ __html: renderGrammarExplanation(grammar.explanation) }}
+                      />
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Pages Tab */}
+          <TabsContent value="pages" className="space-y-4">
+            <div>
+              <h2 className="text-2xl font-bold">My Pages</h2>
+              <p className="text-muted-foreground">
+                Browse your saved analysis pages
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              {analysisPages.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <p className="text-gray-500">No analysis pages found.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                analysisPages.map((page) => (
+                  <Card key={page.id}>
+                    <CardHeader>
+                      <CardTitle 
+                        className="text-xl"
+                        dangerouslySetInnerHTML={{ __html: parseFurigana(page.source_text) }}
+                      />
+                      <CardDescription>
+                        {new Date(page.createdAt).toLocaleDateString()}
+                        {page.source_url && (
+                          <a 
+                            href={page.source_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="ml-2 text-primary hover:underline"
+                          >
+                            Source
+                          </a>
+                        )}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div 
+                        className="text-sm markdown-content"
+                        dangerouslySetInnerHTML={{ __html: markdownToHtml(parseFurigana(page.rendered_markdown)) }}
                       />
                     </CardContent>
                   </Card>

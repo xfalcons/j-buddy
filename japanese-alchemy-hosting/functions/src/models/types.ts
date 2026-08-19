@@ -43,6 +43,9 @@ export interface SaveItemsRequest {
     is_shared?: boolean;
     words?: Array<{ term: string; [key: string]: any }>;
     grammars?: Array<{ point: string; [key: string]: any }>;
+    page?: {
+      rendered_markdown: string;
+    };
     metadata?: {
       source_text?: string;
       source_url?: string;
@@ -57,7 +60,17 @@ export interface SaveItemsResponse {
   saved: {
     words_count: number;
     grammars_count: number;
+    page_saved: boolean;
   };
+}
+
+export interface AnalysisPageItem {
+  id?: string;
+  rendered_markdown: string;
+  source_text: string;
+  source_url: string;
+  saved_at: string;
+  createdAt: number;
 }
 
 // LLM API types (OpenAI-compatible, used by Gemini and ZAI)

@@ -252,7 +252,6 @@ describe('sidepanel analysis-mode behavior', () => {
     await analizingSelectedText(text, context, { promptVariant: 'v2' });
 
     expect(apiCalls).toHaveLength(1);
-    expect(prose.innerHTML).toContain('checkbox');
     expect(prose.innerHTML).toContain('成長');
     expect(result.classList.contains('show')).toBe(true);
     expect(copyButton.disabled).toBe(false);

@@ -13,3 +13,12 @@ export interface Grammar {
   createdAt: Date;
   userId: string;
 }
+
+export interface AnalysisPage {
+  id: string;
+  rendered_markdown: string;
+  source_text: string;
+  source_url: string;
+  saved_at: string;
+  createdAt: Date;
+}
