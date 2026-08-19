@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
 // Firebase configuration
@@ -30,6 +30,7 @@ export const functions = getFunctions(app);
 // Connect to Functions emulator in development
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
   try {
+    connectFirestoreEmulator(db, 'localhost', 8080);
     connectFunctionsEmulator(functions, 'localhost', 5001);
   } catch (error) {
     console.log('Functions emulator already connected');
