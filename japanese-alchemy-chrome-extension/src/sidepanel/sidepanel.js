@@ -132,36 +132,9 @@ export function sanitizeAnalysisTextForStorage(value) {
         .replace(/<\/?[^>]+>/g, '');
 }
 
-function escapeHtmlAttribute(value) {
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-}
-
-export function renderAnalysisMarkdown(markdown, { includeCheckboxes = false } = {}) {
+export function renderAnalysisMarkdown(markdown) {
     const rubyConverted = convertToRuby(markdown);
-    let html = sanitizeAnalysisHtml(marked.parse(rubyConverted));
-    if (!includeCheckboxes) return html;
-
-    // Only the prescribed analysis headings generate save controls. A raw
-    // provider-supplied input was removed above and a generic h4 cannot create
-    // a checkbox by itself.
-    return html.replace(/<h4>([\s\S]*?)<\/h4>/g, (match, headingText) => {
-        let typename = null;
-        if (headingText.includes('&lt;文法&gt;')) {
-            headingText = headingText.replace('&lt;文法&gt;', '').trim();
-            typename = 'grammars';
-        } else if (headingText.includes('&lt;單字&gt;')) {
-            headingText = headingText.replace('&lt;單字&gt;', '').trim();
-            typename = 'words';
-        }
-        if (!typename) return `<h4>${headingText}</h4>`;
-        const convertedHeading = escapeHtmlAttribute(convertFromRuby(headingText));
-        return `<h4><input type="checkbox" name="${typename}" value="${convertedHeading}">${headingText}</h4>`;
-    });
+    return sanitizeAnalysisHtml(marked.parse(rubyConverted));
 }
 
 // Function to convert Japanese text with readings in square brackets to HTML with ruby tags
@@ -174,19 +147,6 @@ export function convertToRuby(text) {
         kanji = kanji.trim();
         reading = reading.trim();
         return `<ruby><rb>${kanji}</rb><rt>${reading}</rt></ruby>`;
-    });
-}
-
-// Function to convert Ruby tags back to markdown format
-export function convertFromRuby(html) {
-    if (!html) return '';
-
-    // Handle the format: <ruby><rb>漢字</rb><rt>かんじ</rt></ruby> to {漢字|かんじ}
-    return html.replace(/<ruby>\s*<rb>(.+?)<\/rb>\s*<rt>(.+?)<\/rt>\s*<\/ruby>/g, (match, kanji, reading) => {
-        // Trim any whitespace from kanji and reading
-        kanji = kanji.trim();
-        reading = reading.trim();
-        return `{${kanji}|${reading}}`;
     });
 }
 
@@ -246,7 +206,7 @@ export function formatAnalysisResult(markdown) {
     // console.log('jsonData after word section:', jsonData);
     resultData.json = jsonData;
 
-    resultData.html = renderAnalysisMarkdown(markdown, { includeCheckboxes: true });
+    resultData.html = renderAnalysisMarkdown(markdown);
     // console.log('Formatted HTML:', resultData.html);
 
     return resultData;
@@ -883,36 +843,17 @@ async function handleSaveForLater() {
     // Check if button is already saving
     if (elements.saveForLaterBtn.classList.contains('saving')) return;
 
-    // Get all checked checkboxes
-    const checkedWords = document.querySelectorAll('input[name="words"]:checked');
-    const checkedGrammars = document.querySelectorAll('input[name="grammars"]:checked');
+    // Build vocabulary array from all parsed words
+    const words = (saveForLaterJson.words || []).map(word => ({
+        term: word.term,
+        detail: word.detail
+    }));
 
-    // Validate that at least one item is checked
-    if (checkedWords.length === 0 && checkedGrammars.length === 0) {
-        alertMessage(elements.alertMessage, '請至少選取一個單字或文法重點再儲存。', 'info');
-        elements.alertMessage.classList.add('show');
-        return;
-    }
-
-    // Collect checked values
-    const checkedWordValues = Array.from(checkedWords).map(cb => cb.value);
-    const checkedGrammarValues = Array.from(checkedGrammars).map(cb => cb.value);
-
-    // Build vocabulary array from checked words
-    const words = saveForLaterJson.words
-        .filter(word => checkedWordValues.includes(word.term))
-        .map(word => ({
-            term: word.term,
-            detail: word.detail
-        }));
-
-    // Build grammar_points array from checked grammars
-    const grammars = saveForLaterJson.grammars
-        .filter(grammar => checkedGrammarValues.includes(grammar.point))
-        .map(grammar => ({
-            point: grammar.point,
-            explanation: grammar.explanation
-        }));
+    // Build grammar array from all parsed grammars
+    const grammars = (saveForLaterJson.grammars || []).map(grammar => ({
+        point: grammar.point,
+        explanation: grammar.explanation
+    }));
 
     // Get share checkbox state
     const isShared = elements.shareCheckbox?.checked ?? false;
@@ -924,6 +865,9 @@ async function handleSaveForLater() {
         words: words,
         grammars: grammars,
 
+        page: {
+            rendered_markdown: getCompletedAnalysisResponse(),
+        },
         is_shared: isShared,
         metadata: {
             source_text: localStorage.getItem('lastSelectedText') || '',
@@ -949,20 +893,17 @@ async function handleSaveForLater() {
         const result = await jaAlchemyApiService.saveAnalysis(analysis, userId);
 
         // Show success message
-        const message = isShared 
-            ? `已成功儲存 ${result.words_count} 個單字與 ${result.grammars_count} 個文法重點至共享收藏！`
-            : `已成功儲存 ${result.words_count} 個單字與 ${result.grammars_count} 個文法重點！`;
+        const message = isShared
+            ? `已成功儲存分析頁面至共享收藏！`
+            : `已成功儲存分析頁面！`;
         alertMessage(elements.alertMessage, message, 'info');
         elements.alertMessage.classList.add('show');
         // Scroll to top to see the message
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
-        // Optional: Uncheck all checkboxes after successful save
-        document.querySelectorAll('input[name="words"], input[name="grammars"]').forEach(cb => cb.checked = false);
-
-        console.log('[Save For Later] Save successful:', result);
+        console.log('[Save Analysis Page] Save successful:', result);
     } catch (error) {
-        console.error('[Save For Later] Save error:', error);
+        console.error('[Save Analysis Page] Save error:', error);
         alertMessage(elements.alertMessage, `儲存項目時發生錯誤：${error.message}`, 'error');
         elements.alertMessage.classList.add('show');
     } finally {

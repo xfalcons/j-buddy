@@ -1,6 +1,6 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import { VocabularyItem, GrammarItem } from "../models/types";
+import { VocabularyItem, GrammarItem, AnalysisPageItem } from "../models/types";
 
 export class FirestoreService {
   private db: admin.firestore.Firestore;
@@ -111,5 +111,36 @@ export class FirestoreService {
       id: doc.id,
       ...doc.data(),
     })) as GrammarItem[];
+  }
+
+  async saveAnalysisPage(
+    userId: string | null,
+    page: { rendered_markdown: string },
+    isShared: boolean = false,
+    metadata: any = {}
+  ): Promise<boolean> {
+    if (!page || !page.rendered_markdown) {
+      return false;
+    }
+
+    const pagesRef = isShared
+      ? this.db.collection('shared_analysis_pages')
+      : this.db.collection(`users/${userId}/analysis_pages`);
+    const timestamp = Date.now();
+
+    const pageItem: AnalysisPageItem = {
+      rendered_markdown: page.rendered_markdown,
+      source_text: metadata.source_text || '',
+      source_url: metadata.source_url || '',
+      saved_at: metadata.saved_at || new Date().toISOString(),
+      createdAt: timestamp,
+    };
+
+    await pagesRef.add(pageItem);
+    const logMessage = isShared
+      ? `Saved analysis page to shared collection`
+      : `Saved analysis page for user ${userId}`;
+    functions.logger.info(logMessage);
+    return true;
   }
 }

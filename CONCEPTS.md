@@ -11,7 +11,7 @@ The markdown document produced for a selected Japanese text analysis, carrying t
 The project's portable annotation syntax for Japanese readings: `{kanji|reading}` in markdown, converted to HTML ruby for display while remaining stable in saved or exported text.
 
 ### Saved item
-A vocabulary or grammar entry selected from an analysis and persisted for later review with enough detail to render outside the original sidepanel session.
+A vocabulary or grammar entry derived from a saved analysis page and persisted for later review with enough detail to render outside the original sidepanel session. Each derived item is a snapshot of the page's content at save time, not a live reference to the page.
 
 ### Enriched markdown
 Analysis markdown after a deterministic client-side preprocessing pass has added computed fields while preserving the same markdown contract for rendering, saving, copying, exporting, and caching.
@@ -48,3 +48,6 @@ The `****************` value shown for a saved personal-provider credential. It 
 
 ### High-value vocabulary item
 A vocabulary item selected for analysis because it materially helps comprehension or later sentence production in the current source text. High-value items may include verbs, サ變 nouns, adjectives, adverbs, compound nouns, and katakana loanwords, and are preferred over exhaustive N1-N3 extraction.
+
+### Analysis page
+A completed sidepanel analysis saved as one unit — the full rendered analysis markdown (vocabulary and grammar sections with ruby annotations) plus source metadata (original source text, source URL, timestamp) — persisted to a personal pages collection for later browsing in the webapp. Saving a page also derives all vocabulary and grammar items into the existing per-item review collections as snapshots.
