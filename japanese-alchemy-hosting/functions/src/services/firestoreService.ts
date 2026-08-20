@@ -1,6 +1,11 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import { VocabularyItem, GrammarItem, AnalysisPageItem } from "../models/types";
+import {
+  VocabularyItem,
+  GrammarItem,
+  AnalysisPageItem,
+  StructuredAnalysis,
+} from "../models/types";
 
 export class FirestoreService {
   private db: admin.firestore.Firestore;
@@ -115,7 +120,7 @@ export class FirestoreService {
 
   async saveAnalysisPage(
     userId: string | null,
-    page: { rendered_markdown: string },
+    page: { rendered_markdown: string; structured_json?: StructuredAnalysis },
     isShared: boolean = false,
     metadata: any = {}
   ): Promise<boolean> {
@@ -135,6 +140,9 @@ export class FirestoreService {
       saved_at: metadata.saved_at || new Date().toISOString(),
       createdAt: timestamp,
     };
+    if (page.structured_json) {
+      pageItem.structured_json = page.structured_json;
+    }
 
     await pagesRef.add(pageItem);
     const logMessage = isShared

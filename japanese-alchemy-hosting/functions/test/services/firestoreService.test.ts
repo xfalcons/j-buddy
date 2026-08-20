@@ -130,4 +130,53 @@ describe("FirestoreService", () => {
       expect(typeof addedData.createdAt).toBe("number");
     });
   });
+
+  describe("saveAnalysisPage", () => {
+    it("stores structured JSON when saving a page", async () => {
+      const add = jest.fn();
+      mockDb.collection.mockReturnValue({ add });
+      const structuredJson = {
+        words: [{ term: "日本語", detail: "Japanese language" }],
+        grammars: [{ point: "〜です", explanation: "Copula" }],
+      };
+
+      await service.saveAnalysisPage("test-user", {
+        rendered_markdown: "# Analysis",
+        structured_json: structuredJson,
+      });
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({
+        structured_json: structuredJson,
+      }));
+    });
+
+    it("keeps structured JSON optional for legacy page saves", async () => {
+      const add = jest.fn();
+      mockDb.collection.mockReturnValue({ add });
+
+      await service.saveAnalysisPage("test-user", {
+        rendered_markdown: "# Analysis",
+      });
+
+      expect(add).toHaveBeenCalledWith(expect.not.objectContaining({
+        structured_json: expect.anything(),
+      }));
+    });
+
+    it("stores structured JSON on shared pages", async () => {
+      const add = jest.fn();
+      mockDb.collection.mockReturnValue({ add });
+      const structuredJson = { words: [], grammars: [] };
+
+      await service.saveAnalysisPage(null, {
+        rendered_markdown: "# Shared analysis",
+        structured_json: structuredJson,
+      }, true);
+
+      expect(mockDb.collection).toHaveBeenCalledWith("shared_analysis_pages");
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({
+        structured_json: structuredJson,
+      }));
+    });
+  });
 });

@@ -45,6 +45,7 @@ export interface SaveItemsRequest {
     grammars?: Array<{ point: string; [key: string]: any }>;
     page?: {
       rendered_markdown: string;
+      structured_json?: StructuredAnalysis;
     };
     metadata?: {
       source_text?: string;
@@ -71,6 +72,12 @@ export interface AnalysisPageItem {
   source_url: string;
   saved_at: string;
   createdAt: number;
+  structured_json?: StructuredAnalysis;
+}
+
+export interface StructuredAnalysis {
+  words?: Array<{ term: string; detail: string }>;
+  grammars?: Array<{ point: string; explanation: string }>;
 }
 
 // LLM API types (OpenAI-compatible, used by Gemini and ZAI)

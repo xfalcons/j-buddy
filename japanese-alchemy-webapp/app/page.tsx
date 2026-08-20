@@ -7,10 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { 
+import {
   getUserVocabularies, 
   getUserGrammars,
   getUserAnalysisPages,
+  deleteAnalysisPage,
+  getSharedAnalysisPages,
+  importVocabulary,
+  importGrammar,
 } from '@/services/firestoreService';
 import { Vocabulary, Grammar, AnalysisPage } from '@/types';
 import { 
@@ -20,6 +24,15 @@ import {
   markdownToHtml,
 } from '@/lib/textUtils';
 
+function safeSourceUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return ['https:', 'http:'].includes(url.protocol) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function Dashboard() {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
@@ -27,6 +40,7 @@ export default function Dashboard() {
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [grammars, setGrammars] = useState<Grammar[]>([]);
   const [analysisPages, setAnalysisPages] = useState<AnalysisPage[]>([]);
+  const [sharedAnalysisPages, setSharedAnalysisPages] = useState<AnalysisPage[]>([]);
   const [activeTab, setActiveTab] = useState('vocabularies');
 
   useEffect(() => {
@@ -46,14 +60,16 @@ export default function Dashboard() {
     
     console.log('Loading data for user:', user);
     try {
-      const [vocabData, grammarData, pagesData] = await Promise.all([
+      const [vocabData, grammarData, pagesData, sharedPagesData] = await Promise.all([
         getUserVocabularies(user.uid),
         getUserGrammars(user.uid),
-        getUserAnalysisPages(user.uid)
+        getUserAnalysisPages(user.uid),
+        getSharedAnalysisPages(),
       ]);
       setVocabularies(vocabData);
       setGrammars(grammarData);
       setAnalysisPages(pagesData);
+      setSharedAnalysisPages(sharedPagesData);
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -62,6 +78,24 @@ export default function Dashboard() {
   const handleSignOut = async () => {
     await signOut();
     router.push('/auth');
+  };
+
+  const handleDeleteAnalysisPage = async (pageId: string) => {
+    if (!user) return;
+    await deleteAnalysisPage(user.uid, pageId);
+    setAnalysisPages((pages) => pages.filter((page) => page.id !== pageId));
+  };
+
+  const handleImportVocabulary = async (item: { term: string; detail: string }) => {
+    if (!user) return;
+    const imported = await importVocabulary(user.uid, item);
+    setVocabularies((items) => [imported, ...items]);
+  };
+
+  const handleImportGrammar = async (item: { point: string; explanation: string }) => {
+    if (!user) return;
+    const imported = await importGrammar(user.uid, item);
+    setGrammars((items) => [imported, ...items]);
   };
 
   if (loading) {
@@ -99,7 +133,7 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsList className="grid w-full grid-cols-4 max-w-xl">
             <TabsTrigger value="vocabularies">
               Vocabularies ({vocabularies.length})
             </TabsTrigger>
@@ -108,6 +142,9 @@ export default function Dashboard() {
             </TabsTrigger>
             <TabsTrigger value="pages">
               Pages ({analysisPages.length})
+            </TabsTrigger>
+            <TabsTrigger value="shared-pages">
+              Shared Pages ({sharedAnalysisPages.length})
             </TabsTrigger>
           </TabsList>
 
@@ -211,10 +248,15 @@ export default function Dashboard() {
                 analysisPages.map((page) => (
                   <Card key={page.id}>
                     <CardHeader>
-                      <CardTitle 
-                        className="text-xl"
-                        dangerouslySetInnerHTML={{ __html: parseFurigana(page.source_text) }}
-                      />
+                      <div className="flex items-start justify-between gap-4">
+                        <CardTitle
+                          className="text-xl"
+                          dangerouslySetInnerHTML={{ __html: parseFurigana(page.source_text) }}
+                        />
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteAnalysisPage(page.id)}>
+                          Delete
+                        </Button>
+                      </div>
                       <CardDescription>
                         {new Date(page.createdAt).toLocaleDateString()}
                         {page.source_url && (
@@ -237,6 +279,99 @@ export default function Dashboard() {
                     </CardContent>
                   </Card>
                 ))
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="shared-pages" className="space-y-4">
+            <div>
+              <h2 className="text-2xl font-bold">Shared Pages</h2>
+              <p className="text-muted-foreground">
+                Browse analysis pages shared by other learners
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              {sharedAnalysisPages.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <p className="text-gray-500">No shared analysis pages found.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                sharedAnalysisPages.map((page) => {
+                  const words = page.structured_json?.words ?? [];
+                  const grammars = page.structured_json?.grammars ?? [];
+                  const sourceUrl = safeSourceUrl(page.source_url);
+
+                  return (
+                    <Card key={page.id}>
+                      <CardHeader>
+                        <CardTitle
+                          className="text-xl"
+                          dangerouslySetInnerHTML={{ __html: parseFurigana(page.source_text) }}
+                        />
+                        <CardDescription>
+                          {new Date(page.createdAt).toLocaleDateString()}
+                          {sourceUrl && (
+                            <a
+                              href={sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-2 text-primary hover:underline"
+                            >
+                              Source
+                            </a>
+                          )}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        <div
+                          className="text-sm markdown-content"
+                          dangerouslySetInnerHTML={{ __html: markdownToHtml(parseFurigana(page.rendered_markdown)) }}
+                        />
+                        {page.structured_json ? (
+                          <div className="space-y-4 border-t pt-4">
+                            <h3 className="font-semibold">Import items</h3>
+                            {words.map((word, index) => (
+                              <div key={`${word.term}-${index}`} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="font-medium">{word.term}</p>
+                                  <div
+                                    className="text-sm markdown-content text-muted-foreground"
+                                    dangerouslySetInnerHTML={{ __html: renderVocabularyDetail(word.detail) }}
+                                  />
+                                </div>
+                                <Button size="sm" variant="outline" onClick={() => handleImportVocabulary(word)}>
+                                  Import vocabulary
+                                </Button>
+                              </div>
+                            ))}
+                            {grammars.map((grammar, index) => (
+                              <div key={`${grammar.point}-${index}`} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="font-medium">{grammar.point}</p>
+                                  <div
+                                    className="text-sm markdown-content text-muted-foreground"
+                                    dangerouslySetInnerHTML={{ __html: renderGrammarExplanation(grammar.explanation) }}
+                                  />
+                                </div>
+                                <Button size="sm" variant="outline" onClick={() => handleImportGrammar(grammar)}>
+                                  Import grammar
+                                </Button>
+                              </div>
+                            ))}
+                            {words.length === 0 && grammars.length === 0 && (
+                              <p className="text-sm text-muted-foreground">No importable items in this page.</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Structured items are unavailable for this page.</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </div>
           </TabsContent>

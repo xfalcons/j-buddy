@@ -14,6 +14,11 @@ export interface Grammar {
   userId: string;
 }
 
+export interface StructuredAnalysis {
+  words?: Array<{ term: string; detail: string }>;
+  grammars?: Array<{ point: string; explanation: string }>;
+}
+
 export interface AnalysisPage {
   id: string;
   rendered_markdown: string;
@@ -21,4 +26,5 @@ export interface AnalysisPage {
   source_url: string;
   saved_at: string;
   createdAt: Date;
+  structured_json?: StructuredAnalysis;
 }
