@@ -56,6 +56,21 @@ describe('analysis page Firestore operations', () => {
     expect(firestore.orderBy).toHaveBeenCalledWith('createdAt', 'desc');
   });
 
+  it('converts numeric Firestore timestamps to dates', async () => {
+    const createdAt = Date.parse('2026-08-20T00:00:00.000Z');
+    firestore.getDocs.mockResolvedValue({ docs: [{ id: 'shared-1', data: () => ({
+      rendered_markdown: '# Shared',
+      source_text: '共有',
+      source_url: '',
+      saved_at: '2026-08-20T00:00:00.000Z',
+      createdAt,
+    }) }] });
+
+    await expect(getSharedAnalysisPages()).resolves.toEqual([
+      expect.objectContaining({ createdAt: new Date(createdAt) }),
+    ]);
+  });
+
   it('imports vocabulary and grammar as new documents in the viewer collections', async () => {
     firestore.addDoc
       .mockResolvedValueOnce({ id: 'vocab-import' })

@@ -17,8 +17,9 @@ const GRAMMARS_SUBCOLLECTION = 'grammars';
 const ANALYSIS_PAGES_SUBCOLLECTION = 'analysis_pages';
 
 // Convert Firestore timestamp to Date
-const timestampToDate = (timestamp: Timestamp | Date): Date => {
-  return timestamp instanceof Timestamp ? timestamp.toDate() : timestamp;
+const timestampToDate = (timestamp: Timestamp | Date | number): Date => {
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
 };
 
 export async function getUserVocabularies(userId: string): Promise<Vocabulary[]> {

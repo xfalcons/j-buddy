@@ -34,36 +34,34 @@ export function parseFurigana(text: string): string {
   );
 }
 
-/**
- * Parse JSON detail field and extract the detail content
- * Returns null if parsing fails
- */
-export function parseDetailJson(detailJson: string): string | null {
-  if (!detailJson) return null;
-  
+function unwrapLegacyJsonField(storedValue: string, field: 'detail' | 'explanation'): string | null {
+  if (!storedValue.trim().startsWith('{')) return null;
+
   try {
-    const parsed = JSON.parse(detailJson);
-    return parsed.detail || null;
+    const parsed = JSON.parse(storedValue);
+    return parsed[field] || null;
   } catch (error) {
-    console.error('Error parsing detail JSON:', error);
+    console.error(`Error parsing ${field} JSON:`, error);
     return null;
   }
 }
 
 /**
- * Parse JSON explanation field and extract the explanation content
- * Returns null if parsing fails
+ * Extract legacy JSON detail content while treating Markdown as the canonical format
+ */
+export function parseDetailJson(detailJson: string): string | null {
+  if (!detailJson) return null;
+
+  return unwrapLegacyJsonField(detailJson, 'detail');
+}
+
+/**
+ * Extract legacy JSON explanation content while treating Markdown as the canonical format
  */
 export function parseExplanationJson(explanationJson: string): string | null {
   if (!explanationJson) return null;
-  
-  try {
-    const parsed = JSON.parse(explanationJson);
-    return parsed.explanation || null;
-  } catch (error) {
-    console.error('Error parsing explanation JSON:', error);
-    return null;
-  }
+
+  return unwrapLegacyJsonField(explanationJson, 'explanation');
 }
 
 /**

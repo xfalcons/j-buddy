@@ -50,30 +50,33 @@ export default function Dashboard() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (user) {
-      loadData();
-    }
-  }, [user]);
-
-  const loadData = async () => {
     if (!user) return;
-    
-    console.log('Loading data for user:', user);
-    try {
-      const [vocabData, grammarData, pagesData, sharedPagesData] = await Promise.all([
-        getUserVocabularies(user.uid),
-        getUserGrammars(user.uid),
-        getUserAnalysisPages(user.uid),
-        getSharedAnalysisPages(),
-      ]);
-      setVocabularies(vocabData);
-      setGrammars(grammarData);
-      setAnalysisPages(pagesData);
-      setSharedAnalysisPages(sharedPagesData);
-    } catch (error) {
-      console.error('Error loading data:', error);
-    }
-  };
+
+    let loadingData = true;
+    const loadData = async () => {
+      console.log('Loading data for user:', user);
+      try {
+        const [vocabData, grammarData, pagesData, sharedPagesData] = await Promise.all([
+          getUserVocabularies(user.uid),
+          getUserGrammars(user.uid),
+          getUserAnalysisPages(user.uid),
+          getSharedAnalysisPages(),
+        ]);
+        if (!loadingData) return;
+        setVocabularies(vocabData);
+        setGrammars(grammarData);
+        setAnalysisPages(pagesData);
+        setSharedAnalysisPages(sharedPagesData);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      }
+    };
+
+    void loadData();
+    return () => {
+      loadingData = false;
+    };
+  }, [user]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -245,40 +248,44 @@ export default function Dashboard() {
                   </CardContent>
                 </Card>
               ) : (
-                analysisPages.map((page) => (
-                  <Card key={page.id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between gap-4">
-                        <CardTitle
-                          className="text-xl"
-                          dangerouslySetInnerHTML={{ __html: parseFurigana(page.source_text) }}
+                analysisPages.map((page) => {
+                  const sourceUrl = safeSourceUrl(page.source_url);
+
+                  return (
+                    <Card key={page.id}>
+                      <CardHeader>
+                        <div className="flex items-start justify-between gap-4">
+                          <CardTitle
+                            className="text-xl"
+                            dangerouslySetInnerHTML={{ __html: parseFurigana(page.source_text) }}
+                          />
+                          <Button variant="destructive" size="sm" onClick={() => handleDeleteAnalysisPage(page.id)}>
+                            Delete
+                          </Button>
+                        </div>
+                        <CardDescription>
+                          {new Date(page.createdAt).toLocaleDateString()}
+                          {sourceUrl && (
+                            <a
+                              href={sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-2 text-primary hover:underline"
+                            >
+                              Source
+                            </a>
+                          )}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div
+                          className="text-sm markdown-content"
+                          dangerouslySetInnerHTML={{ __html: markdownToHtml(parseFurigana(page.rendered_markdown)) }}
                         />
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteAnalysisPage(page.id)}>
-                          Delete
-                        </Button>
-                      </div>
-                      <CardDescription>
-                        {new Date(page.createdAt).toLocaleDateString()}
-                        {page.source_url && (
-                          <a 
-                            href={page.source_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className="ml-2 text-primary hover:underline"
-                          >
-                            Source
-                          </a>
-                        )}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div 
-                        className="text-sm markdown-content"
-                        dangerouslySetInnerHTML={{ __html: markdownToHtml(parseFurigana(page.rendered_markdown)) }}
-                      />
-                    </CardContent>
-                  </Card>
-                ))
+                      </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </div>
           </TabsContent>
