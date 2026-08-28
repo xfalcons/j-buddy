@@ -57,7 +57,7 @@ export default function AuthPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">
-            J-Buddy: Learning Hub
+            J-Buddy Learn Japanese
           </CardTitle>
           <CardDescription className="text-lg">
             {isSignUp ? '建立帳號' : '登入你的帳號'}

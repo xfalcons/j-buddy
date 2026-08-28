@@ -156,7 +156,7 @@ export default function Dashboard() {
       <header className="bg-card border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-primary">
-            J-Buddy: Learning Hub
+            J-Buddy Learn Japanese
           </h1>
           <div className="flex items-center gap-4">
             {user ? (
