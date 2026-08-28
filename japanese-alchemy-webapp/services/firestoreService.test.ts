@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const firestore = vi.hoisted(() => ({
-  addDoc: vi.fn(),
   collection: vi.fn(),
   deleteDoc: vi.fn(),
   doc: vi.fn(),
@@ -17,8 +16,8 @@ vi.mock('@/lib/firebase', () => ({ db: { name: 'db' } }));
 import {
   deleteAnalysisPage,
   getSharedAnalysisPages,
-  importGrammar,
-  importVocabulary,
+  getSharedVocabularies,
+  getSharedGrammars,
 } from './firestoreService';
 
 describe('analysis page Firestore operations', () => {
@@ -70,26 +69,81 @@ describe('analysis page Firestore operations', () => {
       expect.objectContaining({ createdAt: new Date(createdAt) }),
     ]);
   });
+});
 
-  it('imports vocabulary and grammar as new documents in the viewer collections', async () => {
-    firestore.addDoc
-      .mockResolvedValueOnce({ id: 'vocab-import' })
-      .mockResolvedValueOnce({ id: 'grammar-import' });
+describe('shared vocabulary operations', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    firestore.collection.mockImplementation((...segments: unknown[]) => ({ segments }));
+    firestore.query.mockImplementation((...parts: unknown[]) => ({ parts }));
+    firestore.orderBy.mockReturnValue({ order: 'createdAt' });
+  });
 
-    const vocabulary = await importVocabulary('viewer', { term: '日本語', detail: 'Japanese' });
-    const grammar = await importGrammar('viewer', { point: '〜です', explanation: 'Copula' });
+  it('loads shared vocabularies in newest-first order', async () => {
+    firestore.getDocs.mockResolvedValue({ docs: [{ id: 'sv-1', data: () => ({
+      term: '日本語',
+      detail: '{"term":"日本語","reading":"にほんご"}',
+      createdAt: Date.parse('2026-08-20T00:00:00.000Z'),
+      metadata: { source_text: '日本語を学ぶ', source_url: 'https://example.com' },
+    }) }] });
 
-    expect(firestore.addDoc).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ segments: [{ path: 'users/viewer' }, 'vocabularies'] }),
-      expect.objectContaining({ term: '日本語', detail: 'Japanese', createdAt: expect.any(Date) }),
-    );
-    expect(firestore.addDoc).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ segments: [{ path: 'users/viewer' }, 'grammars'] }),
-      expect.objectContaining({ point: '〜です', explanation: 'Copula', createdAt: expect.any(Date) }),
-    );
-    expect(vocabulary).toEqual(expect.objectContaining({ id: 'vocab-import', term: '日本語' }));
-    expect(grammar).toEqual(expect.objectContaining({ id: 'grammar-import', point: '〜です' }));
+    const result = await getSharedVocabularies();
+
+    expect(firestore.collection).toHaveBeenCalledWith({ name: 'db' }, 'shared_vocabularies');
+    expect(firestore.orderBy).toHaveBeenCalledWith('createdAt', 'desc');
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'sv-1',
+        term: '日本語',
+        isShared: true,
+        metadata: { source_text: '日本語を学ぶ', source_url: 'https://example.com' },
+      }),
+    ]);
+  });
+
+  it('handles shared vocabulary items without metadata', async () => {
+    firestore.getDocs.mockResolvedValue({ docs: [{ id: 'sv-2', data: () => ({
+      term: '勉強',
+      detail: '{"term":"勉強"}',
+      createdAt: Date.parse('2026-08-20T00:00:00.000Z'),
+    }) }] });
+
+    const result = await getSharedVocabularies();
+
+    expect(result).toEqual([
+      expect.objectContaining({ id: 'sv-2', term: '勉強', isShared: true }),
+    ]);
+    expect(result[0].metadata).toBeUndefined();
+  });
+});
+
+describe('shared grammar operations', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    firestore.collection.mockImplementation((...segments: unknown[]) => ({ segments }));
+    firestore.query.mockImplementation((...parts: unknown[]) => ({ parts }));
+    firestore.orderBy.mockReturnValue({ order: 'createdAt' });
+  });
+
+  it('loads shared grammars in newest-first order', async () => {
+    firestore.getDocs.mockResolvedValue({ docs: [{ id: 'sg-1', data: () => ({
+      point: '〜です',
+      explanation: '{"point":"〜です","meaning":"copula"}',
+      createdAt: Date.parse('2026-08-20T00:00:00.000Z'),
+      metadata: { source_text: '私は学生です' },
+    }) }] });
+
+    const result = await getSharedGrammars();
+
+    expect(firestore.collection).toHaveBeenCalledWith({ name: 'db' }, 'shared_grammars');
+    expect(firestore.orderBy).toHaveBeenCalledWith('createdAt', 'desc');
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'sg-1',
+        point: '〜です',
+        isShared: true,
+        metadata: { source_text: '私は学生です' },
+      }),
+    ]);
   });
 });

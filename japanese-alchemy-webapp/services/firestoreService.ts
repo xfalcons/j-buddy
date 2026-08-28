@@ -1,7 +1,6 @@
 import {
   collection,
   getDocs,
-  addDoc,
   deleteDoc,
   doc,
   query,
@@ -23,7 +22,6 @@ const timestampToDate = (timestamp: Timestamp | Date | number): Date => {
 };
 
 export async function getUserVocabularies(userId: string): Promise<Vocabulary[]> {
-  // log userId for debugging
   const userDocRef = doc(db, 'users', userId);
   const q = query(
     collection(userDocRef, VOCABULARIES_SUBCOLLECTION),
@@ -31,14 +29,13 @@ export async function getUserVocabularies(userId: string): Promise<Vocabulary[]>
   );
   
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-    createdAt: timestampToDate(doc.data().createdAt as Timestamp),
+  return querySnapshot.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+    createdAt: timestampToDate(d.data().createdAt as Timestamp),
   })) as Vocabulary[];
 }
 
-// Grammar Services
 export async function getUserGrammars(userId: string): Promise<Grammar[]> {
   const userDocRef = doc(db, 'users', userId);
   const q = query(
@@ -47,10 +44,10 @@ export async function getUserGrammars(userId: string): Promise<Grammar[]> {
   );
  
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-    createdAt: timestampToDate(doc.data().createdAt as Timestamp),
+  return querySnapshot.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+    createdAt: timestampToDate(d.data().createdAt as Timestamp),
   })) as Grammar[];
 }
 
@@ -62,10 +59,10 @@ export async function getUserAnalysisPages(userId: string): Promise<AnalysisPage
   );
 
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-    createdAt: timestampToDate(doc.data().createdAt as Timestamp),
+  return querySnapshot.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+    createdAt: timestampToDate(d.data().createdAt as Timestamp),
   })) as AnalysisPage[];
 }
 
@@ -90,30 +87,38 @@ export async function getSharedAnalysisPages(): Promise<AnalysisPage[]> {
   }) as AnalysisPage[];
 }
 
-export async function importVocabulary(
-  userId: string,
-  item: Pick<Vocabulary, 'term' | 'detail'>
-): Promise<Vocabulary> {
-  const createdAt = new Date();
-  const userDocRef = doc(db, 'users', userId);
-  const document = await addDoc(
-    collection(userDocRef, VOCABULARIES_SUBCOLLECTION),
-    { ...item, userId, createdAt }
+export async function getSharedVocabularies(): Promise<Vocabulary[]> {
+  const q = query(
+    collection(db, 'shared_vocabularies'),
+    orderBy('createdAt', 'desc')
   );
 
-  return { id: document.id, ...item, userId, createdAt };
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map((vocabDoc) => {
+    const data = vocabDoc.data();
+    return {
+      id: vocabDoc.id,
+      ...data,
+      isShared: true,
+      createdAt: timestampToDate(data.createdAt as Timestamp),
+    };
+  }) as Vocabulary[];
 }
 
-export async function importGrammar(
-  userId: string,
-  item: Pick<Grammar, 'point' | 'explanation'>
-): Promise<Grammar> {
-  const createdAt = new Date();
-  const userDocRef = doc(db, 'users', userId);
-  const document = await addDoc(
-    collection(userDocRef, GRAMMARS_SUBCOLLECTION),
-    { ...item, userId, createdAt }
+export async function getSharedGrammars(): Promise<Grammar[]> {
+  const q = query(
+    collection(db, 'shared_grammars'),
+    orderBy('createdAt', 'desc')
   );
 
-  return { id: document.id, ...item, userId, createdAt };
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map((grammarDoc) => {
+    const data = grammarDoc.data();
+    return {
+      id: grammarDoc.id,
+      ...data,
+      isShared: true,
+      createdAt: timestampToDate(data.createdAt as Timestamp),
+    };
+  }) as Grammar[];
 }
