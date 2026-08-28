@@ -40,6 +40,18 @@ service cloud.firestore {
       allow read: if isAuthenticated();
     }
 
+    // Shared vocabularies are published by the Admin SDK and browseable by
+    // authenticated learners. Clients never write or delete shared items.
+    match /shared_vocabularies/{docId} {
+      allow read: if isAuthenticated();
+    }
+
+    // Shared grammars are published by the Admin SDK and browseable by
+    // authenticated learners. Clients never write or delete shared items.
+    match /shared_grammars/{docId} {
+      allow read: if isAuthenticated();
+    }
+
     // Rate-limit counters: written only by the Admin SDK (Cloud Functions).
     // Explicitly deny client reads/writes as defense-in-depth against future
     // rule drift (the Admin SDK bypasses rules, but that is safety-by-default).

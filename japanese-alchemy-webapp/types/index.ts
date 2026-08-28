@@ -1,9 +1,17 @@
+export interface SharedItemMetadata {
+  source_text?: string;
+  source_url?: string;
+  saved_at?: string;
+}
+
 export interface Vocabulary {
   id: string;
   term: string;
   detail: string;
   createdAt: Date;
   userId: string;
+  isShared?: boolean;
+  metadata?: SharedItemMetadata;
 }
 
 export interface Grammar {
@@ -12,6 +20,8 @@ export interface Grammar {
   explanation: string;
   createdAt: Date;
   userId: string;
+  isShared?: boolean;
+  metadata?: SharedItemMetadata;
 }
 
 export interface StructuredAnalysis {
