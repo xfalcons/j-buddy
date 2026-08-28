@@ -36,7 +36,7 @@ function safeSourceUrl(value: string): string | null {
 function SharedBadge() {
   return (
     <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-      Shared
+      共享
     </span>
   );
 }
@@ -58,7 +58,7 @@ function SharedSourceAttribution({ metadata }: { metadata?: { source_text?: stri
           rel="noopener noreferrer"
           className="text-primary hover:underline"
         >
-          Source
+          來源
         </a>
       )}
     </div>
@@ -142,7 +142,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+        <div className="text-lg">載入中...</div>
       </div>
     );
   }
@@ -156,7 +156,7 @@ export default function Dashboard() {
       <header className="bg-card border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-primary">
-            Japanese Alchemy
+            J-Buddy: Learning Hub
           </h1>
           <div className="flex items-center gap-4">
             {user ? (
@@ -166,14 +166,14 @@ export default function Dashboard() {
                 </span>
                 <ThemeToggle />
                 <Button onClick={handleSignOut} variant="outline" size="sm">
-                  Sign Out
+                  登出
                 </Button>
               </>
             ) : (
               <>
                 <ThemeToggle />
                 <Button onClick={handleSignIn} variant="default" size="sm">
-                  Sign In
+                  登入
                 </Button>
               </>
             )}
@@ -186,27 +186,27 @@ export default function Dashboard() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className={`grid w-full max-w-xl ${user ? 'grid-cols-4' : 'grid-cols-3'}`}>
             <TabsTrigger value="vocabularies">
-              Vocabularies ({allVocabularies.length})
+              單字 ({allVocabularies.length})
             </TabsTrigger>
             <TabsTrigger value="grammars">
-              Grammars ({allGrammars.length})
+              文法 ({allGrammars.length})
             </TabsTrigger>
             {user && (
               <TabsTrigger value="pages">
-                Pages ({analysisPages.length})
+                頁面 ({analysisPages.length})
               </TabsTrigger>
             )}
             <TabsTrigger value="shared-pages">
-              Shared Pages ({sharedAnalysisPages.length})
+              共享頁面 ({sharedAnalysisPages.length})
             </TabsTrigger>
           </TabsList>
 
           {/* Vocabularies Tab */}
           <TabsContent value="vocabularies" className="space-y-4">
             <div>
-              <h2 className="text-2xl font-bold">{user ? 'My Vocabularies' : 'Shared Vocabularies'}</h2>
+              <h2 className="text-2xl font-bold">{user ? '我的單字' : '共享單字'}</h2>
               <p className="text-muted-foreground">
-                {user ? 'View your Japanese vocabulary collection' : 'Browse Japanese vocabulary shared by the community'}
+                {user ? '查看你的日語單字收藏' : '瀏覽社群共享的日語單字'}
               </p>
             </div>
 
@@ -214,7 +214,7 @@ export default function Dashboard() {
               {allVocabularies.length === 0 ? (
                 <Card className="col-span-full">
                   <CardContent className="py-8 text-center">
-                    <p className="text-gray-500">No vocabularies found.</p>
+                    <p className="text-gray-500">找不到單字。</p>
                   </CardContent>
                 </Card>
               ) : (
@@ -229,7 +229,7 @@ export default function Dashboard() {
                         />
                       </div>
                       <CardDescription>
-                        {new Date(vocab.createdAt).toLocaleDateString()}
+                        {new Date(vocab.createdAt).toLocaleDateString("zh-TW")}
                       </CardDescription>
                       {vocab.isShared && <SharedSourceAttribution metadata={vocab.metadata} />}
                     </CardHeader>
@@ -248,9 +248,9 @@ export default function Dashboard() {
           {/* Grammars Tab */}
           <TabsContent value="grammars" className="space-y-4">
             <div>
-              <h2 className="text-2xl font-bold">{user ? 'My Grammars' : 'Shared Grammars'}</h2>
+              <h2 className="text-2xl font-bold">{user ? '我的文法' : '共享文法'}</h2>
               <p className="text-muted-foreground">
-                {user ? 'View your Japanese grammar points' : 'Browse Japanese grammar points shared by the community'}
+                {user ? '查看你的日語文法重點' : '瀏覽社群共享的日語文法重點'}
               </p>
             </div>
 
@@ -258,7 +258,7 @@ export default function Dashboard() {
               {allGrammars.length === 0 ? (
                 <Card>
                   <CardContent className="py-8 text-center">
-                    <p className="text-gray-500">No grammar points found.</p>
+                    <p className="text-gray-500">找不到文法重點。</p>
                   </CardContent>
                 </Card>
               ) : (
@@ -273,7 +273,7 @@ export default function Dashboard() {
                         />
                       </div>
                       <CardDescription>
-                        {new Date(grammar.createdAt).toLocaleDateString()}
+                        {new Date(grammar.createdAt).toLocaleDateString("zh-TW")}
                       </CardDescription>
                       {grammar.isShared && <SharedSourceAttribution metadata={grammar.metadata} />}
                     </CardHeader>
@@ -293,9 +293,9 @@ export default function Dashboard() {
           {user && (
             <TabsContent value="pages" className="space-y-4">
               <div>
-                <h2 className="text-2xl font-bold">My Pages</h2>
+                <h2 className="text-2xl font-bold">我的頁面</h2>
                 <p className="text-muted-foreground">
-                  Browse your saved analysis pages
+                  瀏覽你儲存的分析頁面
                 </p>
               </div>
 
@@ -303,7 +303,7 @@ export default function Dashboard() {
                 {analysisPages.length === 0 ? (
                   <Card>
                     <CardContent className="py-8 text-center">
-                      <p className="text-gray-500">No analysis pages found.</p>
+                      <p className="text-gray-500">找不到分析頁面。</p>
                     </CardContent>
                   </Card>
                 ) : (
@@ -319,11 +319,11 @@ export default function Dashboard() {
                               dangerouslySetInnerHTML={{ __html: parseFurigana(page.source_text) }}
                             />
                             <Button variant="destructive" size="sm" onClick={() => handleDeleteAnalysisPage(page.id)}>
-                              Delete
+                              刪除
                             </Button>
                           </div>
                           <CardDescription>
-                            {new Date(page.createdAt).toLocaleDateString()}
+                            {new Date(page.createdAt).toLocaleDateString("zh-TW")}
                             {sourceUrl && (
                               <a
                                 href={sourceUrl}
@@ -331,7 +331,7 @@ export default function Dashboard() {
                                 rel="noopener noreferrer"
                                 className="ml-2 text-primary hover:underline"
                               >
-                                Source
+                                來源
                               </a>
                             )}
                           </CardDescription>
@@ -352,9 +352,9 @@ export default function Dashboard() {
 
           <TabsContent value="shared-pages" className="space-y-4">
             <div>
-              <h2 className="text-2xl font-bold">Shared Pages</h2>
+              <h2 className="text-2xl font-bold">共享頁面</h2>
               <p className="text-muted-foreground">
-                Browse analysis pages shared by other learners
+                瀏覽其他學習者共享的分析頁面
               </p>
             </div>
 
@@ -362,7 +362,7 @@ export default function Dashboard() {
               {sharedAnalysisPages.length === 0 ? (
                 <Card>
                   <CardContent className="py-8 text-center">
-                    <p className="text-gray-500">No shared analysis pages found.</p>
+                    <p className="text-gray-500">找不到共享分析頁面。</p>
                   </CardContent>
                 </Card>
               ) : (
@@ -377,7 +377,7 @@ export default function Dashboard() {
                           dangerouslySetInnerHTML={{ __html: parseFurigana(page.source_text) }}
                         />
                         <CardDescription>
-                          {new Date(page.createdAt).toLocaleDateString()}
+                          {new Date(page.createdAt).toLocaleDateString("zh-TW")}
                           {sourceUrl && (
                             <a
                               href={sourceUrl}
@@ -385,7 +385,7 @@ export default function Dashboard() {
                               rel="noopener noreferrer"
                               className="ml-2 text-primary hover:underline"
                             >
-                              Source
+                              來源
                             </a>
                           )}
                         </CardDescription>

@@ -32,7 +32,7 @@ export default function AuthPage() {
       }
       router.push('/');
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      setError(err.message || '發生錯誤');
     } finally {
       setLoading(false);
     }
@@ -46,7 +46,7 @@ export default function AuthPage() {
       await signInWithGoogle();
       router.push('/');
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      setError(err.message || '發生錯誤');
     } finally {
       setLoading(false);
     }
@@ -57,10 +57,10 @@ export default function AuthPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">
-            Japanese Alchemy
+            J-Buddy: Learning Hub
           </CardTitle>
           <CardDescription className="text-lg">
-            {isSignUp ? 'Create an account' : 'Sign in to your account'}
+            {isSignUp ? '建立帳號' : '登入你的帳號'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -72,7 +72,7 @@ export default function AuthPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">電子郵件</Label>
               <Input
                 id="email"
                 type="email"
@@ -85,7 +85,7 @@ export default function AuthPage() {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">密碼</Label>
               <Input
                 id="password"
                 type="password"
@@ -99,7 +99,7 @@ export default function AuthPage() {
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
+              {loading ? '載入中...' : isSignUp ? '註冊' : '登入'}
             </Button>
           </form>
 
@@ -109,7 +109,7 @@ export default function AuthPage() {
             </div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-background px-2 text-muted-foreground">
-                Or continue with
+                或使用以下方式繼續
               </span>
             </div>
           </div>
@@ -150,8 +150,8 @@ export default function AuthPage() {
               disabled={loading}
             >
               {isSignUp
-                ? 'Already have an account? Sign in'
-                : "Don't have an account? Sign up"}
+                ? '已有帳號？登入'
+                : '還沒有帳號？註冊'}
             </button>
           </div>
         </CardContent>
