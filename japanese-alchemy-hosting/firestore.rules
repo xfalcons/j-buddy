@@ -35,21 +35,21 @@ service cloud.firestore {
     }
 
     // Shared analysis pages are published by the Admin SDK and browseable by
-    // authenticated learners. Clients never write or delete shared pages.
+    // anyone. Clients never write or delete shared pages.
     match /shared_analysis_pages/{pageId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
     }
 
     // Shared vocabularies are published by the Admin SDK and browseable by
-    // authenticated learners. Clients never write or delete shared items.
+    // anyone. Clients never write or delete shared items.
     match /shared_vocabularies/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
     }
 
     // Shared grammars are published by the Admin SDK and browseable by
-    // authenticated learners. Clients never write or delete shared items.
+    // anyone. Clients never write or delete shared items.
     match /shared_grammars/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
     }
 
     // Rate-limit counters: written only by the Admin SDK (Cloud Functions).
