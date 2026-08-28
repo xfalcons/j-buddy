@@ -132,3 +132,27 @@ npm run dev
 3. **部署 Functions**：`cd japanese-alchemy-hosting && firebase deploy --only functions`
 4. **建置 Extension**：`cd japanese-alchemy-chrome-extension && npm run build`，載入 `dist/` 至 Chrome
 5. **啟動 Webapp**：`cd japanese-alchemy-webapp && npm run dev`
+
+## 本地開發
+
+### Extension ###
+
+```bash
+cd japanese-alchemy-chrome-extension
+(japanese-alchemy-chrome-extension) $ npm run watch
+```
+
+### Functions ###
+```bash
+cd japanese-alchemy-chrome-hosting
+(japanese-alchemy-chrome-hosting) $ cd functions && npm run build && cd ../
+(japanese-alchemy-chrome-hosting) $ firebase emulators:start
+```
+
+### Webapp ###
+```bash
+cd japanese-alchemy-chrome-webpage
+(japanese-alchemy-chrome-webpage) $ npm run dev
+```
+
+在本地開發環境裡，所儲存的分析，只會存在本地的暫存檔，離開之後，就會被刪除。
