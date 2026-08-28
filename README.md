@@ -1,158 +1,191 @@
-# J-Buddy 學日文
+# J-Buddy
 
-你的 AI 日文隨身家教。選取日文文字，即時獲得單字解析與語法說明。
+J-Buddy is an AI-assisted Japanese reading companion. Select Japanese text on a
+webpage, get an explanation in a Chrome side panel, and save useful vocabulary,
+grammar, and complete analyses for later review.
 
----
+The project is built for intermediate learners reading real Japanese content:
+explanations preserve the context in which a learner found the text instead of
+treating vocabulary and grammar as isolated flashcards.
 
-## 架構總覽
+## What it includes
 
+- A Chrome MV3 extension that analyzes selected text progressively in a side
+  panel, with furigana/ruby annotations.
+- Firebase callable functions for batch and streaming analysis, rate limiting,
+  and saving learner data.
+- A Next.js web app for browsing saved analysis pages, vocabulary, and grammar.
+- Managed LLM support for Gemini and ZAI, plus a learner-configured personal
+  provider mode in the extension.
+
+## Architecture
+
+```text
+Chrome extension
+  selection -> background -> side panel
+                                |
+                                | Firebase callable streaming
+                                v
+Firebase Functions (explain / explainStreamCallable / saveItems)
+  |                             |
+  v                             v
+LLM provider                  Firestore
+  |
+  +-- Gemini or ZAI
+
+Next.js web app <------------- Firestore
 ```
-Chrome Extension (Side Panel)
-        │
-        │  Firebase Callable Functions (HTTPS)
-        ▼
-┌─────────────────────────────┐
-│  explain()   saveItems()    │  Firebase Functions (us-central1)
-│       │            │        │
-│       ▼            ▼        │
-│  Gemini API    Firestore    │
-└─────────────────────────────┘
-        │
-        ▼
-  Next.js Webapp
-  (讀取 Firestore，顯示已儲存的單字與語法)
-```
 
-**認證**：Firebase Auth（Google 登入）  
-**密鑰管理**：Firebase Secret Manager，secret 名稱 `JAPANESE_ALCHEMY_CONFIG`
+`explainStreamCallable` is the extension's primary analysis path: chunks render
+as they arrive. `explain` remains available for batch consumers, while
+`saveItems` persists authenticated users' saved content.
 
----
+## Repository layout
 
-## 三個子專案
+| Directory | Purpose |
+| --- | --- |
+| `japanese-alchemy-chrome-extension/` | Chrome extension and its Jest tests |
+| `japanese-alchemy-hosting/` | Firebase Functions, Firestore rules, and hosting assets |
+| `japanese-alchemy-webapp/` | Next.js application and its Vitest tests |
+| `docs/` | Architecture decisions, implementation plans, and durable solutions |
 
-### 1. `japanese-alchemy-chrome-extension`
+## Prerequisites
 
-Chrome Extension MV3，核心功能在 Side Panel。
+- Node.js 22 (required by Firebase Functions)
+- npm
+- Google Chrome or another Chromium browser for extension development
+- Firebase CLI (`npm install -g firebase-tools`)
+- A Firebase project if you want to run your own backend and web app
+- An LLM API credential for local emulator analysis
 
-| 檔案 | 說明 |
-|------|------|
-| `src/manifest.json` | MV3 manifest，權限：sidePanel、storage、offscreen |
-| `src/scripts/background.js` | Service Worker，管理 Side Panel 開關 |
-| `src/scripts/contentScript.js` | 監聽頁面文字選取，傳送至 background |
-| `src/scripts/jaAlchemyApiService.js` | 呼叫 Firebase Functions（explain / saveItems） |
-| `src/scripts/authService.js` | Firebase Auth 登入/登出 |
-| `src/scripts/firebaseConfig.js` | Firebase 設定 |
-| `src/sidepanel/sidepanel.js` | Side Panel 主邏輯，渲染分析結果 |
-| `src/offscreen/offscreen.js` | Offscreen document，處理 Firebase Auth popup |
+## Quick start
 
-**流程**：選取文字 → contentScript → background storage → sidepanel 讀取 → `jaAlchemyApiService.generateResponse()` → Firebase `explain` function → Gemini API → 渲染結果
+### 1. Install dependencies
 
-**建置**：
 ```bash
-cd japanese-alchemy-chrome-extension
-npm install
-npm run build   # 輸出至 dist/
+git clone https://github.com/xfalcons/j-buddy.git
+cd j-buddy
+
+npm --prefix japanese-alchemy-chrome-extension install
+npm --prefix japanese-alchemy-hosting/functions install
+npm --prefix japanese-alchemy-webapp install
 ```
 
----
+### 2. Configure local services
 
-### 2. `japanese-alchemy-hosting` (Firebase)
+Create a local Functions secret override. It is ignored by Git and is used by
+the Firebase Emulator Suite instead of production Secret Manager.
 
-Firebase 後端，包含 Cloud Functions 與 Firestore 規則。
-
-#### Cloud Functions
-
-| Function | 說明 |
-|----------|------|
-| `explain` | 接收日文文字，呼叫 Gemini API 回傳分析結果（單字 + 語法） |
-| `saveItems` | 將分析結果儲存至 Firestore（支援個人 / 共用集合） |
-
-**Prompt 版本**：`v1`（基礎）、`v2`（含 ruby 注音，預設）
-
-**Secret 設定**（Firebase Secret Manager）：
-```json
-// JAPANESE_ALCHEMY_CONFIG
-{
-  "google": { "api_url": "https://..." },
-  "gemini": { "api_key": "...", "model": "gemini-2.0-flash" }
-}
-```
-
-#### Firestore 資料結構
-
-```
-users/{userId}/
-  vocabularies/{id}   # 個人單字
-  grammars/{id}       # 個人語法
-```
-
-**部署**：
 ```bash
-cd japanese-alchemy-hosting
-firebase deploy --only functions
-firebase deploy --only firestore:rules
+cd japanese-alchemy-hosting/functions
+cat > .secret.local <<'EOF'
+JAPANESE_ALCHEMY_CONFIG='{"gemini":{"api_url":"https://generativelanguage.googleapis.com/v1beta/openai","api_key":"YOUR_GEMINI_API_KEY","model":"gemini-2.0-flash"},"zai":{"api_url":"YOUR_ZAI_API_URL","api_key":"YOUR_ZAI_API_KEY","model":"YOUR_ZAI_MODEL"}}'
+EOF
 ```
 
----
+Replace the placeholder values for the provider you intend to use. See the
+[Functions README](japanese-alchemy-hosting/functions/README.md#testing-with-emulators)
+for the expected JSON shape and supported providers.
 
-### 3. `japanese-alchemy-webapp` (Next.js)
+For the web app, create its Firebase client configuration:
 
-讀取 Firestore，顯示使用者儲存的單字與語法清單。
-
-**技術棧**：Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui · Firebase SDK 12
-
-**頁面**：
-- `/` — 主頁，顯示單字與語法 tabs
-- `/auth` — Google 登入頁
-
-**環境變數**（`.env.local`）：
-```env
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
-```
-
-**啟動**：
 ```bash
 cd japanese-alchemy-webapp
-npm install
-cp .env.local.example .env.local  # 填入 Firebase 設定
+cp .env.local.example .env.local
+```
+
+Fill in the `NEXT_PUBLIC_FIREBASE_*` values from your Firebase project's web
+app settings. Firebase client configuration is public by design; do not put LLM
+API keys or service-account credentials in this file.
+
+### 3. Run locally
+
+Start the Functions and Firestore emulators:
+
+```bash
+cd japanese-alchemy-hosting/functions
+npm run serve
+```
+
+In another terminal, build the extension in development mode:
+
+```bash
+cd japanese-alchemy-chrome-extension
+npm run watch
+```
+
+Load `japanese-alchemy-chrome-extension/dist/` as an unpacked extension from
+`chrome://extensions` with Developer mode enabled. Development builds connect
+callable requests to `127.0.0.1:5001`.
+
+Start the web app in a third terminal:
+
+```bash
+cd japanese-alchemy-webapp
 npm run dev
 ```
 
----
+### Using your own Firebase project
 
-## 快速開始
-
-1. **Firebase 專案**：建立 Firebase 專案，啟用 Auth（Google）、Firestore、Functions
-2. **Secret**：在 Firebase Secret Manager 建立 `JAPANESE_ALCHEMY_CONFIG`
-3. **部署 Functions**：`cd japanese-alchemy-hosting && firebase deploy --only functions`
-4. **建置 Extension**：`cd japanese-alchemy-chrome-extension && npm run build`，載入 `dist/` 至 Chrome
-5. **啟動 Webapp**：`cd japanese-alchemy-webapp && npm run dev`
-
-## 本地開發
-
-### Extension ###
+The committed `.firebaserc` files default to the project's `japanese-alchemy`
+Firebase project. Before deploying, select your own Firebase project in both
+Firebase directories (for example, run `firebase use --add` from each):
 
 ```bash
-cd japanese-alchemy-chrome-extension
-(japanese-alchemy-chrome-extension) $ npm run watch
+cd japanese-alchemy-hosting
+firebase use --add
+
+cd ../japanese-alchemy-webapp
+firebase use --add
 ```
 
-### Functions ###
+To self-host the full stack, replace the values in
+`japanese-alchemy-chrome-extension/src/scripts/firebaseConfig.js` with your own
+Firebase web-app configuration and configure the web app's `.env.local`.
+Deploy the Functions and Firestore rules, then build and deploy the web app's
+Hosting site:
+
 ```bash
-cd japanese-alchemy-chrome-hosting
-(japanese-alchemy-chrome-hosting) $ cd functions && npm run build && cd ../
-(japanese-alchemy-chrome-hosting) $ firebase emulators:start
+cd japanese-alchemy-hosting
+firebase deploy --only functions,firestore:rules
+
+cd ../japanese-alchemy-webapp
+npm run build
+firebase deploy --only hosting
 ```
 
-### Webapp ###
-```bash
-cd japanese-alchemy-chrome-webpage
-(japanese-alchemy-chrome-webpage) $ npm run dev
-```
+Before Google sign-in works on a new Hosting domain, add that hostname to
+Firebase Authentication's authorized domains.
 
-在本地開發環境裡，所儲存的分析，只會存在本地的暫存檔，離開之後，就會被刪除。
+For production LLM credentials, create the `JAPANESE_ALCHEMY_CONFIG` secret in
+Firebase Secret Manager. The detailed provider configuration and deployment
+commands are in the [Functions README](japanese-alchemy-hosting/functions/README.md).
+
+## Common commands
+
+| Area | Commands |
+| --- | --- |
+| Extension | `npm --prefix japanese-alchemy-chrome-extension run build`, `npm --prefix japanese-alchemy-chrome-extension run test`, `npm --prefix japanese-alchemy-chrome-extension run package` |
+| Functions | `npm --prefix japanese-alchemy-hosting/functions run build`, `npm --prefix japanese-alchemy-hosting/functions run lint`, `npm --prefix japanese-alchemy-hosting/functions run test` |
+| Web app | `npm --prefix japanese-alchemy-webapp run build`, `npm --prefix japanese-alchemy-webapp run lint`, `npm --prefix japanese-alchemy-webapp run test` |
+
+Run the checks relevant to the area you changed before opening a pull request.
+
+## Contributing
+
+We welcome bug reports, documentation improvements, design discussions, and
+code contributions. Start with [CONTRIBUTING.md](CONTRIBUTING.md), which
+describes our pull-request expectations and validation requirements. If you're
+considering a larger change, open an issue or discussion first so we can agree
+on the learner problem and scope before implementation.
+
+When working with credentials:
+
+- Never commit API keys, Firebase service-account files, or `.secret.local`.
+- Use a personal Firebase project and LLM credentials for local development.
+- Treat selected text sent to an analysis provider as user content; test with
+  non-sensitive text.
+
+## License
+
+J-Buddy is released under the [MIT License](LICENSE).
