@@ -5,9 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "preview": "npm run build && firebase emulators:start --only hosting",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "deploy": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

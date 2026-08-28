@@ -139,6 +139,34 @@ firebase functions:log
 
 **Note:** Functions are automatically deployed with secrets bound. The `JAPANESE_ALCHEMY_CONFIG` secret must exist in Secret Manager.
 
+### Webapp, Auth, and Firestore deployment
+
+The Next.js webapp is hosted separately at Firebase Hosting. Deploying functions
+does **not** deploy the Firestore rules used by the webapp.
+
+```bash
+cd japanese-alchemy-hosting
+
+# Required after changing firestore.rules, including shared-item read access
+firebase deploy --only firestore:rules
+```
+
+Shared analysis pages, vocabularies, and grammars are written by `saveItems`
+with the Admin SDK, then read directly by the webapp. If the deployed Firestore
+rules are stale, the save can succeed while the webapp shows no shared items
+with `FirebaseError: Missing or insufficient permissions.`
+
+Each Firebase Hosting site has its own domain. Before Google sign-in can work
+on a new site, add its hostname in **Firebase Console -> Authentication ->
+Settings -> Authorized domains**. For the current webapp site, add:
+
+```text
+japanese-alchemy-webapp.web.app
+```
+
+Enter the hostname only; do not include `https://` or a path. This change does
+not require a function or Hosting redeploy.
+
 ## Callable streaming safeguards
 
 `explainStreamCallable` validates the request, enforces the same Firestore-backed
@@ -285,7 +313,8 @@ users/
 - `explain`: Public function (no authentication required)
 - `explainStreamCallable`: Public callable stream (no authentication required)
 - `saveItems`: Requires Firebase Authentication
-- Firestore rules ensure users can only access their own data
+- Firestore rules restrict user data to its owner and allow read-only access to
+  published shared collections
 - API keys stored securely in Firebase Secret Manager
 
 ## Dependencies

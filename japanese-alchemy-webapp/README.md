@@ -275,67 +275,47 @@ npm run dev
 # Build for production
 npm run build
 
-# Start production server
-npm start
+# Preview the generated Firebase Hosting site locally
+npm run preview
 
 # Run linter
 npm run lint
 
 # Type check
-npm run type-check
+npx tsc --noEmit
 ```
 
 ## 🚀 Firebase Deployment
 
-### Option 1: Deploy to Firebase Hosting
+The webapp is deployed as a static Next.js export. Firebase Authentication,
+Firestore, and the existing Cloud Functions remain in the `japanese-alchemy`
+Firebase project; Firebase Hosting only serves the generated site.
 
-1. Install Firebase CLI (if not already installed):
+1. Install and authenticate the Firebase CLI (if needed):
    ```bash
    npm install -g firebase-tools
-   ```
-
-2. Login to Firebase:
-   ```bash
    firebase login
    ```
 
-3. Initialize Firebase in the project root (not in japanese-alchemy-webapp):
+2. Create the production environment file. The Firebase web configuration is
+   safe to expose in the browser; access is protected by Firebase Auth and
+   Firestore security rules.
    ```bash
-   cd ..
-   firebase init hosting
-   ```
-   
-   When prompted:
-   - Select your Firebase project
-   - Set the public directory to `japanese-alchemy-webapp/out`
-   - Configure as a single-page app: Yes
-   - Set up automatic builds: Yes
-
-4. Build the Next.js application:
-   ```bash
-   cd japanese-alchemy-webapp
-   npm run build
+   cp .env.local.example .env.local
    ```
 
-5. Deploy:
+3. Build and deploy from this directory:
    ```bash
-   firebase deploy
+   npm run deploy
    ```
 
-### Option 2: Deploy to Vercel (Recommended for Next.js)
+The configuration in `firebase.json` deploys the generated `out/` directory to
+the `japanese-alchemy-webapp` Hosting site. If you later add server-side
+rendering, API routes, or server-only secrets, move this webapp to Firebase App
+Hosting or Cloud Run instead of static Hosting.
 
-1. Push your code to GitHub
-2. Go to [Vercel](https://vercel.com)
-3. Import your repository
-4. Add environment variables in Vercel dashboard
-5. Deploy
-
-Vercel is recommended as it provides better support for Next.js features including:
-- Server-side rendering
-- API routes
-- Edge functions
-- Automatic HTTPS
-- CDN distribution
+For a different Firebase project, create a Hosting site first and replace the
+`site` value in `firebase.json` with its site ID.
 
 ## 🔒 Firestore Security Rules
 
