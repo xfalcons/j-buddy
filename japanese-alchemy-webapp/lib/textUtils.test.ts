@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   markdownToHtml,
   parseFurigana,
@@ -9,6 +9,10 @@ import {
 } from './textUtils';
 
 describe('saved analysis HTML rendering', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const maliciousMarkdown = `
 <script>window.__xss = true</script>
 <img src=x onerror="window.__xss = true">
@@ -39,5 +43,32 @@ describe('saved analysis HTML rendering', () => {
     }
     expect(termHtml).toContain('<ruby><rb>単語</rb><rt>たんご</rt></ruby>');
     expect(pointHtml).toContain('<ruby><rb>文法</rb><rt>ぶんぽう</rt></ruby>');
+  });
+
+  it('renders saved Markdown values without JSON parse errors', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const vocabularyMarkdown = '- 讀音：にほんご';
+    const grammarMarkdown = '- 接続形式：名詞 + として';
+
+    const vocabularyHtml = renderVocabularyDetail(vocabularyMarkdown);
+    const grammarHtml = renderGrammarExplanation(grammarMarkdown);
+
+    expect(vocabularyHtml).toContain('讀音：にほんご');
+    expect(grammarHtml).toContain('接続形式：名詞 + として');
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('unwraps legacy JSON-encoded vocabulary and grammar values', () => {
+    const vocabularyHtml = renderVocabularyDetail(
+      JSON.stringify({ term: '日本語', detail: '- 讀音：にほんご' })
+    );
+    const grammarHtml = renderGrammarExplanation(
+      JSON.stringify({ point: '〜として', explanation: '- 接続形式：名詞 + として' })
+    );
+
+    expect(vocabularyHtml).toContain('讀音：にほんご');
+    expect(vocabularyHtml).not.toContain('"term"');
+    expect(grammarHtml).toContain('接続形式：名詞 + として');
+    expect(grammarHtml).not.toContain('"point"');
   });
 });

@@ -867,6 +867,7 @@ async function handleSaveForLater() {
 
         page: {
             rendered_markdown: getCompletedAnalysisResponse(),
+            structured_json: saveForLaterJson,
         },
         is_shared: isShared,
         metadata: {
@@ -1756,7 +1757,7 @@ export function setSidepanelElementsForTesting(testElements) {
     elements = testElements;
 }
 
-export { isValidSelection };
+export { handleSaveForLater, isValidSelection };
 
 // DOM element references
 let elements = null;

@@ -1,6 +1,7 @@
 import {
   analizingSelectedText,
   handleCancelAnalysis,
+  handleSaveForLater,
   handleAnalysisModeChange,
   handleSidepanelStorageChanges,
   isValidSelection,
@@ -61,7 +62,7 @@ function setupElements() {
   const usageButton = createButton('v2', true);
   const copyButton = { disabled: true };
   const saveAsBtn = { disabled: true };
-  const saveForLaterBtn = { disabled: true };
+  const saveForLaterBtn = { disabled: true, classList: createClassList() };
   const cancelAnalysisButton = { hidden: true };
   const elements = {
     alertMessage,
@@ -180,6 +181,29 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(isValidSelection('あい')).toBe(true);
     expect(isValidSelection('あ'.repeat(500))).toBe(true);
     expect(isValidSelection('あ'.repeat(501))).toBe(false);
+  });
+
+  test('includes the parsed structured analysis in a page save payload', async () => {
+    const cacheKey = buildContextCacheKey({ selectedText: '成長', promptVariant: 'v2' });
+    setupLocalStorage({ lastAnalysisResult: completedProjection(cacheKey) });
+    setupElements();
+    global.chrome.tabs = { query: jest.fn(async () => [{ url: 'https://example.com/article' }]) };
+    const saved = [];
+    global.JaAlchemyApiService = class JaAlchemyApiService {
+      async saveAnalysis(analysis) {
+        saved.push(analysis);
+        return { success: true };
+      }
+    };
+
+    await analizingSelectedText('成長', {}, { promptVariant: 'v2' });
+    await handleSaveForLater();
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].page.structured_json).toEqual({
+      words: [{ term: '成長', detail: 'growth' }],
+      grammars: [],
+    });
   });
 
   test('mode switch persists v1 and starts re-analysis instead of rendering cached v2', async () => {
