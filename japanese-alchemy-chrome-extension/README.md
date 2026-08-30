@@ -14,6 +14,47 @@ A Chrome extension that helps analyze Japanese language using modern AI technolo
 - Toolbar with FontSize selection, Copy to Clipboard, and Save to File in Markdown format
 - Light/Dark mode toggle
 
+## Architecture
+
+```text
++-----------------------------+
+| Web page selection          |
++--------------+--------------+
+               |
+               v
++--------------+--------------+
+| Content script              |
++--------------+--------------+
+               |
+               v
++--------------+--------------+
+| Background service worker   |
++--------------+--------------+
+               |
+               v
++--------------+--------------+
+| chrome.storage.local        |
++--------------+--------------+
+               |
+               v
++--------------+--------------+
+| Side panel                  |
++--------------+--------------+
+               |
+               v
+               +-----------------------------------------------+
+               |                                               |
+               v                                               v
++--------------+--------------+                 +--------------+--------------+
+| Firebase callable functions |                 | Personal LLM provider API   |
++-----------------------------+                 +-----------------------------+
+```
+
+The content script sends the selection to the background service worker, which
+stores it for the side panel. Managed-provider analysis uses Firebase callable
+streaming; personal-provider mode calls the learner-configured provider API
+directly.
+
 ## Installation
 1. Open Chrome and navigate to `chrome://extensions/`
 2. Enable "Developer mode" in the top right corner

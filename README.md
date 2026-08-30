@@ -15,25 +15,34 @@ treating vocabulary and grammar as isolated flashcards.
 - Firebase callable functions for batch and streaming analysis, rate limiting,
   and saving learner data.
 - A Next.js web app for browsing saved analysis pages, vocabulary, and grammar.
+  Visit https://japanese-alchemy-webapp.web.app
 - Managed LLM support for Gemini and ZAI, plus a learner-configured personal
   provider mode in the extension.
 
 ## Architecture
 
 ```text
-Chrome extension
-  selection -> background -> side panel
-                                |
-                                | Firebase callable streaming
-                                v
-Firebase Functions (explain / explainStreamCallable / saveItems)
-  |                             |
-  v                             v
-LLM provider                  Firestore
-  |
-  +-- Gemini or ZAI
-
-Next.js web app <------------- Firestore
++-----------------------------+
+| Chrome extension            |
++--------------+--------------+
+               |
+               v
++--------------+--------------+
+| Firebase callable functions |
++--------------+--------------+
+               |
+               v
+               +-----------------------------------------------+
+               |                                               |
+               v                                               v
++--------------+--------------+                 +--------------+--------------+
+| LLM provider                 |                | Firestore                    |
++-----------------------------+                 +--------------+--------------+
+                                                               ^
+                                                               |
+                                                +--------------+--------------+
+                                                | Next.js web app              |
+                                                +-----------------------------+
 ```
 
 `explainStreamCallable` is the extension's primary analysis path: chunks render
