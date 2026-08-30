@@ -1,7 +1,7 @@
 import * as functions from "firebase-functions";
-import { LlmUsage } from "../models/types";
+import { AiProvider, LlmUsage } from "../models/types";
 
-export type LlmProvider = "gemini" | "zai";
+export type LlmProvider = AiProvider;
 export type LlmOperation = "batch" | "stream";
 export type UsageStatus = "recorded" | "usage_missing" | "usage_malformed" | "stream_incomplete";
 export type PriceStatus = "priced" | "price_unavailable";
@@ -121,7 +121,11 @@ export function buildLlmUsageTelemetry(
 }
 
 export function logLlmUsageTelemetry(input: LlmUsageTelemetryInput): void {
-  functions.logger.info("LLM completion telemetry", buildLlmUsageTelemetry(input));
+  try {
+    functions.logger.info("LLM completion telemetry", buildLlmUsageTelemetry(input));
+  } catch {
+    // Observability is best-effort and must not affect a completion result.
+  }
 }
 
 function normalizeUsage(rawUsage: LlmUsage | unknown): {

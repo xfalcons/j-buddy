@@ -1,7 +1,7 @@
 import * as functions from "firebase-functions";
 import { LlmRequest, LlmResponse, SuccessResponse } from "../models/types";
 import { configSecret } from "../config";
-import { LlmBatchCompletion, LlmService } from "./llmService";
+import { LlmBatchCompletion, LlmService, LlmStreamCompletion } from "./llmService";
 
 export class GeminiLlmService implements LlmService {
   private apiUrl: string;
@@ -19,7 +19,7 @@ export class GeminiLlmService implements LlmService {
     }
   }
 
-  async streamCompletion(systemPrompt: string, content: string): Promise<Response> {
+  async streamCompletion(systemPrompt: string, content: string): Promise<LlmStreamCompletion> {
     const messages = [
       { role: "system", content: systemPrompt },
       { role: "user", content: content },
@@ -69,7 +69,7 @@ export class GeminiLlmService implements LlmService {
       );
     }
 
-    return response;
+    return { response, requestedModel: this.model };
   }
 
   async chatCompletion(systemPrompt: string, content: string): Promise<LlmBatchCompletion> {

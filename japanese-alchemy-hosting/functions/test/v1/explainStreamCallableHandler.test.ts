@@ -33,11 +33,11 @@ describe("explainStreamCallableHandler", () => {
   });
 
   it("streams analysis deltas and completes the managed-provider analysis", async () => {
-    mockStreamCompletion.mockResolvedValue(readableSseResponse([
+    mockStreamCompletion.mockResolvedValue({ response: readableSseResponse([
       'data: {"choices":[{"delta":{"content":"分"}}]}\n',
       'data: {"choices":[{"delta":{"content":"析"}}]}\n',
       "data: [DONE]\n",
-    ]));
+    ]), requestedModel: "gemini-3-flash-preview" });
     const response = { sendChunk: jest.fn(async (_chunk: unknown) => true) };
 
     const result = await explainStreamCallableHandler(

@@ -4,7 +4,6 @@ import { buildAnalysisMessage } from "../models/analysisMessage";
 import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
-import { configSecret } from "../config";
 import { logLlmUsageTelemetry } from "../services/llmUsageTelemetry";
 import { logger } from "../utils/logger";
 import { isParsedBodyTooLarge, validateExplainRequest } from "./requestValidation";
@@ -66,30 +65,26 @@ export async function explainStreamCallableHandler(
 
   try {
     const llmService = createLlmService("gemini");
-    const llmResponse = await llmService.streamCompletion(
+    const completion = await llmService.streamCompletion(
       systemPrompt,
       buildAnalysisMessage(content, { before: context_before, after: context_after })
     );
 
-    const streamResult = await consumeLlmStream(llmResponse, async (delta) => {
+    const streamResult = await consumeLlmStream(completion.response, async (delta) => {
       if (request.acceptsStreaming && response) {
         await response.sendChunk({ content: delta });
       }
     });
 
-    try {
-      logLlmUsageTelemetry({
-        provider: "gemini",
-        requestedModel: configSecret.value().gemini.model,
-        responseModel: streamResult.responseModel,
-        operation: "stream",
-        rawUsage: streamResult.usage,
-        finishReason: streamResult.finishReason,
-        completed: streamResult.completed,
-      });
-    } catch {
-      // Observability is best-effort and must not affect stream completion.
-    }
+    logLlmUsageTelemetry({
+      provider: "gemini",
+      requestedModel: completion.requestedModel,
+      responseModel: streamResult.responseModel,
+      operation: "stream",
+      rawUsage: streamResult.usage,
+      finishReason: streamResult.finishReason,
+      completed: streamResult.completed,
+    });
 
     return { success: true };
   } catch (error) {

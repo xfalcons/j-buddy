@@ -51,19 +51,15 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
       buildAnalysisMessage(content, { before: context_before, after: context_after })
     );
 
-    try {
-      logLlmUsageTelemetry({
-        provider: "gemini",
-        requestedModel: completion.requestedModel,
-        responseModel: completion.responseModel,
-        operation: "batch",
-        rawUsage: completion.usage,
-        finishReason: completion.finishReason,
-        completed: true,
-      });
-    } catch {
-      // Observability is best-effort and must not affect the callable response.
-    }
+    logLlmUsageTelemetry({
+      provider: "gemini",
+      requestedModel: completion.requestedModel,
+      responseModel: completion.responseModel,
+      operation: "batch",
+      rawUsage: completion.usage,
+      finishReason: completion.finishReason,
+      completed: true,
+    });
     logger.info("Explain request completed successfully");
     return completion.response;
   } catch (error) {

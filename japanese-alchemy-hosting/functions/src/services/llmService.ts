@@ -5,7 +5,7 @@ import { ZaiLlmService } from "./zaiLlmService";
 
 export interface LlmService {
   chatCompletion(systemPrompt: string, content: string): Promise<LlmBatchCompletion>;
-  streamCompletion(systemPrompt: string, content: string): Promise<Response>;
+  streamCompletion(systemPrompt: string, content: string): Promise<LlmStreamCompletion>;
 }
 
 export interface LlmBatchCompletion {
@@ -14,6 +14,11 @@ export interface LlmBatchCompletion {
   usage?: LlmUsage;
   responseModel?: string;
   finishReason?: string | null;
+}
+
+export interface LlmStreamCompletion {
+  response: Response;
+  requestedModel: string;
 }
 
 /**
