@@ -92,6 +92,9 @@ export interface LlmRequest {
   temperature: number;
   max_tokens: number;
   stream?: boolean;
+  stream_options?: {
+    include_usage: boolean;
+  };
   extra_body?: {
     google?: {
       thinking_config?: {
@@ -103,10 +106,22 @@ export interface LlmRequest {
 }
 
 export interface LlmResponse {
+  model?: string;
+  usage?: LlmUsage;
   choices: Array<{
+    finish_reason?: string | null;
     message: {
       role: string;
       content: string;
     };
   }>;
+}
+
+export interface LlmUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_tokens_details?: {
+    cached_tokens?: number;
+  };
 }
