@@ -1,11 +1,19 @@
-import { AiProvider, SuccessResponse } from "../models/types";
+import { AiProvider, LlmUsage, SuccessResponse } from "../models/types";
 import { LLM_PROVIDER } from "../config";
 import { GeminiLlmService } from "./geminiLlmService";
 import { ZaiLlmService } from "./zaiLlmService";
 
 export interface LlmService {
-  chatCompletion(systemPrompt: string, content: string): Promise<SuccessResponse>;
+  chatCompletion(systemPrompt: string, content: string): Promise<LlmBatchCompletion>;
   streamCompletion(systemPrompt: string, content: string): Promise<Response>;
+}
+
+export interface LlmBatchCompletion {
+  response: SuccessResponse;
+  requestedModel: string;
+  usage?: LlmUsage;
+  responseModel?: string;
+  finishReason?: string | null;
 }
 
 /**

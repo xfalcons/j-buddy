@@ -61,6 +61,19 @@ describe("buildLlmUsageTelemetry", () => {
     expect(result.estimatedCostUsd).toBeNull();
   });
 
+  it("marks a premature stream as incomplete instead of pricing partial usage", () => {
+    const result = buildLlmUsageTelemetry({
+      provider: "gemini",
+      requestedModel: "gemini-3-flash-preview",
+      operation: "stream",
+      completed: false,
+      rawUsage: validUsage,
+    });
+
+    expect(result.usageStatus).toBe("stream_incomplete");
+    expect(result.estimatedCostUsd).toBeNull();
+  });
+
   it.each([
     undefined,
     { prompt_tokens: -1, completion_tokens: 1 },

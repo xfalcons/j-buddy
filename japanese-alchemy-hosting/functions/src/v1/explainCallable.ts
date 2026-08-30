@@ -4,6 +4,7 @@ import { buildAnalysisMessage } from "../models/analysisMessage";
 import { SYSTEM_PROMPT_V1 } from "../models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
+import { logLlmUsageTelemetry } from "../services/llmUsageTelemetry";
 import { logger } from "../utils/logger";
 import { validateExplainRequest } from "./requestValidation";
 import { checkRateLimit } from "./rateLimiter";
@@ -45,13 +46,26 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
 
   try {
     const llmService = createLlmService("gemini");
-    const result: SuccessResponse = await llmService.chatCompletion(
+    const completion = await llmService.chatCompletion(
       systemPrompt,
       buildAnalysisMessage(content, { before: context_before, after: context_after })
     );
 
+    try {
+      logLlmUsageTelemetry({
+        provider: "gemini",
+        requestedModel: completion.requestedModel,
+        responseModel: completion.responseModel,
+        operation: "batch",
+        rawUsage: completion.usage,
+        finishReason: completion.finishReason,
+        completed: true,
+      });
+    } catch {
+      // Observability is best-effort and must not affect the callable response.
+    }
     logger.info("Explain request completed successfully");
-    return result;
+    return completion.response;
   } catch (error) {
     logger.error("Error in explain callable", error);
     throw new functions.https.HttpsError(

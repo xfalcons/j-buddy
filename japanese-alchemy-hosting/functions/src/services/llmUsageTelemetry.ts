@@ -1,8 +1,9 @@
+import * as functions from "firebase-functions";
 import { LlmUsage } from "../models/types";
 
 export type LlmProvider = "gemini" | "zai";
 export type LlmOperation = "batch" | "stream";
-export type UsageStatus = "recorded" | "usage_missing" | "usage_malformed";
+export type UsageStatus = "recorded" | "usage_missing" | "usage_malformed" | "stream_incomplete";
 export type PriceStatus = "priced" | "price_unavailable";
 
 export interface LlmPriceCatalogEntry {
@@ -89,7 +90,8 @@ function price(
 export function buildLlmUsageTelemetry(
   input: LlmUsageTelemetryInput
 ): LlmUsageTelemetryRecord {
-  const normalized = normalizeUsage(input.rawUsage);
+  const normalized = input.operation === "stream" && input.completed === false ?
+    emptyUsage("stream_incomplete") : normalizeUsage(input.rawUsage);
   const responseModel = input.responseModel;
   const model = responseModel || input.requestedModel;
   const catalogEntry = normalized.usageStatus === "recorded" ?
@@ -116,6 +118,10 @@ export function buildLlmUsageTelemetry(
     catalogVersion: LLM_PRICE_CATALOG_VERSION,
     estimatedCostUsd,
   };
+}
+
+export function logLlmUsageTelemetry(input: LlmUsageTelemetryInput): void {
+  functions.logger.info("LLM completion telemetry", buildLlmUsageTelemetry(input));
 }
 
 function normalizeUsage(rawUsage: LlmUsage | unknown): {

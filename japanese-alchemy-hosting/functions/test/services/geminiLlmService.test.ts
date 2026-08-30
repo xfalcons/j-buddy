@@ -27,6 +27,8 @@ const mockFetch = jest.fn() as any;
 
 describe("GeminiLlmService", () => {
   let service: GeminiLlmService;
+  const mockSystemPrompt = "You are a helpful assistant";
+  const mockContent = "Test content";
 
   beforeEach(() => {
     mockFetch.mockClear();
@@ -56,11 +58,16 @@ describe("GeminiLlmService", () => {
   });
 
   describe("chatCompletion", () => {
-    const mockSystemPrompt = "You are a helpful assistant";
-    const mockContent = "Test content";
     const mockResponse = {
+      model: "gemini-3-flash-preview",
+      usage: {
+        prompt_tokens: 12,
+        completion_tokens: 34,
+        total_tokens: 46,
+      },
       choices: [
         {
+          finish_reason: "stop",
           message: {
             content: "Test response",
           },
@@ -107,9 +114,15 @@ describe("GeminiLlmService", () => {
       const result = await service.chatCompletion(mockSystemPrompt, mockContent);
 
       expect(result).toEqual({
-        success: true,
-        data: "Test response",
-        timestamp: expect.any(Number),
+        response: {
+          success: true,
+          data: "Test response",
+          timestamp: expect.any(Number),
+        },
+        requestedModel: "test-model",
+        usage: mockResponse.usage,
+        responseModel: "gemini-3-flash-preview",
+        finishReason: "stop",
       });
     });
 
@@ -138,8 +151,8 @@ describe("GeminiLlmService", () => {
 
       const afterCall = Date.now();
 
-      expect(result.timestamp).toBeGreaterThanOrEqual(beforeCall);
-      expect(result.timestamp).toBeLessThanOrEqual(afterCall);
+      expect(result.response.timestamp).toBeGreaterThanOrEqual(beforeCall);
+      expect(result.response.timestamp).toBeLessThanOrEqual(afterCall);
     });
 
     it("should handle empty content", async () => {
@@ -152,8 +165,8 @@ describe("GeminiLlmService", () => {
 
       const result = await service.chatCompletion(mockSystemPrompt, "");
 
-      expect(result.success).toBe(true);
-      expect(result.data).toBe("");
+      expect(result.response.success).toBe(true);
+      expect(result.response.data).toBe("");
     });
 
     it("should handle long content", async () => {
@@ -166,7 +179,7 @@ describe("GeminiLlmService", () => {
 
       const result = await service.chatCompletion(mockSystemPrompt, longContent);
 
-      expect(result.success).toBe(true);
+      expect(result.response.success).toBe(true);
     });
 
     it("should handle special characters in content", async () => {
@@ -179,7 +192,22 @@ describe("GeminiLlmService", () => {
 
       const result = await service.chatCompletion(mockSystemPrompt, specialContent);
 
-      expect(result.success).toBe(true);
+      expect(result.response.success).toBe(true);
+    });
+  });
+
+  describe("streamCompletion", () => {
+    it("requests terminal usage without changing Gemini thinking configuration", async () => {
+      mockFetch.mockResolvedValue({ ok: true });
+
+      await service.streamCompletion(mockSystemPrompt, mockContent);
+
+      const payload = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(payload.stream_options).toEqual({ include_usage: true });
+      expect(payload.extra_body.google.thinking_config).toEqual({
+        thinking_budget: 512,
+        include_thoughts: false,
+      });
     });
   });
 });

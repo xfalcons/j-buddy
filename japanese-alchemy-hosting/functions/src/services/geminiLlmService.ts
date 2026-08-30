@@ -1,7 +1,7 @@
 import * as functions from "firebase-functions";
 import { LlmRequest, LlmResponse, SuccessResponse } from "../models/types";
 import { configSecret } from "../config";
-import { LlmService } from "./llmService";
+import { LlmBatchCompletion, LlmService } from "./llmService";
 
 export class GeminiLlmService implements LlmService {
   private apiUrl: string;
@@ -31,6 +31,7 @@ export class GeminiLlmService implements LlmService {
       temperature: 0.1,
       max_tokens: 8192,
       stream: true,
+      stream_options: { include_usage: true },
       extra_body: {
         google: {
           thinking_config: {
@@ -71,7 +72,7 @@ export class GeminiLlmService implements LlmService {
     return response;
   }
 
-  async chatCompletion(systemPrompt: string, content: string): Promise<SuccessResponse> {
+  async chatCompletion(systemPrompt: string, content: string): Promise<LlmBatchCompletion> {
     const messages = [
       { role: "system", content: systemPrompt },
       { role: "user", content: content },
@@ -113,7 +114,6 @@ export class GeminiLlmService implements LlmService {
 
     functions.logger.info("Gemini API Success");
     const data = await response.json() as LlmResponse;
-    functions.logger.debug("Gemini Response Data", data);
 
     const result: SuccessResponse = {
       success: true,
@@ -121,6 +121,12 @@ export class GeminiLlmService implements LlmService {
       timestamp: Date.now(),
     };
 
-    return result;
+    return {
+      response: result,
+      requestedModel: this.model,
+      usage: data.usage,
+      responseModel: data.model,
+      finishReason: data.choices[0].finish_reason,
+    };
   }
 }

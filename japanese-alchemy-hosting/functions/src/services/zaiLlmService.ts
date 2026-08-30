@@ -1,7 +1,7 @@
 import * as functions from "firebase-functions";
 import { LlmRequest, LlmResponse, SuccessResponse } from "../models/types";
 import { configSecret } from "../config";
-import { LlmService } from "./llmService";
+import { LlmBatchCompletion, LlmService } from "./llmService";
 
 export class ZaiLlmService implements LlmService {
   private apiUrl: string;
@@ -63,7 +63,7 @@ export class ZaiLlmService implements LlmService {
     return response;
   }
 
-  async chatCompletion(systemPrompt: string, content: string): Promise<SuccessResponse> {
+  async chatCompletion(systemPrompt: string, content: string): Promise<LlmBatchCompletion> {
     const messages = [
       { role: "system", content: systemPrompt },
       { role: "user", content: content },
@@ -105,7 +105,6 @@ export class ZaiLlmService implements LlmService {
 
     functions.logger.info("ZAI API Success");
     const data = await response.json() as LlmResponse;
-    functions.logger.debug("ZAI Response Data", data);
 
     const result: SuccessResponse = {
       success: true,
@@ -113,6 +112,12 @@ export class ZaiLlmService implements LlmService {
       timestamp: Date.now(),
     };
 
-    return result;
+    return {
+      response: result,
+      requestedModel: this.model,
+      usage: data.usage,
+      responseModel: data.model,
+      finishReason: data.choices[0].finish_reason,
+    };
   }
 }
