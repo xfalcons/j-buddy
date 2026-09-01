@@ -191,15 +191,16 @@ describe('sidepanel analysis-mode behavior', () => {
 
   test('shows the pending selected text before analysis is confirmed', async () => {
     const { pendingSelectionStatus } = setupElements();
+    const selectedText = '日'.repeat(500);
     setupStorage({
-      selectedText: '日本語を勉強しています。',
+      selectedText,
       contextBefore: '私は',
       contextAfter: '毎日続けています。',
     });
 
-    await handleSidepanelStorageChanges({ selectedText: { newValue: '日本語を勉強しています。' } });
+    await handleSidepanelStorageChanges({ selectedText: { newValue: selectedText } });
 
-    expect(pendingSelectionStatus.textContent).toContain('日本語を勉強しています。');
+    expect(pendingSelectionStatus.textContent).toContain(selectedText);
     expect(pendingSelectionStatus.textContent).toContain('開始分析');
   });
 
