@@ -206,7 +206,7 @@ describe('sidepanel analysis-mode behavior', () => {
     });
   });
 
-  test('mode switch persists v1 and starts re-analysis instead of rendering cached v2', async () => {
+  test('mode switch persists v1 without starting analysis for the current selection', async () => {
     const text = '成長を後押しする';
     const context = { before: '制度が', after: 'という。' };
     const cachedV2Key = buildContextCacheKey({
@@ -234,21 +234,10 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(storage.promptVariant).toBe('v1');
     expect(compactButton.classList.contains('selected')).toBe(true);
     expect(usageButton.classList.contains('selected')).toBe(false);
-    expect(result.classList.contains('show')).toBe(false);
-    expect(prose.innerHTML).toBe('');
-    expect(apiCalls).toHaveLength(1);
-    expect(apiCalls[0]).toEqual(expect.objectContaining({
-      selectedText: text,
-      promptVariant: 'v1',
-      context,
-    }));
-
-    apiCalls[0].onDone('# fresh v1 response');
-    apiCalls[0].resolve();
+    expect(result.classList.contains('show')).toBe(true);
+    expect(prose.innerHTML).toContain('cached v2 response');
+    expect(apiCalls).toHaveLength(0);
     await changePromise;
-
-    expect(prose.innerHTML).toContain('fresh v1 response');
-    expect(global.localStorage.getItem('lastResponse')).toContain('fresh v1 response');
   });
 
   test('persists a versioned completed-result projection and restores it without another stream', async () => {
