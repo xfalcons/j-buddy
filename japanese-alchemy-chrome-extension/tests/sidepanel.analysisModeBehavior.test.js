@@ -64,14 +64,10 @@ function setupElements() {
   const saveAsBtn = { disabled: true };
   const saveForLaterBtn = { disabled: true, classList: createClassList() };
   const cancelAnalysisButton = { hidden: true };
-  const analyzeButton = { disabled: true };
-  const pendingSelectionStatus = { textContent: '' };
   const elements = {
     alertMessage,
     analysisModeButtons: [compactButton, usageButton],
     cancelAnalysisButton,
-    analyzeButton,
-    pendingSelectionStatus,
     copyButton,
     prose,
     result,
@@ -91,13 +87,11 @@ function setupElements() {
     alertMessage,
     compactButton,
     cancelAnalysisButton,
-    analyzeButton,
     copyButton,
     elements,
     loading,
     loadingMessage,
     prose,
-    pendingSelectionStatus,
     result,
     saveAsBtn,
     saveForLaterBtn,
@@ -187,20 +181,6 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(isValidSelection('あい')).toBe(true);
     expect(isValidSelection('あ'.repeat(500))).toBe(true);
     expect(isValidSelection('あ'.repeat(501))).toBe(false);
-  });
-
-  test('shows the pending selected text before analysis is confirmed', async () => {
-    const { pendingSelectionStatus } = setupElements();
-    setupStorage({
-      selectedText: '日本語を勉強しています。',
-      contextBefore: '私は',
-      contextAfter: '毎日続けています。',
-    });
-
-    await handleSidepanelStorageChanges({ selectedText: { newValue: '日本語を勉強しています。' } });
-
-    expect(pendingSelectionStatus.textContent).toContain('日本語を勉強しています。');
-    expect(pendingSelectionStatus.textContent).toContain('開始分析');
   });
 
   test('includes the parsed structured analysis in a page save payload', async () => {
