@@ -114,3 +114,5 @@ Firebase Local Emulator Suite:
 正在學日文的你，瀏覽日文網站，還在剪剪貼貼嗎？有了
 【Japanese Alchemy 伴讀日文的AI魔法小幫手】
 你就可以翻譯，單字，文法一次擁有，還不快來下載！https://chromewebstore.google.com/detail/cbibkfdcmfbgjbmingopkjfhngilhejd?utm_source=item-share-cb
+Discord server: https://discord.gg/4mPzHcQz3C
+
