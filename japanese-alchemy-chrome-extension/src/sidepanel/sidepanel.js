@@ -423,7 +423,7 @@ function setPendingSelection(selectedText, context = {}, refreshId = null) {
     pendingContext = normalizeContext(context);
     if (elements?.pendingSelectionStatus) {
         elements.pendingSelectionStatus.textContent = isValidSelection(pendingSelectedText)
-            ? `已選取 ${pendingSelectedText.length} 個字元；按「開始分析」才會傳送。`
+            ? `已選取：「${pendingSelectedText}」；按「開始分析」才會傳送。`
             : '請在頁面選取 2–500 個字元後再開始分析。';
     }
     updateAnalyzeAvailability();

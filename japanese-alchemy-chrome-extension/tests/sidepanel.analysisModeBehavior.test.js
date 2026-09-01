@@ -183,6 +183,21 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(isValidSelection('あ'.repeat(501))).toBe(false);
   });
 
+  test('shows the pending selected text before analysis is confirmed', async () => {
+    const { pendingSelectionStatus } = setupElements();
+    const selectedText = '日'.repeat(500);
+    setupStorage({
+      selectedText,
+      contextBefore: '私は',
+      contextAfter: '毎日続けています。',
+    });
+
+    await handleSidepanelStorageChanges({ selectedText: { newValue: selectedText } });
+
+    expect(pendingSelectionStatus.textContent).toContain(selectedText);
+    expect(pendingSelectionStatus.textContent).toContain('開始分析');
+  });
+
   test('includes the parsed structured analysis in a page save payload', async () => {
     const cacheKey = buildContextCacheKey({ selectedText: '成長', promptVariant: 'v2' });
     setupLocalStorage({ lastAnalysisResult: completedProjection(cacheKey) });
