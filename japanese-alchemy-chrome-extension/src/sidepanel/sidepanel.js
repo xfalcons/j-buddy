@@ -360,10 +360,10 @@ function setLoadingMessage(loadingElement, message) {
 
 // Retrieve and display selected text
 async function loadSelectedText() {
-  const pendingRefreshId = ++pendingSelectionRefreshId;
   const { selectedText, contextBefore = '', contextAfter = '' } =
     await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
-  setPendingSelection(selectedText, { before: contextBefore, after: contextAfter }, pendingRefreshId);
+  // return selectedText;
+  await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
 }
 
 // Update when new selections or provider-state transitions arrive.
@@ -374,7 +374,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 // Handle messages from background scripts
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     if (request.action === 'textSelectedChanged') {
-      setPendingSelection(request.data, {
+      await analizingSelectedText(request.data, {
         before: request.contextBefore || '',
         after: request.contextAfter || '',
       });
@@ -388,9 +388,6 @@ let completedAnalysisResponse = '';
 let renderThrottleTimer = null;
 let currentSelectedText = '';
 let currentContext = { before: '', after: '' };
-let pendingSelectedText = '';
-let pendingContext = { before: '', after: '' };
-let pendingSelectionRefreshId = 0;
 let analysisRequestId = 0;
 let activeAnalysisKey = null;
 let activeAnalysisController = null;
@@ -408,34 +405,6 @@ function normalizeContext(context = {}) {
 
 function isValidSelection(selectedText) {
     return !!selectedText && selectedText.length >= 2 && selectedText.length <= 500;
-}
-
-function updateAnalyzeAvailability() {
-    if (elements?.analyzeButton) {
-        elements.analyzeButton.disabled = isAnalizing || !isValidSelection(pendingSelectedText);
-    }
-}
-
-function setPendingSelection(selectedText, context = {}, refreshId = null) {
-    if (refreshId !== null && refreshId !== pendingSelectionRefreshId) return;
-    if (refreshId === null) pendingSelectionRefreshId += 1;
-    pendingSelectedText = selectedText || '';
-    pendingContext = normalizeContext(context);
-    if (elements?.pendingSelectionStatus) {
-        elements.pendingSelectionStatus.textContent = isValidSelection(pendingSelectedText)
-            ? `已選取 ${pendingSelectedText.length} 個字元；按「開始分析」才會傳送。`
-            : '請在頁面選取 2–500 個字元後再開始分析。';
-    }
-    updateAnalyzeAvailability();
-}
-
-export async function handleAnalyzePendingSelection() {
-    if (isAnalizing || !isValidSelection(pendingSelectedText)) {
-        updateAnalyzeAvailability();
-        return;
-    }
-    if (elements?.analyzeButton) elements.analyzeButton.disabled = true;
-    await analizingSelectedText(pendingSelectedText, pendingContext);
 }
 
 function isLatestAnalysis(requestId) {
@@ -473,7 +442,6 @@ export async function handleSidepanelStorageChanges(
         isAnalizing = false;
         activeAnalysisKey = null;
         setCompletedAnalysisAvailable(false);
-        updateAnalyzeAvailability();
     }
 
     if (providerStateChanged) {
@@ -489,10 +457,10 @@ export async function handleSidepanelStorageChanges(
     }
 
     if (changes.selectedText || changes.contextBefore || changes.contextAfter) {
-        const pendingRefreshId = ++pendingSelectionRefreshId;
+        cancelActiveAnalysis();
         const { selectedText, contextBefore = '', contextAfter = '' } =
             await chrome.storage.local.get(['selectedText', 'contextBefore', 'contextAfter']);
-        setPendingSelection(selectedText, { before: contextBefore, after: contextAfter }, pendingRefreshId);
+        await analizingSelectedText(selectedText, { before: contextBefore, after: contextAfter });
     }
 }
 
@@ -655,7 +623,6 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     console.log('Analizing Selected Text...');
     let analysisController = null;
     isAnalizing = true;
-    updateAnalyzeAvailability();
     activeAnalysisPreviewText = '';
     setAnalysisCancellationAvailable(true);
     setCompletedAnalysisAvailable(false);
@@ -811,7 +778,6 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         activeAnalysisRequestIdentity = null;
         activeAnalysisPreviewText = '';
         setAnalysisCancellationAvailable(false);
-        updateAnalyzeAvailability();
     }
 }
 
@@ -1775,7 +1741,10 @@ export async function handleAnalysisModeChange(elements, variant) {
         if (!isLatestModeChange(requestId)) return;
 
         updateAnalysisModeUi(elements, selectedVariant);
-        updateAnalyzeAvailability();
+        await analizingSelectedText(currentSelectedText, currentContext, {
+            force: true,
+            promptVariant: selectedVariant,
+        });
     } catch (error) {
         if (!isLatestModeChange(requestId)) return;
         console.error('[Sidebar] Failed to change analysis mode:', error);
@@ -1805,8 +1774,6 @@ async function initElements() {
     saveAsBtn: document.getElementById('saveAsBtn'),
     saveForLaterBtn: document.getElementById('saveForLaterBtn'),
     cancelAnalysisButton: document.getElementById('cancelAnalysisButton'),
-    analyzeButton: document.getElementById('analyzeButton'),
-    pendingSelectionStatus: document.getElementById('pendingSelectionStatus'),
     shareCheckbox: document.getElementById('shareCheckbox'),
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
     analysisModeButtons: document.querySelectorAll('.analysis-mode-option'),
@@ -1983,9 +1950,6 @@ async function setupEventListeners() {
     });
     elements.cancelAnalysisButton?.addEventListener('click', () => {
       handleCancelAnalysis(elements);
-    });
-    elements.analyzeButton?.addEventListener('click', () => {
-      void handleAnalyzePendingSelection();
     });
     [elements.personalProviderApiUrl, elements.personalProviderApiKey].forEach((field) => {
       field?.addEventListener('input', async () => {
