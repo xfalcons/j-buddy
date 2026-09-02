@@ -64,10 +64,14 @@ function setupElements() {
   const saveAsBtn = { disabled: true };
   const saveForLaterBtn = { disabled: true, classList: createClassList() };
   const cancelAnalysisButton = { hidden: true };
+  const analyzeButton = { disabled: true };
+  const pendingSelectionStatus = { textContent: '' };
   const elements = {
     alertMessage,
     analysisModeButtons: [compactButton, usageButton],
     cancelAnalysisButton,
+    analyzeButton,
+    pendingSelectionStatus,
     copyButton,
     prose,
     result,
@@ -87,11 +91,13 @@ function setupElements() {
     alertMessage,
     compactButton,
     cancelAnalysisButton,
+    analyzeButton,
     copyButton,
     elements,
     loading,
     loadingMessage,
     prose,
+    pendingSelectionStatus,
     result,
     saveAsBtn,
     saveForLaterBtn,
