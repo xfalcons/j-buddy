@@ -1,18 +1,18 @@
-import { restrictLocalStorageToTrustedContexts } from './personalProvider.js';
+import { retirePersonalProvider } from './retirePersonalProvider.js';
 
 // Background service worker
 
-// Content scripts only submit selected text through this relay. Restrict the
-// shared local storage area before any provider profile can be read elsewhere.
-void restrictLocalStorageToTrustedContexts().catch((error) => {
-  // This intentionally reports only the capability error, never provider data.
-  console.error('[Background] Unable to protect local provider settings:', error.message);
+void retirePersonalProvider().catch((error) => {
+  console.error('[Background] Unable to retire custom provider data:', error.message);
 });
 
 // Track panel states
 const panelStates = new Map();
 
 chrome.runtime.onInstalled.addListener(() => {
+  void retirePersonalProvider().catch((error) => {
+    console.error('[Background] Unable to retire custom provider data:', error.message);
+  });
   console.log("Extension installed");
 });
 

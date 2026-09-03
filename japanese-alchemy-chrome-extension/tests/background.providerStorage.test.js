@@ -3,7 +3,7 @@ describe('background provider-storage boundary', () => {
     jest.resetModules();
   });
 
-  test('locks local storage while preserving the content-script selection relay', async () => {
+  test('retires provider state while preserving the content-script selection relay', async () => {
     let messageListener;
     const stored = {};
     global.chrome = {
@@ -12,7 +12,6 @@ describe('background provider-storage boundary', () => {
           get: jest.fn(async () => ({})),
           set: jest.fn(async (values) => Object.assign(stored, values)),
           remove: jest.fn(async () => undefined),
-          setAccessLevel: jest.fn(async () => undefined),
         },
       },
       runtime: {
@@ -39,9 +38,6 @@ describe('background provider-storage boundary', () => {
       apiKey: 'must-not-be-returned',
     }, {}, response);
 
-    expect(global.chrome.storage.local.setAccessLevel).toHaveBeenCalledWith({
-      accessLevel: 'TRUSTED_CONTEXTS',
-    });
     expect(stored).toEqual({
       selectedText: '日本語',
       contextBefore: '前',
