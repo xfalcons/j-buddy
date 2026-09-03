@@ -32,6 +32,11 @@
   - 個人提供者新增 Responses-compatible 通訊協定支援；當無法取得模型目錄時，也可手動輸入模型 ID。
   - 強化個人提供者的安全與可靠性：API 金鑰以遮罩顯示、僅於本機使用，並改善提供者權限與設定清理機制。
 
+# Release Notes for Ja Alchemy v1.4.1
+  - 移除自訂的 LLM API 提供者
+  - 新增「開始分析」按鈕，避免意外的選取文字就分析
+  - 新增「前往網站」與「常見問題」按鈕
+
 title: J-Buddy Learn Japanese
 summary: 你的 AI 日文隨身家教，查單字、看語法一氣呵成；點擊之間，讓日文閱讀從「阻礙」變成「享受」！
 description:

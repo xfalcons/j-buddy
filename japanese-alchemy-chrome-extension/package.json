@@ -1,6 +1,6 @@
 {
   "name": "chrome-ext-language",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "A basic Chrome extension template",
   "scripts": {
     "build": "webpack --mode production",
