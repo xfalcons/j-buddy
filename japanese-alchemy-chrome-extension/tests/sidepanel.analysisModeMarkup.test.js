@@ -46,4 +46,8 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('hidden>停止分析</button>');
     expect(html).toContain('aria-label="停止目前分析"');
   });
+
+  test('separates the manual analysis action from the analysis result', () => {
+    expect(html).toMatch(/#analyzeButton\s*\{[\s\S]*?margin-bottom:\s*8px;/);
+  });
 });
