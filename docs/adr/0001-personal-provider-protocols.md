@@ -1,6 +1,8 @@
 # Support explicit personal-provider protocols
 
-**Status:** Accepted
+**Status:** Superseded
+
+Superseded by managed-only Chrome extension analysis; learner-configured provider profiles are no longer supported.
 
 Personal provider profiles support explicit Chat Completions-compatible and Responses-compatible protocols rather than arbitrary endpoint URLs. The protocol determines a derived endpoint and request/stream parser; Responses requests opt out of server-side storage, preserve the safe non-streaming fallback, and allow a manual model ID when `/models` discovery is unavailable. This keeps providers interoperable without weakening the profile's origin-permission boundary or silently retaining learner text.
 
