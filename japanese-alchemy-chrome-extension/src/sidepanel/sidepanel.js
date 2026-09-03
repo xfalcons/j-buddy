@@ -25,6 +25,12 @@ const ANALYSIS_ALLOWED_ATTR = ['colspan', 'href', 'rowspan', 'title'];
 const COMPLETED_ANALYSIS_RESULT_CACHE_VERSION = 1;
 const COMPLETED_ANALYSIS_RESULT_STORAGE_KEY = 'lastAnalysisResult';
 const CONTROLLED_CHECKBOX_PATTERN = /<input type="checkbox" name="(words|grammars)" value="([^"<>]*)">/g;
+export const WEBSITE_URL = 'https://japanese-alchemy-webapp.web.app/';
+export const FAQ_URL = 'https://japanese-alchemy-webapp.web.app/faq';
+
+export async function openExternalPage(url) {
+    await chrome.tabs.create({ url, active: true });
+}
 
 function getDomPurify() {
     // The production side panel always has a real browser window. The guarded
@@ -994,6 +1000,8 @@ async function initElements() {
   elements = {
     prose: document.querySelector('.prose'),
     themeToggle: document.querySelector('#themeToggle'),
+    websiteButton: document.querySelector('#websiteButton'),
+    faqButton: document.querySelector('#faqButton'),
     alertMessage: document.querySelector('#alertMessage'),
     copyButton: document.querySelector('.copy-button'),
     fontSizeBtn: document.querySelector('#fontSizeBtn'),
@@ -1134,7 +1142,7 @@ async function handleSignOut() {
 }
 
 // Set up event listeners
-async function setupEventListeners() {
+export async function setupEventListeners() {
     if (!elements) {
       console.log('[Sidebar] Initializing elements...');
       elements = await initElements();
@@ -1142,6 +1150,12 @@ async function setupEventListeners() {
 
     // Theme toggle
     elements.themeToggle?.addEventListener('click', () => handleThemeToggle(elements));
+    elements.websiteButton?.addEventListener('click', () => {
+      void openExternalPage(WEBSITE_URL);
+    });
+    elements.faqButton?.addEventListener('click', () => {
+      void openExternalPage(FAQ_URL);
+    });
 
     elements.analysisModeButtons?.forEach((button) => {
       button.addEventListener('click', async () => {

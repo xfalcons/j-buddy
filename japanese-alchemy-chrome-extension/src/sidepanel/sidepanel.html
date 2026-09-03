@@ -291,7 +291,7 @@
       color: white;
     }
 
-    .theme-toggle {
+    .theme-toggle, .external-link-button {
       width: 36px;
       height: 36px;
       padding: 0;
@@ -306,12 +306,12 @@
       transition: all 0.2s ease-in-out;
     }
 
-    .theme-toggle:hover {
+    .theme-toggle:hover, .external-link-button:hover {
       border-color: var(--button-bg);
       background: var(--bg-secondary);
     }
 
-    .theme-toggle svg {
+    .theme-toggle svg, .external-link-button svg {
       width: 20px;
       height: 20px;
       transition: opacity 0.2s ease-in-out;
@@ -744,6 +744,19 @@
           </svg>
           <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: none;">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+          </svg>
+        </button>
+        <button class="external-link-button" id="websiteButton" type="button" title="前往網站" aria-label="前往網站">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke-width="2"></circle>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h18M12 3c2.5 2.5 3.75 5.5 3.75 9S14.5 18.5 12 21c-2.5-2.5-3.75-5.5-3.75-9S9.5 5.5 12 3z"></path>
+          </svg>
+        </button>
+        <button class="external-link-button" id="faqButton" type="button" title="常見問題" aria-label="常見問題">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke-width="2"></circle>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.5 9a2.5 2.5 0 1 1 4.3 1.7c-.9.9-1.8 1.4-1.8 2.8"></path>
+            <path stroke-linecap="round" stroke-width="2" d="M12 17h.01"></path>
           </svg>
         </button>
         <!-- <button class="theme-toggle" id="configButton" title="Configuration">
