@@ -24,6 +24,9 @@
     "storage",
     "offscreen"
   ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "background": {
     "service_worker": "scripts/background.js"
   },

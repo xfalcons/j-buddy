@@ -1,17 +1,17 @@
-import { retirePersonalProvider } from './retirePersonalProvider.js';
+import { initializePersonalProviderState } from './personalProvider.js';
 
 // Background service worker
 
-void retirePersonalProvider().catch((error) => {
-  console.error('[Background] Unable to retire custom provider data:', error.message);
+void initializePersonalProviderState().catch((error) => {
+  console.error('[Background] Unable to initialize provider storage:', error.message);
 });
 
 // Track panel states
 const panelStates = new Map();
 
 chrome.runtime.onInstalled.addListener(() => {
-  void retirePersonalProvider().catch((error) => {
-    console.error('[Background] Unable to retire custom provider data:', error.message);
+  void initializePersonalProviderState().catch((error) => {
+    console.error('[Background] Unable to initialize provider storage:', error.message);
   });
   console.log("Extension installed");
 });
