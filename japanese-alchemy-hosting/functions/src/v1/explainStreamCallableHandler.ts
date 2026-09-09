@@ -60,11 +60,11 @@ export async function explainStreamCallableHandler(
     throw callableErrorForRateLimit(rateLimit.reason);
   }
 
-  const { content, prompt = "v2", context_before, context_after } = request.data as any;
+  const { content, prompt = "v2", context_before, context_after, ai } = request.data as any;
   const systemPrompt = prompt === "v2" ? SYSTEM_PROMPT_V2 : SYSTEM_PROMPT_V1;
 
   try {
-    const llmService = createLlmService("gemini");
+    const llmService = createLlmService(ai);
     const completion = await llmService.streamCompletion(
       systemPrompt,
       buildAnalysisMessage(content, { before: context_before, after: context_after })
@@ -77,7 +77,7 @@ export async function explainStreamCallableHandler(
     });
 
     logLlmUsageTelemetry({
-      provider: "gemini",
+      provider: (ai as any) || "gemini",
       requestedModel: completion.requestedModel,
       responseModel: streamResult.responseModel,
       operation: "stream",
