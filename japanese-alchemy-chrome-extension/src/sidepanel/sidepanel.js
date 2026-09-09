@@ -1553,6 +1553,7 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
         modelIds: [],
         controller,
         savedProviderSnapshot: {
+            epoch: requestSavedState.epoch || 0,
             revision: requestSavedState.revision || 0,
             profile: requestSavedState.profile || null,
         },
