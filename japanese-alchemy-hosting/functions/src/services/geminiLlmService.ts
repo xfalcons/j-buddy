@@ -1,6 +1,6 @@
 import * as functions from "firebase-functions";
 import { LlmRequest, LlmResponse, SuccessResponse } from "../models/types";
-import { configSecret } from "../config";
+import { getConfig } from "../config";
 import { LlmBatchCompletion, LlmService, LlmStreamCompletion } from "./llmService";
 
 export class GeminiLlmService implements LlmService {
@@ -9,7 +9,7 @@ export class GeminiLlmService implements LlmService {
   private model: string;
 
   constructor() {
-    const config = configSecret.value();
+    const config = getConfig();
     this.apiUrl = config.gemini.api_url;
     this.apiKey = config.gemini.api_key;
     this.model = config.gemini.model;

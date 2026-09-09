@@ -1,7 +1,9 @@
 import { AiProvider, LlmUsage, SuccessResponse } from "../models/types";
-import { LLM_PROVIDER } from "../config";
 import { GeminiLlmService } from "./geminiLlmService";
+import { LlmServiceChain } from "./llmRetryService";
 import { ZaiLlmService } from "./zaiLlmService";
+import { BedrockResponsesService } from "./bedrockResponsesService";
+import { BedrockChatService } from "./bedrockChatService";
 
 export interface LlmService {
   chatCompletion(systemPrompt: string, content: string): Promise<LlmBatchCompletion>;
@@ -22,16 +24,22 @@ export interface LlmStreamCompletion {
 }
 
 /**
- * Factory: creates an LlmService for an explicitly selected AI, or retains the
- * configured provider when no selection is supplied by a caller outside the
- * explain request handlers.
+ * Factory: creates an LlmService for an explicitly selected AI, or a
+ * sequential fallback chain when no selection is supplied.
  */
 export function createLlmService(ai?: AiProvider): LlmService {
-  switch (ai ?? LLM_PROVIDER) {
-    case "zai":
-      return new ZaiLlmService();
-    case "gemini":
-    default:
-      return new GeminiLlmService();
+  if (ai !== undefined) {
+    switch (ai) {
+      case "bedrock_response":
+        return new BedrockResponsesService();
+      case "bedrock_chat":
+        return new BedrockChatService();
+      case "zai":
+        return new ZaiLlmService();
+      case "gemini":
+      default:
+        return new GeminiLlmService();
+    }
   }
+  return new LlmServiceChain();
 }

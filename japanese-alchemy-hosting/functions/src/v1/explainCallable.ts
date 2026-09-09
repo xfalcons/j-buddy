@@ -24,7 +24,7 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
   }
 
   // Defaults match the Chrome extension and streaming callable.
-  const { content, prompt = "v2", context_before, context_after } = data;
+  const { content, prompt = "v2", context_before, context_after, ai } = data;
 
   // Per-IP rate limit (parity with explainStreamCallable). The callable's client IP is
   // on the underlying Express request.
@@ -45,14 +45,14 @@ export async function explainHandler(request: any): Promise<SuccessResponse> {
   const systemPrompt = prompt === "v2" ? SYSTEM_PROMPT_V2 : SYSTEM_PROMPT_V1;
 
   try {
-    const llmService = createLlmService("gemini");
+    const llmService = createLlmService(ai);
     const completion = await llmService.chatCompletion(
       systemPrompt,
       buildAnalysisMessage(content, { before: context_before, after: context_after })
     );
 
     logLlmUsageTelemetry({
-      provider: "gemini",
+      provider: (ai as any) || "gemini",
       requestedModel: completion.requestedModel,
       responseModel: completion.responseModel,
       operation: "batch",

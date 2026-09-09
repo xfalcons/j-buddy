@@ -34,10 +34,17 @@ describe("explainHandler", () => {
     expect(mockChatCompletion).toHaveBeenCalledWith(SYSTEM_PROMPT_V2, "テストです");
   });
 
-  it.each([undefined, "gemini", "zai"])("always selects Gemini for ai=%s", async (ai) => {
-    await explainHandler({ data: { content: "テストです", ...(ai && { ai }) } } as any);
-
+  it("uses the ai parameter when provided", async () => {
+    await explainHandler({ data: { content: "テストです", ai: "gemini" } } as any);
     expect(mockCreateLlmService).toHaveBeenCalledWith("gemini");
+
+    await explainHandler({ data: { content: "テストです", ai: "zai" } } as any);
+    expect(mockCreateLlmService).toHaveBeenCalledWith("zai");
+  });
+
+  it("uses the chain when ai is not provided", async () => {
+    await explainHandler({ data: { content: "テストです" } } as any);
+    expect(mockCreateLlmService).toHaveBeenCalledWith(undefined);
   });
 
   it("selects v1 when prompt is v1", async () => {

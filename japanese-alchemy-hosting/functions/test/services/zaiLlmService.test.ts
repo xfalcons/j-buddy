@@ -2,12 +2,10 @@ import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { ZaiLlmService } from "../../src/services/zaiLlmService";
 
 jest.mock("../../src/config", () => ({
-  configSecret: {
-    value: () => ({
+  getConfig: () => ({
       gemini: { api_url: "https://gemini.example", api_key: "gemini-key", model: "gemini-3-flash-preview" },
       zai: { api_url: "https://zai.example", api_key: "zai-key", model: "GLM-5.3-Flash" },
     }),
-  },
   LLM_PROVIDER: "zai",
 }));
 

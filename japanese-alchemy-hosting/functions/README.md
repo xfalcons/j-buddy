@@ -76,13 +76,13 @@ echo '{"gemini":{"api_url":"https://...","api_key":"...","model":"..."},"zai":{"
   firebase functions:secrets:set JAPANESE_ALCHEMY_CONFIG --data-file=-
 
 # or
-firebase functions:secrets:set JAPANESE_ALCHEMY_CONFIG --data-file=./functions/.secret.local
+firebase functions:secrets:set JAPANESE_ALCHEMY_CONFIG --data-file=./.secret.cloud.json
 ```
 
 After updating, redeploy for functions to pick up the new version:
 
 ```bash
-cd japanese-alchemy-hosting && firebase deploy --only functions
+firebase deploy --only functions
 ```
 
 ## Installation

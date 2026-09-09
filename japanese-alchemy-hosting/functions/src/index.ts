@@ -8,25 +8,25 @@ admin.initializeApp();
 import { explainHandler } from "./v1/explainCallable";
 import { explainStreamCallableHandler } from "./v1/explainStreamCallableHandler";
 import { saveItemsHandler } from "./v1/saveItemsCallable";
-import { configSecret } from "./config";
+import { runtimeSecrets } from "./config";
 import { explainRuntimeOptions } from "./runtimeOptions";
 
 // Create and export callable functions with v2 API
-// The configSecret object is passed to the secrets parameter.
+// runtimeSecrets binds the JSON configuration secret to each callable.
 // LLM-backed callables share cost-ceiling runtime options (see
 // runtimeOptions.ts); saveItems is auth-gated and not LLM-backed, so it is
 // left on defaults.
 export const explain = onCall(
-  { ...explainRuntimeOptions, secrets: [configSecret] },
+  { ...explainRuntimeOptions, secrets: runtimeSecrets },
   explainHandler
 );
 
 export const explainStreamCallable = onCall(
-  { ...explainRuntimeOptions, timeoutSeconds: 120, secrets: [configSecret] },
+  { ...explainRuntimeOptions, timeoutSeconds: 120, secrets: runtimeSecrets },
   explainStreamCallableHandler
 );
 
 export const saveItems = onCall(
-  { secrets: [configSecret] },
+  { secrets: runtimeSecrets },
   saveItemsHandler
 );

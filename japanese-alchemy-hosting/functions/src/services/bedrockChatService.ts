@@ -1,25 +1,34 @@
 import * as functions from "firebase-functions";
 import { LlmRequest, LlmResponse, SuccessResponse } from "../models/types";
 import { getConfig } from "../config";
-import { LlmBatchCompletion, LlmService, LlmStreamCompletion } from "./llmService";
+import {
+  LlmBatchCompletion,
+  LlmService,
+  LlmStreamCompletion,
+} from "./llmService";
 
-export class ZaiLlmService implements LlmService {
+export class BedrockChatService implements LlmService {
   private apiUrl: string;
   private apiKey: string;
   private model: string;
 
   constructor() {
     const config = getConfig();
-    this.apiUrl = config.zai.api_url;
-    this.apiKey = config.zai.api_key;
-    this.model = config.zai.model;
+    this.apiUrl = config.bedrock_chat?.api_url;
+    this.apiKey = config.bedrock_chat?.api_key;
+    this.model = config.bedrock_chat?.model;
 
     if (!this.apiKey) {
-      throw new Error("ZAI API key not found in JAPANESE_ALCHEMY_CONFIG secret");
+      throw new Error(
+        "Bedrock chat API key not found in JAPANESE_ALCHEMY_CONFIG secret"
+      );
     }
   }
 
-  async streamCompletion(systemPrompt: string, content: string): Promise<LlmStreamCompletion> {
+  async streamCompletion(
+    systemPrompt: string,
+    content: string
+  ): Promise<LlmStreamCompletion> {
     const messages = [
       { role: "system", content: systemPrompt },
       { role: "user", content: content },
@@ -33,12 +42,12 @@ export class ZaiLlmService implements LlmService {
       stream: true,
     };
 
-    functions.logger.info("Calling ZAI API (streaming)", {
+    functions.logger.info("Calling Bedrock Chat API (streaming)", {
       model: this.model,
       messagesCount: messages.length,
     });
 
-    const response = await fetch(`${this.apiUrl}/chat/completions`, {
+    const response = await fetch(`${this.apiUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -49,21 +58,24 @@ export class ZaiLlmService implements LlmService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      functions.logger.error("ZAI API Error (streaming)", {
+      functions.logger.error("Bedrock Chat API Error (streaming)", {
         status: response.status,
         statusText: response.statusText,
         error: errorText,
       });
       throw new functions.https.HttpsError(
         "internal",
-        `ZAI API error: ${response.status} ${response.statusText}`
+        `Bedrock Chat API error: ${response.status} ${response.statusText}`
       );
     }
 
     return { response, requestedModel: this.model };
   }
 
-  async chatCompletion(systemPrompt: string, content: string): Promise<LlmBatchCompletion> {
+  async chatCompletion(
+    systemPrompt: string,
+    content: string
+  ): Promise<LlmBatchCompletion> {
     const messages = [
       { role: "system", content: systemPrompt },
       { role: "user", content: content },
@@ -76,12 +88,12 @@ export class ZaiLlmService implements LlmService {
       max_tokens: 8192,
     };
 
-    functions.logger.info("Calling ZAI API", {
+    functions.logger.info("Calling Bedrock Chat API", {
       model: this.model,
       messagesCount: messages.length,
     });
 
-    const response = await fetch(`${this.apiUrl}/chat/completions`, {
+    const response = await fetch(`${this.apiUrl}/openai/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -92,18 +104,18 @@ export class ZaiLlmService implements LlmService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      functions.logger.error("ZAI API Error", {
+      functions.logger.error("Bedrock Chat API Error", {
         status: response.status,
         statusText: response.statusText,
         error: errorText,
       });
       throw new functions.https.HttpsError(
         "internal",
-        `ZAI API error: ${response.status} ${response.statusText}`
+        `Bedrock Chat API error: ${response.status} ${response.statusText}`
       );
     }
 
-    functions.logger.info("ZAI API Success");
+    functions.logger.info("Bedrock Chat API Success");
     const data = await response.json() as LlmResponse;
 
     const result: SuccessResponse = {

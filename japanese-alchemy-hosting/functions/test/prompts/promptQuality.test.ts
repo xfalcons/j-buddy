@@ -34,7 +34,6 @@ jest.mock("../../src/config", () => {
   const config = fsp.existsSync(secretsPath) ? JSON.parse(fsp.readFileSync(secretsPath, "utf8")) : {};
   const provider = process.env.PROMPT_PROVIDER || "gemini";
   return {
-    configSecret: { name: "JAPANESE_ALCHEMY_CONFIG", value: () => config },
     LLM_PROVIDER: provider,
     getConfig: () => config,
   };
