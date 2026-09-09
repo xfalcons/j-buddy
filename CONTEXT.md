@@ -28,6 +28,14 @@ _Avoid_: default model, cached model
 Whether a saved model selection came from model-catalog discovery or, for an eligible Responses-compatible provider, manual model ID entry.
 _Avoid_: model type, selection mode
 
+**Provider restoration epoch**:
+The persisted generation boundary that makes provider profiles and personal analysis caches written before the restoration unusable. It supports fresh setup without treating retired credentials or catalogs as recoverable state.
+_Avoid_: migration version, legacy provider recovery
+
+**Personal analysis cache identity**:
+The non-secret identity for a personal completed-analysis cache entry, comprising restoration epoch, profile configuration generation, protocol, endpoint, model, prompt variant, selected text, and context. It never includes an API key or provider response envelope.
+_Avoid_: provider cache key, credential hash
+
 ## Usage Controls
 
 **Daily analysis allowance**:

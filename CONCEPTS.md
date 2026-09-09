@@ -29,6 +29,13 @@ A learner-facing label for a prompt variant in the Chrome extension sidebar. Ana
 The J-Buddy-operated analysis route, selected when a learner uses the service's shared provider configuration rather than their own provider profile.
 
 
+### Personal provider
+A learner-configured LLM provider profile stored in the current Chrome browser profile and called directly by the extension. Its credentials never pass through J-Buddy's backend, and selecting it never triggers silent managed-provider fallback.
+
+
+### Provider restoration epoch
+The persisted generation boundary that makes pre-restoration personal profiles and caches unreachable while allowing fresh personal-provider setup.
+
 ### High-value vocabulary item
 A vocabulary item selected for analysis because it materially helps comprehension or later sentence production in the current source text. High-value items may include verbs, サ變 nouns, adjectives, adverbs, compound nouns, and katakana loanwords, and are preferred over exhaustive N1-N3 extraction.
 
