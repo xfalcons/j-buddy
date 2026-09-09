@@ -26,16 +26,20 @@ describe('sidepanel external links', () => {
   test('wires each toolbar button to its destination', async () => {
     const websiteButton = { addEventListener: jest.fn() };
     const faqButton = { addEventListener: jest.fn() };
-    setSidepanelElementsForTesting({ websiteButton, faqButton });
+    const allowanceAction = { addEventListener: jest.fn() };
+    setSidepanelElementsForTesting({ websiteButton, faqButton, allowanceAction });
 
     await setupEventListeners();
 
     const websiteListener = websiteButton.addEventListener.mock.calls[0][1];
     const faqListener = faqButton.addEventListener.mock.calls[0][1];
+    const allowanceActionListener = allowanceAction.addEventListener.mock.calls[0][1];
     websiteListener();
     faqListener();
+    allowanceActionListener();
 
     expect(global.chrome.tabs.create).toHaveBeenNthCalledWith(1, { url: WEBSITE_URL, active: true });
     expect(global.chrome.tabs.create).toHaveBeenNthCalledWith(2, { url: FAQ_URL, active: true });
+    expect(global.chrome.tabs.create).toHaveBeenNthCalledWith(3, { url: FAQ_URL, active: true });
   });
 });

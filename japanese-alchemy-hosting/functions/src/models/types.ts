@@ -3,6 +3,7 @@ export interface SuccessResponse {
   success: boolean;
   data?: any;
   timestamp?: number;
+  allowance?: { limit: number; remaining: number; resetAt: string };
 }
 
 export interface FailureResponse {

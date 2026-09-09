@@ -370,6 +370,8 @@ let activeAnalysisRequestIdentity = null;
 let activeAnalysisPreviewText = '';
 let modeChangeRequestId = 0;
 let hasCompletedAnalysis = false;
+let managedAllowanceExhaustedUntil = null;
+let managedAllowanceResetTimer = null;
 
 function normalizeContext(context = {}) {
     return {
@@ -382,13 +384,90 @@ function isValidSelection(selectedText) {
     return !!selectedText && selectedText.length >= 2 && selectedText.length <= 500;
 }
 
+export function formatDailyAllowanceReset(resetAt, now = new Date()) {
+    const resetTime = new Date(resetAt);
+    const millisecondsRemaining = resetTime.getTime() - now.getTime();
+    if (!Number.isFinite(resetTime.getTime()) || millisecondsRemaining <= 0) {
+        return resetTime.toLocaleString();
+    }
+    const minutesRemaining = Math.max(1, Math.ceil(millisecondsRemaining / 60000));
+    const hours = Math.floor(minutesRemaining / 60);
+    const minutes = minutesRemaining % 60;
+    const relative = hours > 0 ? `${hours} 小時 ${minutes} 分鐘` : `${minutes} 分鐘`;
+    return `${relative}後重設（${resetTime.toLocaleString()}）`;
+}
+
+function clearManagedAllowanceExhaustion() {
+    managedAllowanceExhaustedUntil = null;
+    if (managedAllowanceResetTimer) {
+        clearTimeout(managedAllowanceResetTimer);
+        managedAllowanceResetTimer = null;
+    }
+    if (elements?.allowanceAction) elements.allowanceAction.hidden = true;
+}
+
+function setManagedAllowanceExhaustion(resetAt) {
+    clearManagedAllowanceExhaustion();
+    const resetTime = new Date(resetAt);
+    if (!Number.isFinite(resetTime.getTime())) return;
+    managedAllowanceExhaustedUntil = resetTime.getTime();
+    managedAllowanceResetTimer = setTimeout(() => {
+        clearManagedAllowanceExhaustion();
+        if (elements?.allowanceStatus) {
+            elements.allowanceStatus.hidden = true;
+            elements.allowanceStatus.classList.remove('show');
+        }
+        updateAnalyzeAvailability();
+    }, Math.max(0, resetTime.getTime() - Date.now()));
+    if (elements?.allowanceAction) elements.allowanceAction.hidden = false;
+    updateAnalyzeAvailability();
+}
+
+export function renderDailyAllowanceStatus(allowance) {
+    if (!allowance
+        || !Number.isFinite(Number(allowance.remaining))
+        || !Number.isFinite(Number(allowance.limit))) {
+        return;
+    }
+    if (elements?.allowanceStatus) {
+        elements.allowanceStatus.hidden = false;
+        elements.allowanceStatus.classList.add('show');
+        elements.allowanceStatus.textContent = Number(allowance.remaining) > 0
+            ? `今日還有 ${allowance.remaining}/${allowance.limit} 次共享 AI 分析。`
+            : `今日共享 AI 分析已用完，${formatDailyAllowanceReset(allowance.resetAt)}。`;
+    }
+    if (Number(allowance.remaining) > 0) {
+        clearManagedAllowanceExhaustion();
+    } else {
+        setManagedAllowanceExhaustion(allowance.resetAt);
+    }
+    updateAnalyzeAvailability();
+}
+
+export function dailyAllowanceErrorMessage(fallbackMessage, context = {}) {
+    if (context.type === 'daily_allowance_exhausted') {
+        renderDailyAllowanceStatus(context.allowance);
+        return `今日共享 AI 分析已用完，${formatDailyAllowanceReset(context.allowance?.resetAt)}。`;
+    }
+    if (context.type === 'allowance_enforcement_outage') {
+        return '暫時無法確認每日分析額度，請稍後再試；目前額度狀態不變。';
+    }
+    if (context.type === 'admitted_analysis_failure' && context.allowance) {
+        renderDailyAllowanceStatus(context.allowance);
+        return `${fallbackMessage} 本次嘗試已計入今日共享 AI 分析額度。`;
+    }
+    return fallbackMessage;
+}
+
 function updateAnalyzeAvailability() {
     if (elements?.analyzeButton) {
-        elements.analyzeButton.disabled = isAnalizing || !isValidSelection(pendingSelectedText);
+        elements.analyzeButton.disabled = isAnalizing
+            || !isValidSelection(pendingSelectedText)
+            || Boolean(managedAllowanceExhaustedUntil && managedAllowanceExhaustedUntil > Date.now());
     }
 }
 
-function setPendingSelection(selectedText, context = {}, refreshId = null) {
+export function setPendingSelection(selectedText, context = {}, refreshId = null) {
     if (refreshId !== null && refreshId !== pendingSelectionRefreshId) return;
     if (refreshId === null) pendingSelectionRefreshId += 1;
     pendingSelectedText = selectedText || '';
@@ -620,8 +699,9 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         renderStreamingPreview(proseElement, fullText, requestId);
                     },
                     // onDone: finalize with full formatting (checkboxes, structured data)
-                    (fullText) => {
+                    (fullText, allowance) => {
                         if (!isLatestAnalysis(requestId)) return;
+                        if (allowance) renderDailyAllowanceStatus(allowance);
                         // Enrich the raw stream with engine-generated verb
                         // conjugation before any consumer reads it, so the
                         // rendered panel, the saved item, Copy, Save-As, and the
@@ -664,14 +744,18 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         renderCompletedAnalysis(analysisResult, proseElement, resultElement, loadingElement);
                     },
                     // onError
-                    (errorMessage) => {
+                    (errorMessage, context) => {
                         if (!isLatestAnalysis(requestId)) return;
                         console.warn('Streaming API Error:', errorMessage);
                         if (renderThrottleTimer) {
                             clearTimeout(renderThrottleTimer);
                             renderThrottleTimer = null;
                         }
-                        alertMessage(elements.alertMessage, `呼叫分析服務時發生錯誤：${errorMessage}`, 'error');
+                        alertMessage(
+                            elements.alertMessage,
+                            `呼叫分析服務時發生錯誤：${dailyAllowanceErrorMessage(errorMessage, context)}`,
+                            'error'
+                        );
                         elements.alertMessage.classList.add('show');
                         setLoadingState(loadingElement, false);
                         proseElement.innerHTML = '';
@@ -686,7 +770,11 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             } catch (apiError) {
                 if (!isLatestAnalysis(requestId)) return;
                 console.warn('Calling API Error:', apiError);
-                alertMessage(elements.alertMessage, `呼叫分析服務時發生錯誤：${apiError.message}`, 'error');
+                alertMessage(
+                    elements.alertMessage,
+                    `呼叫分析服務時發生錯誤：${dailyAllowanceErrorMessage(apiError.message)}`,
+                    'error'
+                );
                 elements.alertMessage.classList.add('show');
                 setLoadingState(loadingElement, false);
                 proseElement.innerHTML = '';
@@ -1010,6 +1098,8 @@ async function initElements() {
     saveForLaterBtn: document.getElementById('saveForLaterBtn'),
     cancelAnalysisButton: document.getElementById('cancelAnalysisButton'),
     analyzeButton: document.getElementById('analyzeButton'),
+    allowanceStatus: document.getElementById('allowanceStatus'),
+    allowanceAction: document.getElementById('allowanceAction'),
     pendingSelectionStatus: document.getElementById('pendingSelectionStatus'),
     shareCheckbox: document.getElementById('shareCheckbox'),
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
@@ -1154,6 +1244,9 @@ export async function setupEventListeners() {
       void openExternalPage(WEBSITE_URL);
     });
     elements.faqButton?.addEventListener('click', () => {
+      void openExternalPage(FAQ_URL);
+    });
+    elements.allowanceAction?.addEventListener('click', () => {
       void openExternalPage(FAQ_URL);
     });
 

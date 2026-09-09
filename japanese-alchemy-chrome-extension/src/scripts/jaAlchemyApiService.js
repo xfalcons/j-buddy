@@ -104,17 +104,40 @@ class JaAlchemyApiService {
         return;
       }
       if (!result?.success) {
-        onError(result?.error || '未知的串流錯誤');
+        onError(result?.error || '未知的串流錯誤', {
+          type: 'admitted_analysis_failure',
+          allowance: result?.allowance,
+        });
         return;
       }
 
-      onDone(fullText);
+      onDone(fullText, result?.allowance);
     } catch (error) {
       if (signal?.aborted || error?.name === 'AbortError') {
         return;
       }
       console.error('[Firebase API] Stream error:', error);
-      onError(error.message || '串流請求失敗');
+      const details = error?.details;
+      if (details?.reason === 'daily_allowance_exhausted') {
+        onError('今日的 AI 分析額度已用完。', {
+          type: 'daily_allowance_exhausted',
+          allowance: { limit: details.limit, remaining: 0, resetAt: details.resetAt },
+        });
+        return;
+      }
+      if (details?.reason === 'unavailable') {
+        onError('暫時無法確認每日分析額度，請稍後再試。', {
+          type: 'allowance_enforcement_outage',
+        });
+        return;
+      }
+      if (details?.reason === 'missing_ip') {
+        onError('無法確認此未登入請求的來源，因此無法開始分析。', {
+          type: 'client_identity_unavailable',
+        });
+        return;
+      }
+      onError(error.message || '串流請求失敗', {});
     }
   }
 

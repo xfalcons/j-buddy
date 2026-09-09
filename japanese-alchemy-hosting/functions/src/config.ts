@@ -20,8 +20,26 @@ export interface AppConfig {
   zai: ProviderConfig;
   bedrock_response: ProviderConfig;
   bedrock_chat: ProviderConfig;
+  daily_allowance?: {
+    enabled?: boolean;
+    active_hmac_key?: string;
+    previous_hmac_key?: string;
+  };
 }
 
 export function getConfig(): AppConfig {
   return configSecret.value() as AppConfig;
+}
+
+export function getDailyAllowanceConfig() {
+  const config = getConfig().daily_allowance;
+  if (!config?.enabled) return { enabled: false };
+  if (!config.active_hmac_key) {
+    throw new Error("Daily allowance active HMAC key is missing");
+  }
+  return {
+    enabled: true,
+    activeHmacKey: config.active_hmac_key,
+    previousHmacKey: config.previous_hmac_key,
+  };
 }

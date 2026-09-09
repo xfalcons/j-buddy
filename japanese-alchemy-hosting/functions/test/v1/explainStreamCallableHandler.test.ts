@@ -1,15 +1,23 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { explainStreamCallableHandler } from "../../src/v1/explainStreamCallableHandler";
-import { checkRateLimit } from "../../src/v1/rateLimiter";
 
 const mockStreamCompletion = jest.fn() as any;
 const mockCreateLlmService = jest.fn((..._args: unknown[]) => ({ streamCompletion: mockStreamCompletion }));
+const mockDailyAllowanceConfig = { enabled: false } as any;
 
 jest.mock("../../src/services/llmService", () => ({
   createLlmService: (...args: unknown[]) => mockCreateLlmService(...args),
 }));
+jest.mock("../../src/config", () => ({
+  getDailyAllowanceConfig: () => mockDailyAllowanceConfig,
+}));
+jest.mock("../../src/v1/dailyAllowance", () => ({
+  ...(jest.requireActual("../../src/v1/dailyAllowance") as object),
+  admitDailyAllowance: (...args: unknown[]) => mockAdmitDailyAllowance(...args),
+}));
 
-jest.mock("../../src/v1/rateLimiter");
+const mockAdmitDailyAllowance = jest.fn() as any;
+
 
 function readableSseResponse(frames: string[]) {
   const values = frames.map((frame) => new TextEncoder().encode(frame));
@@ -26,10 +34,10 @@ function readableSseResponse(frames: string[]) {
 
 describe("explainStreamCallableHandler", () => {
   beforeEach(() => {
+    mockDailyAllowanceConfig.enabled = false;
+    mockAdmitDailyAllowance.mockReset();
     mockStreamCompletion.mockReset();
     mockCreateLlmService.mockClear();
-    jest.mocked(checkRateLimit).mockReset();
-    jest.mocked(checkRateLimit).mockResolvedValue({ allowed: true });
   });
 
   it("streams analysis deltas and completes the managed-provider analysis", async () => {
@@ -51,22 +59,101 @@ describe("explainStreamCallableHandler", () => {
 
     expect(response.sendChunk).toHaveBeenCalledWith({ content: "分" });
     expect(response.sendChunk).toHaveBeenCalledWith({ content: "析" });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: true, allowance: undefined });
   });
 
-  it("rejects a rate-limited request before starting the LLM stream", async () => {
-    jest.mocked(checkRateLimit).mockResolvedValue({ allowed: false });
+  it("admits managed-provider analysis and returns allowance metadata", async () => {
+    mockDailyAllowanceConfig.enabled = true;
+    mockDailyAllowanceConfig.activeHmacKey = "active-key";
+    mockAdmitDailyAllowance.mockResolvedValue({
+      allowed: true,
+      limit: 20,
+      remaining: 12,
+      resetAt: "2026-09-10T00:00:00.000Z",
+    });
+    mockStreamCompletion.mockResolvedValue({
+      response: readableSseResponse(["data: [DONE]\n"]),
+    });
 
-    await expect(explainStreamCallableHandler(
+    const result = await explainStreamCallableHandler(
       {
         data: { content: "テストです" },
         acceptsStreaming: true,
-        rawRequest: { ip: "127.0.0.1" },
+        auth: { uid: "user-1" },
+        rawRequest: { ip: "203.0.113.10" },
       } as any,
       { sendChunk: jest.fn(async (_chunk: unknown) => true) } as any
-    )).rejects.toMatchObject({ code: "resource-exhausted" });
+    );
 
+    expect(mockAdmitDailyAllowance).toHaveBeenCalledWith(expect.objectContaining({
+      uid: "user-1",
+      ip: "203.0.113.10",
+      activeHmacKey: "active-key",
+      endpoint: "explainStreamCallable",
+    }));
+    expect(result.allowance).toEqual({
+      limit: 20,
+      remaining: 12,
+      resetAt: "2026-09-10T00:00:00.000Z",
+    });
+  });
+
+  it("throws typed exhaustion details before model work", async () => {
+    mockDailyAllowanceConfig.enabled = true;
+    mockAdmitDailyAllowance.mockResolvedValue({
+      allowed: false,
+      reason: "daily_allowance_exhausted",
+      limit: 20,
+      resetAt: "2026-09-10T00:00:00.000Z",
+    });
+
+    await expect(explainStreamCallableHandler(
+      { data: { content: "テストです" }, rawRequest: { ip: "127.0.0.1" } } as any
+    )).rejects.toMatchObject({
+      code: "resource-exhausted",
+      details: { reason: "daily_allowance_exhausted", limit: 20 },
+    });
     expect(mockStreamCompletion).not.toHaveBeenCalled();
+  });
+
+  it("reports an enforcement outage without allowance data", async () => {
+    mockDailyAllowanceConfig.enabled = true;
+    mockAdmitDailyAllowance.mockResolvedValue({
+      allowed: false,
+      reason: "unavailable",
+    });
+
+    await expect(explainStreamCallableHandler(
+      { data: { content: "テストです" }, rawRequest: { ip: "127.0.0.1" } } as any
+    )).rejects.toMatchObject({
+      code: "unavailable",
+      details: { reason: "unavailable" },
+    });
+  });
+
+  it("reports consumed allowance metadata when admitted stream work fails", async () => {
+    mockDailyAllowanceConfig.enabled = true;
+    mockAdmitDailyAllowance.mockResolvedValue({
+      allowed: true,
+      limit: 20,
+      remaining: 7,
+      resetAt: "2026-09-10T00:00:00.000Z",
+    });
+    mockStreamCompletion.mockRejectedValue(new Error("provider unavailable"));
+
+    const result = await explainStreamCallableHandler(
+      { data: { content: "テストです" }, rawRequest: { ip: "127.0.0.1" } } as any
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: "provider unavailable",
+      allowance: {
+        limit: 20,
+        remaining: 7,
+        resetAt: "2026-09-10T00:00:00.000Z",
+      },
+    });
   });
 
   it("returns a provider failure as the callable result", async () => {
@@ -81,6 +168,10 @@ describe("explainStreamCallableHandler", () => {
       { sendChunk: jest.fn(async (_chunk: unknown) => true) } as any
     );
 
-    expect(result).toEqual({ success: false, error: "provider unavailable" });
+    expect(result).toEqual({
+      success: false,
+      error: "provider unavailable",
+      allowance: undefined,
+    });
   });
 });

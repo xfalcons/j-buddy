@@ -53,6 +53,11 @@ The functions use Google Cloud Secret Manager for storing API credentials. The s
     "api_url": "YOUR_ZAI_API_URL",
     "api_key": "YOUR_ZAI_API_KEY",
     "model": "YOUR_ZAI_MODEL"
+  },
+  "daily_allowance": {
+    "enabled": false,
+    "active_hmac_key": "generate-and-store-a-long-random-secret",
+    "previous_hmac_key": "retain-the-prior-secret-during-rotation"
   }
 }
 ```
@@ -124,6 +129,46 @@ secret. `functions/.secret.local` is ignored by Git.
 
 ## Deployment
 
+### Daily analysis allowance rollout
+
+Both managed-provider analysis callables share a 20-request-per-UTC-day
+allowance. It is enforced independently for a verified Firebase UID and a
+pseudonymous HMAC of the client IP; a signed-in request must have capacity in
+both subjects, while an anonymous request requires an IP subject.
+
+The server-side switch starts disabled for staged rollout:
+
+1. Deploy backend support with `daily_allowance.enabled === false`.
+2. Publish the compatible extension build and wait seven calendar days for automatic updates.
+3. Store nonempty active and previous IP HMAC keys in `JAPANESE_ALCHEMY_CONFIG`.
+4. Enable Firestore TTL on the timestamp field:
+
+```bash
+gcloud firestore fields ttls update \
+  --collection-group=dailyAllowances \
+  --field-name=expireAt \
+  --enable-ttl
+```
+
+5. Enable `daily_allowance.enabled`, redeploy, and record the time, reason, and active key version in the release issue.
+
+During HMAC rotation, move the current `active_hmac_key` to
+`previous_hmac_key`, set a new active key, and retain both for at least 48
+hours. Admission reads both IP subjects and writes only the active subject, so
+rotation cannot grant a fresh daily allowance.
+
+Only project owners perform enable/disable and HMAC-rotation operations on the
+Firebase configuration and Secret Manager values.
+
+The service emits `Daily allowance decision` structured logs with `endpoint`,
+`outcome`, and `subjectTypes` only. Alert when `outcome` is
+`datastore-unavailable`, review decision rates daily for seven days after
+enablement, and disable the server switch while investigating a policy bug or
+after five consecutive minutes of datastore-unavailable decisions.
+
+Retained allowance documents are diagnostic state. Rollback by disabling the
+switch does not delete them; the TTL policy removes them after their UTC day.
+
 ```bash
 cd japanese-alchemy-hosting
 
@@ -169,10 +214,10 @@ not require a function or Hosting redeploy.
 
 ## Callable streaming safeguards
 
-`explainStreamCallable` validates the request, enforces the same Firestore-backed
-per-IP rate limit as `explain`, and uses a 120-second timeout for long-lived
-streams. Both analysis callables share the `maxInstances × concurrency` cost
-ceiling in `src/runtimeOptions.ts`.
+`explainStreamCallable` validates the request, enforces the shared daily
+analysis allowance, and uses a 120-second timeout for long-lived streams. Both
+analysis callables share the `maxInstances × concurrency` cost ceiling in
+`src/runtimeOptions.ts`.
 
 The raw `explainStream` HTTP/SSE route is retired. Consumers should use the
 Firebase Functions SDK and the `explainStreamCallable` contract below.

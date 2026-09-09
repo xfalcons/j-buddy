@@ -50,4 +50,13 @@ describe('sidepanel analysis-mode markup', () => {
   test('separates the manual analysis action from the analysis result', () => {
     expect(html).toMatch(/#analyzeButton\s*\{[\s\S]*?margin-bottom:\s*8px;/);
   });
+
+  test('provides a session-scoped allowance status and explicit alternative-provider action', () => {
+    expect(html).toContain('id="allowanceStatus"');
+    expect(html).toContain('hidden></div>');
+    expect(html).toContain('id="allowanceAction"');
+    expect(html).toContain('hidden>了解個人提供器選項</button>');
+    expect(html).toMatch(/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important;/);
+    expect(html).not.toMatch(/#allowanceAction\s*\{[^}]*display\s*:/);
+  });
 });

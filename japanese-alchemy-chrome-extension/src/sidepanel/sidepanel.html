@@ -55,6 +55,10 @@
       transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
     .alert-message {
       display: none;
       padding: 1rem;
@@ -483,6 +487,10 @@
       margin-bottom: 8px;
     }
 
+    #allowanceAction {
+      margin-bottom: 8px;
+    }
+
     .save-for-later-btn:hover {
       background: var(--button-hover);
       transform: translateY(-1px);
@@ -771,6 +779,8 @@
     <!-- Loading Indicator -->
     <div id="pendingSelectionStatus" class="alert-message show" role="status" aria-live="polite">請在頁面選取 2–500 個字元後再開始分析。</div>
     <button id="analyzeButton" class="save-for-later-btn" type="button" disabled aria-describedby="pendingSelectionStatus">開始分析</button>
+    <div id="allowanceStatus" class="alert-message" role="status" aria-live="polite" hidden></div>
+    <button id="allowanceAction" class="save-for-later-btn allowance-action" type="button" hidden>了解個人提供器選項</button>
     <div id="loading" class="loading">
       <div class="spinner"></div>
       <span class="loading-message">AI 正在分析，請稍候…</span>

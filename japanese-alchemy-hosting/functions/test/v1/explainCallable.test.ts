@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { explainHandler } from "../../src/v1/explainCallable";
-import { checkRateLimit } from "../../src/v1/rateLimiter";
 import { SYSTEM_PROMPT_V1 } from "../../src/models/systemPromptV1";
 import { SYSTEM_PROMPT_V2 } from "../../src/models/systemPromptV2";
 
@@ -9,14 +8,25 @@ import { SYSTEM_PROMPT_V2 } from "../../src/models/systemPromptV2";
 // would reject the mockResolvedValue payload.
 const mockChatCompletion = jest.fn() as any;
 const mockCreateLlmService = jest.fn((..._args: unknown[]) => ({ chatCompletion: mockChatCompletion }));
+const mockDailyAllowanceConfig = { enabled: false } as any;
 jest.mock("../../src/services/llmService", () => ({
   createLlmService: (...args: unknown[]) => mockCreateLlmService(...args),
 }));
+jest.mock("../../src/config", () => ({
+  getDailyAllowanceConfig: () => mockDailyAllowanceConfig,
+}));
+jest.mock("../../src/v1/dailyAllowance", () => ({
+  ...(jest.requireActual("../../src/v1/dailyAllowance") as object),
+  admitDailyAllowance: (...args: unknown[]) => mockAdmitDailyAllowance(...args),
+}));
 
-jest.mock("../../src/v1/rateLimiter");
+const mockAdmitDailyAllowance = jest.fn() as any;
+
 
 describe("explainHandler", () => {
   beforeEach(() => {
+    mockDailyAllowanceConfig.enabled = false;
+    mockAdmitDailyAllowance.mockReset();
     mockChatCompletion.mockReset();
     mockCreateLlmService.mockClear();
     mockChatCompletion.mockResolvedValue({
@@ -24,8 +34,6 @@ describe("explainHandler", () => {
       data: "mocked analysis",
       timestamp: 0,
     });
-    jest.mocked(checkRateLimit).mockReset();
-    jest.mocked(checkRateLimit).mockResolvedValue({ allowed: true });
   });
 
   it("defaults to v2 when no prompt is provided", async () => {
@@ -45,6 +53,94 @@ describe("explainHandler", () => {
   it("uses the chain when ai is not provided", async () => {
     await explainHandler({ data: { content: "テストです" } } as any);
     expect(mockCreateLlmService).toHaveBeenCalledWith(undefined);
+  });
+
+  it("admits managed-provider analysis and returns allowance status", async () => {
+    mockDailyAllowanceConfig.enabled = true;
+    mockDailyAllowanceConfig.activeHmacKey = "active-key";
+    mockAdmitDailyAllowance.mockResolvedValue({
+      allowed: true,
+      limit: 20,
+      remaining: 19,
+      resetAt: "2026-09-10T00:00:00.000Z",
+    });
+
+    const result = await explainHandler({
+      data: { content: "テストです" },
+      auth: { uid: "user-1" },
+      rawRequest: { ip: "203.0.113.10" },
+    } as any);
+
+    expect(mockAdmitDailyAllowance).toHaveBeenCalledWith(expect.objectContaining({
+      uid: "user-1",
+      ip: "203.0.113.10",
+      activeHmacKey: "active-key",
+      endpoint: "explain",
+    }));
+    expect(result.allowance).toEqual({
+      limit: 20,
+      remaining: 19,
+      resetAt: "2026-09-10T00:00:00.000Z",
+    });
+  });
+
+  it("throws typed exhaustion details without starting model work", async () => {
+    mockDailyAllowanceConfig.enabled = true;
+    mockAdmitDailyAllowance.mockResolvedValue({
+      allowed: false,
+      reason: "daily_allowance_exhausted",
+      limit: 20,
+      resetAt: "2026-09-10T00:00:00.000Z",
+    });
+
+    await expect(explainHandler({ data: { content: "テストです" } } as any))
+      .rejects.toMatchObject({
+        code: "resource-exhausted",
+        details: {
+          reason: "daily_allowance_exhausted",
+          limit: 20,
+          resetAt: "2026-09-10T00:00:00.000Z",
+        },
+      });
+    expect(mockChatCompletion).not.toHaveBeenCalled();
+  });
+
+  it("reports an enforcement outage without allowance data", async () => {
+    mockDailyAllowanceConfig.enabled = true;
+    mockAdmitDailyAllowance.mockResolvedValue({
+      allowed: false,
+      reason: "unavailable",
+    });
+
+    await expect(explainHandler({ data: { content: "テストです" } } as any))
+      .rejects.toMatchObject({
+        code: "unavailable",
+        details: { reason: "unavailable" },
+    });
+  });
+
+  it("reports consumed allowance metadata when admitted model work fails", async () => {
+    mockDailyAllowanceConfig.enabled = true;
+    mockAdmitDailyAllowance.mockResolvedValue({
+      allowed: true,
+      limit: 20,
+      remaining: 7,
+      resetAt: "2026-09-10T00:00:00.000Z",
+    });
+    mockChatCompletion.mockRejectedValue(new Error("provider unavailable"));
+
+    await expect(explainHandler({ data: { content: "テストです" } } as any))
+      .rejects.toMatchObject({
+        code: "internal",
+        details: {
+          allowance: {
+            limit: 20,
+            remaining: 7,
+            resetAt: "2026-09-10T00:00:00.000Z",
+          },
+          consumedAllowance: true,
+        },
+      });
   });
 
   it("selects v1 when prompt is v1", async () => {
@@ -73,15 +169,6 @@ describe("explainHandler", () => {
     await expect(
       explainHandler({ data: { content: "あ".repeat(501) } } as any)
     ).rejects.toThrow();
-
-    expect(mockChatCompletion).not.toHaveBeenCalled();
-  });
-
-  it("throws resource-exhausted when the rate limit denies, without calling the LLM", async () => {
-    jest.mocked(checkRateLimit).mockResolvedValueOnce({ allowed: false });
-    await expect(
-      explainHandler({ data: { content: "テストです" } } as any)
-    ).rejects.toMatchObject({ code: "resource-exhausted" });
 
     expect(mockChatCompletion).not.toHaveBeenCalled();
   });
