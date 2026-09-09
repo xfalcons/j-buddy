@@ -8,8 +8,19 @@ export interface StreamConsumptionResult {
 }
 
 interface StreamEnvelope {
+  type?: string;
+  delta?: string;
   model?: string;
   usage?: LlmUsage;
+  response?: {
+    model?: string;
+    status?: string;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      total_tokens?: number;
+    };
+  };
   choices?: Array<{
     delta?: { content?: string };
     finish_reason?: string | null;
@@ -46,9 +57,25 @@ export async function consumeLlmStream(
       const envelope = JSON.parse(data) as StreamEnvelope;
       if (envelope.usage) latestUsage = envelope.usage;
       if (envelope.model) responseModel = envelope.model;
+      const response = envelope.response;
+      if (response?.model) responseModel = response.model;
+      if (response?.usage) {
+        latestUsage = {
+          prompt_tokens: response.usage.input_tokens,
+          completion_tokens: response.usage.output_tokens,
+          total_tokens: response.usage.total_tokens,
+        };
+      }
       const choice = envelope.choices?.[0];
       if (choice?.finish_reason !== undefined) finishReason = choice.finish_reason;
       if (choice?.delta?.content) await onDelta(choice.delta.content);
+      if (envelope.type === "response.output_text.delta" && envelope.delta) {
+        await onDelta(envelope.delta);
+      }
+      if (envelope.type === "response.completed") {
+        completed = true;
+        finishReason = response?.status === "completed" ? "stop" : response?.status;
+      }
     } catch {
       // Malformed provider frames are ignored; terminal completion remains false.
     }

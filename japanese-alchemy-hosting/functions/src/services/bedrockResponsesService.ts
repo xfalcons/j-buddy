@@ -35,7 +35,8 @@ export class BedrockResponsesService implements LlmService {
     const payload = this.adapter.toBedrockRequest(
       this.model,
       systemPrompt,
-      content
+      content,
+      true
     );
 
     functions.logger.info("Calling Bedrock Responses API (streaming)", {

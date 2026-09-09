@@ -13,7 +13,8 @@ export class BedrockPayloadAdapter {
   toBedrockRequest(
     model: string,
     systemPrompt: string,
-    content: string
+    content: string,
+    stream = false
   ): object {
     return {
       model,
@@ -21,7 +22,7 @@ export class BedrockPayloadAdapter {
       input: content,
       temperature: 0.1,
       max_tokens: 8192,
-      stream: false,
+      stream,
     };
   }
 

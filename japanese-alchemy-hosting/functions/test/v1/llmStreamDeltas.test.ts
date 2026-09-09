@@ -44,4 +44,22 @@ describe("consumeLlmStream", () => {
     expect(result.completed).toBe(false);
     expect(result.usage).toBeUndefined();
   });
+
+  it("forwards Bedrock Responses text deltas and completes from response.completed", async () => {
+    const onDelta = jest.fn();
+    const result = await consumeLlmStream(responseFromFrames([
+      'data: {"type":"response.output_text.delta","delta":"日本"}\n\n',
+      'data: {"type":"response.output_text.delta","delta":"語"}\n\n',
+      'data: {"type":"response.completed","response":{"model":"google.gemma-4-31b","status":"completed","usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30}}}\n\n',
+    ]), onDelta as (content: string) => void);
+
+    expect(onDelta).toHaveBeenNthCalledWith(1, "日本");
+    expect(onDelta).toHaveBeenNthCalledWith(2, "語");
+    expect(result).toEqual({
+      usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+      responseModel: "google.gemma-4-31b",
+      finishReason: "stop",
+      completed: true,
+    });
+  });
 });
