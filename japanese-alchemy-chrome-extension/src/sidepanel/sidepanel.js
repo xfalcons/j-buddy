@@ -63,6 +63,7 @@ let manualModelConnection = null;
 let maskedApiKeyState = null;
 let savedPersonalProviderState = null;
 let settingsProjectionRequestId = 0;
+let domPurifyRequired = false;
 
 export async function openExternalPage(url) {
     await chrome.tabs.create({ url, active: true });
@@ -91,7 +92,12 @@ function fallbackSanitizeHtml(html) {
  */
 export function sanitizeAnalysisHtml(html) {
     const purifier = getDomPurify();
-    if (!purifier) return fallbackSanitizeHtml(html);
+    if (!purifier) {
+        if (domPurifyRequired) {
+            throw new Error('無法安全呈現個人提供者結果。');
+        }
+        return fallbackSanitizeHtml(html);
+    }
     return purifier.sanitize(html, {
         ALLOWED_TAGS: ANALYSIS_ALLOWED_TAGS,
         ALLOWED_ATTR: ANALYSIS_ALLOWED_ATTR,
@@ -403,6 +409,7 @@ let analysisRequestId = 0;
 let activeAnalysisKey = null;
 let activeAnalysisController = null;
 let activeAnalysisRequestIdentity = null;
+let activeAnalysisBaseIdentity = null;
 let activeAnalysisPreviewText = '';
 let modeChangeRequestId = 0;
 let hasCompletedAnalysis = false;
@@ -497,9 +504,11 @@ export function dailyAllowanceErrorMessage(fallbackMessage, context = {}) {
 
 function updateAnalyzeAvailability() {
     if (elements?.analyzeButton) {
+        const managedAllowanceBlocks = savedPersonalProviderState?.mode !== PERSONAL_PROVIDER_MODE
+            && Boolean(managedAllowanceExhaustedUntil && managedAllowanceExhaustedUntil > Date.now());
         elements.analyzeButton.disabled = isAnalizing
             || !isValidSelection(pendingSelectedText)
-            || Boolean(managedAllowanceExhaustedUntil && managedAllowanceExhaustedUntil > Date.now());
+            || managedAllowanceBlocks;
     }
 }
 
@@ -533,6 +542,7 @@ function cancelActiveAnalysis() {
     activeAnalysisController?.abort();
     activeAnalysisController = null;
     activeAnalysisRequestIdentity = null;
+    activeAnalysisBaseIdentity = null;
     setAnalysisCancellationAvailable(false);
 }
 
@@ -584,8 +594,19 @@ export async function handleSidepanelStorageChanges(
     }
 }
 
-function analysisSourceIdentity() {
-    return 'managed:0';
+function analysisSourceIdentity(providerState) {
+    if (providerState?.mode !== PERSONAL_PROVIDER_MODE || !providerState.profile) {
+        return `${MANAGED_PROVIDER_MODE}:0`;
+    }
+    const { epoch, revision, profile } = providerState;
+    return [
+        PERSONAL_PROVIDER_MODE,
+        epoch || 0,
+        revision || 0,
+        profile.protocol,
+        profile.apiUrl,
+        profile.model,
+    ].join(':');
 }
 
 function setCompletedAnalysisAvailable(available) {
@@ -666,7 +687,10 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     const selectedTextForRequest = selectedText || '';
     const contextForRequest = normalizeContext(context);
     const requestIdentity = JSON.stringify({ selectedText: selectedTextForRequest, context: contextForRequest });
-    if (!options.force && activeAnalysisRequestIdentity === requestIdentity) {
+    if (!options.force && (
+        activeAnalysisRequestIdentity === requestIdentity
+        || (isAnalizing && activeAnalysisBaseIdentity === requestIdentity)
+    )) {
         return;
     }
 
@@ -675,6 +699,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     const requestId = ++analysisRequestId;
     cancelActiveAnalysis();
     activeAnalysisRequestIdentity = requestIdentity;
+    activeAnalysisBaseIdentity = requestIdentity;
     currentSelectedText = selectedTextForRequest;
     currentContext = contextForRequest;
 
@@ -682,12 +707,15 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     const proseElement = resultElement.querySelector('.prose');
     const loadingElement = document.getElementById('loading');
     let promptVariant;
+    let providerState;
     try {
         promptVariant = options.promptVariant || await getPromptVariant();
         if (!isLatestAnalysis(requestId)) return;
+        providerState = await getPersonalProviderState({ performMaintenance: false });
     } catch (error) {
         if (isLatestAnalysis(requestId)) {
             activeAnalysisRequestIdentity = null;
+            activeAnalysisBaseIdentity = null;
             isAnalizing = false;
             activeAnalysisKey = null;
             saveForLaterJson = {};
@@ -702,7 +730,15 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         return;
     }
     if (!isLatestAnalysis(requestId)) return;
-    const sourceIdentity = analysisSourceIdentity();
+    const sourceIdentity = analysisSourceIdentity(providerState);
+    savedPersonalProviderState = providerState;
+    activeAnalysisRequestIdentity = JSON.stringify({
+        selectedText: selectedTextForRequest,
+        context: contextForRequest,
+        promptVariant,
+        sourceIdentity,
+    });
+    activeAnalysisBaseIdentity = requestIdentity;
     const cacheKey = selectedTextForRequest
         ? buildContextCacheKey({
             selectedText: selectedTextForRequest,
@@ -711,6 +747,32 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             sourceIdentity,
         })
         : '';
+
+    // Permission can be revoked without changing the saved profile or cache
+    // key. Check readiness before cache reuse so a stale personal result never
+    // becomes visible, copyable, or saveable after revocation.
+    if (isValidSelection(selectedTextForRequest)
+        && providerState.mode === PERSONAL_PROVIDER_MODE
+        && !providerState.isPersonalReady) {
+        activeAnalysisRequestIdentity = null;
+        activeAnalysisBaseIdentity = null;
+        activeAnalysisKey = null;
+        isAnalizing = false;
+        saveForLaterJson = {};
+        proseElement.innerHTML = '';
+        resultElement.classList.remove('show');
+        setLoadingState(loadingElement, false);
+        setCompletedAnalysisAvailable(false);
+        alertMessage(
+            elements.alertMessage,
+            providerState.personalError?.message
+                || '已選取個人分析，但提供者設定無法使用。',
+            'error'
+        );
+        elements.alertMessage.classList.add('show');
+        return;
+    }
+    domPurifyRequired = providerState.mode === PERSONAL_PROVIDER_MODE;
 
     console.log('Analizing Selected Text...');
     let analysisController = null;
@@ -745,13 +807,24 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             saveForLaterJson = {};
 
             try {
+                const currentProviderState = await getPersonalProviderState({ performMaintenance: false });
+                if (!isLatestAnalysis(requestId)
+                    || !savedProviderSnapshotMatches(providerState, currentProviderState)
+                    || (providerState.mode === PERSONAL_PROVIDER_MODE
+                        && !currentProviderState.isPersonalReady)) {
+                    return;
+                }
                 console.log('Initializing API service...');
-                const analysisService = new JaAlchemyApiService();
+                const analysisService = providerState.mode === PERSONAL_PROVIDER_MODE
+                    ? new DirectLlmApiService()
+                    : new JaAlchemyApiService();
 
                 console.log('Generating response (streaming)...');
                 let firstChunkReceived = false;
 
-                const streamArgs = [selectedTextForRequest, promptVariant, contextForRequest];
+                const streamArgs = providerState.mode === PERSONAL_PROVIDER_MODE
+                    ? [providerState.profile, selectedTextForRequest, promptVariant, contextForRequest]
+                    : [selectedTextForRequest, promptVariant, contextForRequest];
                 analysisController = new AbortController();
                 activeAnalysisController = analysisController;
                 await analysisService.generateResponseStream(
@@ -822,7 +895,11 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                         }
                         alertMessage(
                             elements.alertMessage,
-                            `呼叫分析服務時發生錯誤：${dailyAllowanceErrorMessage(errorMessage, context)}`,
+                            `呼叫分析服務時發生錯誤：${
+                                providerState.mode === PERSONAL_PROVIDER_MODE
+                                    ? errorMessage
+                                    : dailyAllowanceErrorMessage(errorMessage, context)
+                            }`,
                             'error'
                         );
                         elements.alertMessage.classList.add('show');
@@ -841,7 +918,11 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                 console.warn('Calling API Error:', apiError);
                 alertMessage(
                     elements.alertMessage,
-                    `呼叫分析服務時發生錯誤：${dailyAllowanceErrorMessage(apiError.message)}`,
+                    `呼叫分析服務時發生錯誤：${
+                        providerState.mode === PERSONAL_PROVIDER_MODE
+                            ? apiError.message
+                            : dailyAllowanceErrorMessage(apiError.message)
+                    }`,
                     'error'
                 );
                 elements.alertMessage.classList.add('show');
@@ -874,6 +955,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         isAnalizing = false;
         activeAnalysisKey = null;
         activeAnalysisRequestIdentity = null;
+        activeAnalysisBaseIdentity = null;
         activeAnalysisPreviewText = '';
         setAnalysisCancellationAvailable(false);
         updateAnalyzeAvailability();
@@ -1330,6 +1412,7 @@ function connectionMatchesFormValues(connection, values) {
 }
 
 function savedProviderSnapshotMatches(expected, current) {
+    if ((expected?.epoch || 0) !== (current?.epoch || 0)) return false;
     if ((expected?.revision || 0) !== (current?.revision || 0)) return false;
     const expectedProfile = expected?.profile || null;
     const currentProfile = current?.profile || null;
@@ -1634,7 +1717,9 @@ export function updatePersonalProviderModeUi(elements, mode, isPersonalReady) {
 export function renderPersonalProviderState(elements, state) {
     const { mode, profile, isPersonalReady, personalError } = state;
     savedPersonalProviderState = state;
+    domPurifyRequired = mode === PERSONAL_PROVIDER_MODE;
     updatePersonalProviderModeUi(elements, mode, isPersonalReady);
+    updateAnalyzeAvailability();
 
     if (elements.personalProviderForm) {
         elements.personalProviderForm.hidden = mode !== PERSONAL_PROVIDER_MODE;

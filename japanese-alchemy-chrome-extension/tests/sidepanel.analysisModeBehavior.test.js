@@ -1,13 +1,25 @@
+jest.mock('dompurify', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({
+    sanitize: (html) => String(html || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, ''),
+  })),
+}));
+
 import {
   analizingSelectedText,
   handleCancelAnalysis,
   handleSaveForLater,
   handleAnalysisModeChange,
   handleSidepanelStorageChanges,
+  renderDailyAllowanceStatus,
   isValidSelection,
   setSidepanelElementsForTesting,
 } from '../src/sidepanel/sidepanel.js';
 import { buildContextCacheKey } from '../src/scripts/surroundingContext.js';
+import { PERSONAL_PROVIDER_EPOCH_KEY } from '../src/scripts/personalProvider.js';
+import createDOMPurify from 'dompurify';
 
 function createClassList(initial = []) {
   const classes = new Set(initial);
@@ -92,6 +104,8 @@ function setupElements() {
     compactButton,
     cancelAnalysisButton,
     analyzeButton,
+    allowanceAction: { hidden: true },
+    allowanceStatus: { hidden: true, classList: createClassList() },
     copyButton,
     elements,
     loading,
@@ -106,7 +120,7 @@ function setupElements() {
 }
 
 function setupStorage(initial = {}) {
-  const store = { ...initial };
+  const store = { [PERSONAL_PROVIDER_EPOCH_KEY]: 2, ...initial };
   global.chrome.storage.local.get = jest.fn(async (key) => {
     if (key === null) return { ...store };
     if (Array.isArray(key)) {
@@ -146,6 +160,15 @@ function completedProjection(cacheKey, overrides = {}) {
   });
 }
 
+function personalSourceIdentity({
+  revision = 4,
+  protocol = 'chat_completions',
+  apiUrl = 'https://llm.example/v1',
+  model = 'learner-model',
+} = {}) {
+  return ['personal', 2, revision, protocol, apiUrl, model].join(':');
+}
+
 function setupDeferredApi() {
   const calls = [];
   global.JaAlchemyApiService = class JaAlchemyApiService {
@@ -167,7 +190,15 @@ function setupDeferredApi() {
   return calls;
 }
 
-async function flushMicrotasks(cycles = 10) {
+function installAvailableDomPurify() {
+  createDOMPurify.mockImplementation(() => ({
+    sanitize: (html) => String(html || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, ''),
+  }));
+}
+
+async function flushMicrotasks(cycles = 30) {
   for (let index = 0; index < cycles; index += 1) {
     await Promise.resolve();
   }
@@ -176,6 +207,8 @@ async function flushMicrotasks(cycles = 10) {
 describe('sidepanel analysis-mode behavior', () => {
   beforeEach(() => {
     jest.useRealTimers();
+    installAvailableDomPurify();
+    globalThis.window = { document: { createElement: () => ({}) } };
     setupElements();
     setupStorage({ promptVariant: 'v2' });
     setupLocalStorage();
@@ -386,7 +419,658 @@ describe('sidepanel analysis-mode behavior', () => {
     await request;
   });
 
+  test('a cache-only provider storage update does not cancel active analysis', async () => {
+    const apiCalls = setupDeferredApi();
+    const { elements } = setupElements();
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
 
+    await handleSidepanelStorageChanges({
+      'personalProviderModelCatalog:3': { oldValue: null, newValue: { version: 1 } },
+    }, 'local', elements);
+
+    expect(apiCalls[0].options.signal.aborted).toBe(false);
+    apiCalls[0].onDone('# completed response');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('manually stops an active personal-provider request before its first chunk', async () => {
+    setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 2,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    let requestSignal;
+    global.fetch = jest.fn((_url, options) => new Promise((resolve, reject) => {
+      requestSignal = options.signal;
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('The operation was aborted.');
+        error.name = 'AbortError';
+        reject(error);
+      }, { once: true });
+    }));
+    const { cancelAnalysisButton, elements, loading, result } = setupElements();
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    expect(cancelAnalysisButton.hidden).toBe(false);
+    handleCancelAnalysis(elements);
+    await request;
+
+    expect(requestSignal.aborted).toBe(true);
+    expect(loading.classList.contains('show')).toBe(false);
+    expect(result.classList.contains('show')).toBe(false);
+    expect(global.localStorage.getItem('lastAnalysisResult')).toBeNull();
+  });
+
+  test('keeps a clearly marked but non-completable preview when manually stopped after streamed text', async () => {
+    const apiCalls = setupDeferredApi();
+    const {
+      alertMessage,
+      cancelAnalysisButton,
+      copyButton,
+      elements,
+      prose,
+      result,
+      saveAsBtn,
+      saveForLaterBtn,
+    } = setupElements();
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[0].onChunk('途中', '# 途中の分析');
+
+    handleCancelAnalysis(elements);
+
+    expect(apiCalls[0].options.signal.aborted).toBe(true);
+    expect(cancelAnalysisButton.hidden).toBe(true);
+    expect(result.classList.contains('show')).toBe(true);
+    expect(prose.innerHTML).toContain('途中の分析');
+    expect(alertMessage.textContent).toContain('未完成');
+    expect(alertMessage.classList.contains('show')).toBe(true);
+    expect(copyButton.disabled).toBe(true);
+    expect(saveAsBtn.disabled).toBe(true);
+    expect(saveForLaterBtn.disabled).toBe(true);
+    expect(global.localStorage.getItem('lastAnalysisResult')).toBeNull();
+
+    apiCalls[0].onDone('# stale response');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('a failed replacement clears its preview without replacing the completed cache', async () => {
+    const text = '成長を後押しする';
+    const oldKey = buildContextCacheKey({ selectedText: text, promptVariant: 'v2' });
+    const oldResponse = '### 單字分析\n#### <單字>成長\ngrowth';
+    const oldProjection = completedProjection(oldKey, { response: oldResponse });
+    const apiCalls = setupDeferredApi();
+    setupLocalStorage({
+      lastAnalysisKey: oldKey,
+      lastResponse: oldResponse,
+      lastAnalysisResult: oldProjection,
+    });
+    const { prose, result } = setupElements();
+
+    const request = analizingSelectedText('最新の選択', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[0].onChunk('途中', '途中の分析');
+    apiCalls[0].onError('unavailable');
+    apiCalls[0].resolve();
+    await request;
+
+    expect(prose.innerHTML).toBe('');
+    expect(result.classList.contains('show')).toBe(false);
+    expect(global.localStorage.getItem('lastAnalysisKey')).toBe(oldKey);
+    expect(global.localStorage.getItem('lastResponse')).toBe(oldResponse);
+    expect(global.localStorage.getItem('lastAnalysisResult')).toBe(oldProjection);
+  });
+
+  test('does not pair an interrupted legacy cache write with another projection', async () => {
+    const oldText = '以前の選択';
+    const newText = '新しい選択';
+    const oldKey = buildContextCacheKey({ selectedText: oldText, promptVariant: 'v2' });
+    const newKey = buildContextCacheKey({ selectedText: newText, promptVariant: 'v2' });
+    const apiCalls = setupDeferredApi();
+    setupLocalStorage({
+      lastAnalysisKey: oldKey,
+      lastResponse: 'new response written before the legacy key failed',
+      lastAnalysisResult: completedProjection(newKey, {
+        response: 'new response written atomically in the projection',
+      }),
+    });
+
+    const request = analizingSelectedText(oldText, {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    expect(apiCalls).toHaveLength(1);
+    apiCalls[0].onError('unavailable');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('stale stream callbacks and queued previews cannot overwrite the latest mode result', async () => {
+    jest.useFakeTimers();
+    const text = '成長を後押しする';
+    const context = { before: '制度が', after: 'という。' };
+    const apiCalls = setupDeferredApi();
+    const { prose } = setupElements();
+
+    const oldRequest = analizingSelectedText(text, context, {
+      force: true,
+      promptVariant: 'v2',
+    });
+    await flushMicrotasks();
+    apiCalls[0].onChunk('', '# old preview');
+
+    const newRequest = analizingSelectedText(text, context, {
+      force: true,
+      promptVariant: 'v1',
+    });
+    await flushMicrotasks();
+    expect(apiCalls[0].options.signal.aborted).toBe(true);
+    apiCalls[1].onDone('# latest v1 response');
+    apiCalls[1].resolve();
+    await newRequest;
+
+    jest.advanceTimersByTime(100);
+    apiCalls[0].onDone('# stale v2 response');
+    apiCalls[0].resolve();
+    await oldRequest;
+
+    expect(prose.innerHTML).toContain('latest v1 response');
+    expect(prose.innerHTML).not.toContain('old preview');
+    expect(prose.innerHTML).not.toContain('stale v2 response');
+    expect(global.localStorage.getItem('lastResponse')).toContain('latest v1 response');
+  });
+
+  test('aborts a managed stream before replacement setup finishes', async () => {
+    const apiCalls = setupDeferredApi();
+    const { prose } = setupElements();
+    const older = analizingSelectedText('成長を後押しする', {}, {
+      force: true,
+      promptVariant: 'v2',
+    });
+    await flushMicrotasks();
+
+    const getStorage = global.chrome.storage.local.get;
+    let resolvePromptVariant;
+    global.chrome.storage.local.get = jest.fn((key) => {
+      if (key === 'promptVariant') {
+        return new Promise((resolve) => {
+          resolvePromptVariant = resolve;
+        });
+      }
+      return getStorage(key);
+    });
+
+    const newer = analizingSelectedText('最新の選択', {}, { force: true });
+
+    expect(apiCalls[0].options.signal.aborted).toBe(true);
+    apiCalls[0].onDone('# stale response');
+    apiCalls[0].resolve();
+    await older;
+    expect(prose.innerHTML).not.toContain('stale response');
+
+    resolvePromptVariant({ promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[1].onDone('# latest response');
+    apiCalls[1].resolve();
+    await newer;
+
+    expect(prose.innerHTML).toContain('latest response');
+  });
+
+  test('keeps the active managed stream for a duplicate non-forced selection', async () => {
+    const apiCalls = setupDeferredApi();
+    const text = '成長を後押しする';
+    const context = { before: '制度が', after: 'という。' };
+    const firstRequest = analizingSelectedText(text, context, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    await analizingSelectedText(text, context, { promptVariant: 'v2' });
+
+    expect(apiCalls).toHaveLength(1);
+    expect(apiCalls[0].options.signal.aborted).toBe(false);
+    apiCalls[0].onDone('# completed response');
+    apiCalls[0].resolve();
+    await firstRequest;
+  });
+
+  test('allows retrying a selection after asynchronous setup fails', async () => {
+    const apiCalls = setupDeferredApi();
+    const { alertMessage, loading, prose, result } = setupElements();
+    const text = '成長を後押しする';
+    const context = { before: '制度が', after: 'という。' };
+    global.chrome.storage.local.get.mockRejectedValueOnce(new Error('storage unavailable'));
+
+    await expect(analizingSelectedText(text, context)).resolves.toBeUndefined();
+    expect(loading.classList.contains('show')).toBe(false);
+    expect(prose.innerHTML).toBe('');
+    expect(result.classList.contains('show')).toBe(false);
+    expect(alertMessage.classList.contains('show')).toBe(true);
+
+    const retry = analizingSelectedText(text, context, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    expect(apiCalls).toHaveLength(1);
+    apiCalls[0].onDone('# retry response');
+    apiCalls[0].resolve();
+    await retry;
+  });
+
+  test('updates the loading message after receiving the first response chunk', async () => {
+    const text = '成長を後押しする';
+    const apiCalls = setupDeferredApi();
+    const { loading, loadingMessage } = setupElements();
+
+    const request = analizingSelectedText(text, {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[0].onChunk('解析', '解析');
+
+    expect(loadingMessage.textContent).toBe('已收到分析結果，正在整理版面…');
+    expect(loading.classList.contains('show')).toBe(true);
+
+    apiCalls[0].onDone('解析');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('a 429 resets loading and offers no alternate-provider retry', async () => {
+    const apiCalls = setupDeferredApi();
+    const { alertMessage, loading } = setupElements();
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    apiCalls[0].onError('Stream request failed: 429 Too many requests');
+    apiCalls[0].resolve();
+    await request;
+
+    expect(apiCalls).toHaveLength(1);
+    expect(loading.classList.contains('show')).toBe(false);
+    expect(alertMessage.innerHTML).not.toContain('Retry with ZAI');
+    expect(alertMessage.innerHTML).not.toContain('retryWithZaiBtn');
+  });
+
+  test('personal mode calls the configured provider directly and keeps its cache separate', async () => {
+    const text = '成長を後押しする';
+    const storage = setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1',
+        apiKey: 'personal-secret-key',
+        model: 'learner-model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    const managedService = jest.fn();
+    global.JaAlchemyApiService = managedService;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({
+        choices: [{ message: { content: '### 單字分析\n#### <單字>成長' }, finish_reason: 'stop' }],
+      }),
+    }));
+    const { prose } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://llm.example/v1/chat/completions',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer personal-secret-key' }) })
+    );
+    expect(prose.innerHTML).toContain('成長');
+    expect(global.localStorage.getItem('lastAnalysisKey')).toContain(personalSourceIdentity());
+    expect(global.localStorage.getItem('lastAnalysisKey')).not.toContain('personal-secret-key');
+    expect(storage.analysisProviderMode).toBe('personal');
+    expect(managedService).not.toHaveBeenCalled();
+  });
+
+  test('a manually configured Responses-compatible provider completes analysis through the existing sidepanel flow', async () => {
+    const text = '成長を後押しする';
+    setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 5,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1',
+        apiKey: 'personal-secret-key',
+        model: 'manual-responses-model',
+        protocol: 'responses',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    const managedService = jest.fn();
+    global.JaAlchemyApiService = managedService;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({
+        status: 'completed',
+        output: [{
+          type: 'message',
+          content: [{ type: 'output_text', text: '### 單字分析\n#### <單字>成長' }],
+        }],
+      }),
+    }));
+    const { prose } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://llm.example/v1/responses',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer personal-secret-key' }) })
+    );
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(expect.objectContaining({
+      store: false,
+      stream: true,
+    }));
+    expect(prose.innerHTML).toContain('成長');
+    expect(global.localStorage.getItem('lastAnalysisKey')).toContain(personalSourceIdentity({
+      revision: 5,
+      model: 'manual-responses-model',
+      protocol: 'responses',
+    }));
+    expect(managedService).not.toHaveBeenCalled();
+  });
+
+  test('a ready personal-provider cache hit is sanitized before it renders and never calls Firebase', async () => {
+    const text = '成長を後押しする';
+    const cacheKey = buildContextCacheKey({
+      selectedText: text,
+      promptVariant: 'v2',
+      sourceIdentity: personalSourceIdentity(),
+    });
+    setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'personal-secret-key', model: 'learner-model',
+      },
+    });
+    setupLocalStorage({
+      lastAnalysisKey: cacheKey,
+      lastResponse: '#### <單字>安全\n<img src=x onerror="alert(1)"><script>alert(1)</script>',
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    const managedService = jest.fn();
+    global.JaAlchemyApiService = managedService;
+    global.fetch = jest.fn();
+    const { prose } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(managedService).not.toHaveBeenCalled();
+    expect(prose.innerHTML).toContain('安全');
+    expect(prose.innerHTML).not.toContain('<script');
+    expect(prose.innerHTML).not.toContain('onerror=');
+  });
+
+  test('revoked personal-provider access cannot render a matching cached result', async () => {
+    const text = '成長を後押しする';
+    const cacheKey = buildContextCacheKey({
+      selectedText: text,
+      promptVariant: 'v2',
+      sourceIdentity: personalSourceIdentity(),
+    });
+    setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'personal-secret-key', model: 'learner-model',
+      },
+    });
+    setupLocalStorage({
+      lastAnalysisKey: cacheKey,
+      lastResponse: '### 單字分析\n#### <單字>stale cached result',
+    });
+    global.chrome.permissions.contains = jest.fn(async () => false);
+    global.fetch = jest.fn();
+    const { alertMessage, prose, result } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(prose.innerHTML).not.toContain('成長');
+    expect(result.classList.contains('show')).toBe(false);
+    expect(alertMessage.textContent).toContain('請先允許存取此提供者');
+  });
+
+  test('a personal-provider failure stays personal and never caches a partial result', async () => {
+    const storage = setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 2,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 429,
+      text: async () => '<b>rate limited</b>',
+    }));
+    const { alertMessage, prose } = setupElements();
+
+    await analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(storage.analysisProviderMode).toBe('personal');
+    expect(global.localStorage.getItem('lastAnalysisKey')).toBeNull();
+    expect(global.localStorage.getItem('lastResponse')).toBeNull();
+    expect(alertMessage.textContent).toContain('個人提供者');
+    expect(alertMessage.textContent).not.toContain('<b>');
+    expect(prose.innerHTML).toBe('');
+  });
+
+  test('a newer personal analysis aborts the older direct stream without showing an error', async () => {
+    const storage = setupStorage({
+      promptVariant: 'v2',
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 2,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    const requestSignals = [];
+    global.fetch = jest.fn((_url, options) => {
+      requestSignals.push(options.signal);
+      if (requestSignals.length === 1) {
+        return new Promise((resolve, reject) => {
+          options.signal.addEventListener('abort', () => {
+            const error = new Error('The operation was aborted.');
+            error.name = 'AbortError';
+            reject(error);
+          }, { once: true });
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          choices: [{ message: { content: '### 單字分析\n#### <單字>最新' }, finish_reason: 'stop' }],
+        }),
+      });
+    });
+    const { alertMessage, prose } = setupElements();
+
+    const older = analizingSelectedText('成長を後押しする', {}, { force: true, promptVariant: 'v2' });
+    await flushMicrotasks();
+    const newer = analizingSelectedText('最新の選択', {}, { force: true, promptVariant: 'v2' });
+    await newer;
+    await older;
+
+    expect(requestSignals).toHaveLength(2);
+    expect(requestSignals[0].aborted).toBe(true);
+    expect(storage.analysisProviderMode).toBe('personal');
+    expect(alertMessage.classList.contains('show')).toBe(false);
+    expect(prose.innerHTML).toContain('最新');
+  });
+
+  test('a pre-restoration personal cache projection remains unreachable on an identifier collision', async () => {
+    const text = '成長を後押しする';
+    const cacheKey = buildContextCacheKey({
+      selectedText: text,
+      promptVariant: 'v2',
+      sourceIdentity: 'personal:4',
+    });
+    setupStorage({
+      [PERSONAL_PROVIDER_EPOCH_KEY]: undefined,
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'learner-model',
+      },
+    });
+    setupLocalStorage({
+      lastAnalysisKey: cacheKey,
+      lastResponse: '### 單字分析\n#### <單字>retired result',
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    const managedService = jest.fn();
+    global.JaAlchemyApiService = managedService;
+    global.fetch = jest.fn();
+    const { alertMessage, prose, result } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(managedService).not.toHaveBeenCalled();
+    expect(prose.innerHTML).toBe('');
+    expect(result.classList.contains('show')).toBe(false);
+    expect(alertMessage.textContent).toContain('個人提供者設定不完整');
+  });
+
+  test('managed allowance exhaustion does not disable personal analysis', async () => {
+    const text = '成長を後押しする';
+    const { analyzeButton, elements } = setupElements();
+    const storage = setupStorage({ promptVariant: 'v2' });
+    storage.selectedText = text;
+    storage.analysisProviderMode = 'managed';
+    await handleSidepanelStorageChanges({
+      analysisProviderMode: { oldValue: 'personal', newValue: 'managed' },
+    }, 'local', elements);
+    renderDailyAllowanceStatus({
+      remaining: 0,
+      limit: 20,
+      resetAt: new Date(Date.now() + 60_000),
+    });
+    await handleSidepanelStorageChanges({ selectedText: { newValue: text } });
+    expect(analyzeButton.disabled).toBe(true);
+
+    Object.assign(setupStorage({
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'learner-model',
+      },
+    }), { selectedText: text });
+    await handleSidepanelStorageChanges({
+      analysisProviderMode: { oldValue: 'managed', newValue: 'personal' },
+    }, 'local', elements);
+    expect(analyzeButton.disabled).toBe(false);
+
+    const managedService = jest.fn();
+    global.JaAlchemyApiService = managedService;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({
+        choices: [{
+          message: { content: '### 單字分析\n#### <單字>成長' },
+          finish_reason: 'stop',
+        }],
+      }),
+    }));
+    const { prose } = setupElements();
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(managedService).not.toHaveBeenCalled();
+    expect(prose.innerHTML).toContain('成長');
+    renderDailyAllowanceStatus({ remaining: 1, limit: 20 });
+  });
+
+  test('personal rendering fails closed when DOMPurify is unavailable', async () => {
+    const text = '成長を後押しする';
+    const cacheKey = buildContextCacheKey({
+      selectedText: text,
+      promptVariant: 'v2',
+      sourceIdentity: personalSourceIdentity(),
+    });
+    setupStorage({
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'learner-model',
+      },
+    });
+    setupLocalStorage({
+      lastAnalysisKey: cacheKey,
+      lastAnalysisResult: completedProjection(cacheKey),
+      lastResponse: '### 單字分析\n#### <單字>成長',
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    global.fetch = jest.fn();
+    createDOMPurify.mockImplementation(() => null);
+    const { prose, result } = setupElements();
+
+    await analizingSelectedText(text, {}, { promptVariant: 'v2' });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(prose.innerHTML).not.toContain('成長');
+    expect(result.classList.contains('show')).toBe(false);
+  });
+
+  test('a delayed direct completion after a provider change cannot overwrite the cache', async () => {
+    const text = '成長を後押しする';
+    const storage = setupStorage({
+      analysisProviderMode: 'personal',
+      personalProviderRevision: 4,
+      personalProviderProfile: {
+        apiUrl: 'https://llm.example/v1', apiKey: 'key', model: 'learner-model',
+      },
+    });
+    global.chrome.permissions.contains = jest.fn(async () => true);
+    let resolveResponse;
+    global.fetch = jest.fn(() => new Promise((resolve) => {
+      resolveResponse = () => resolve({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          choices: [{
+            message: { content: '### 單字分析\n#### <單字>stale personal result' },
+            finish_reason: 'stop',
+          }],
+        }),
+      });
+    }));
+    const { elements } = setupElements();
+    const request = analizingSelectedText(text, {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    storage.analysisProviderMode = 'managed';
+    await handleSidepanelStorageChanges({
+      analysisProviderMode: { oldValue: 'personal', newValue: 'managed' },
+    }, 'local', elements);
+    resolveResponse();
+    await request;
+
+    expect(global.localStorage.getItem('lastAnalysisResult')).toBeNull();
+    expect(global.localStorage.getItem('lastResponse')).toBeNull();
+  });
 
   test('rapid mode clicks keep the last requested mode when storage reads finish out of order', async () => {
     const { compactButton, elements, usageButton } = setupElements();
