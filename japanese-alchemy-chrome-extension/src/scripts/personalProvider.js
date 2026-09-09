@@ -545,9 +545,40 @@ export function requestPersonalProviderOriginPermission(profile) {
 }
 
 export async function releasePersonalProviderOriginPermission(permission) {
-  if (typeof permission === 'string' && permission) {
-    await requirePermissions().remove({ origins: [permission] });
-  }
+  if (typeof permission !== 'string' || !permission) return true;
+  return withProviderMutationLock(async () => {
+    const stored = await getStoredProviderValues();
+    let activePermission = null;
+    try {
+      activePermission = getOriginPermission(
+        normalizePersonalProviderProfile(stored?.[PERSONAL_PROVIDER_PROFILE_KEY]).apiUrl
+      );
+    } catch {
+      activePermission = null;
+    }
+    if (activePermission === permission) return true;
+
+    const pendingPermissionCleanup = nextPendingPermissionOrigins(
+      stored?.[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY],
+      permission,
+      activePermission
+    );
+    await requireLocalStorage().set({
+      [PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]: pendingPermissionCleanup,
+    });
+    try {
+      const removed = await requirePermissions().remove({ origins: [permission] });
+      if (!removed) return false;
+    } catch {
+      return false;
+    }
+
+    const remaining = pendingPermissionCleanup.filter((pending) => pending !== permission);
+    await requireLocalStorage().set({
+      [PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]: remaining,
+    });
+    return true;
+  });
 }
 
 /**

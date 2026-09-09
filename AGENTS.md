@@ -16,11 +16,15 @@ Auth: Firebase Auth (Google login). Secrets: Firebase Secret Manager (`JAPANESE_
 
 ```
 Chrome Extension (contentScript → background → sidePanel)
-        │  Firebase Callable Functions (onCall + callable streaming)
-        ▼
-  explain()     → LLM (batch)     → full markdown (used by webapp)
-  explainStreamCallable() → LLM (stream: true) → callable stream chunks (used by Chrome extension)
-  saveItems()     → Firestore
+        │
+        ├─ Managed route: Firebase callable streaming
+        │    explainStreamCallable() → LLM (stream: true)
+        │    explain()              → LLM (batch)
+        │
+        └─ Personal route: optional direct provider transport
+             DirectLlmApiService → user-configured HTTPS provider
+
+  saveItems() → Firestore
         │
         ▼
   Next.js Webapp (reads Firestore, shows saved items)
@@ -33,7 +37,7 @@ LLM Service Layer (abstraction over providers):
   Switch provider by changing LLM_PROVIDER in config.ts.
 ```
 
-**Data flow**: Text selection → contentScript sends to background → stored in chrome.storage.local → sidePanel reads it → calls `jaAlchemyApiService.generateResponseStream()` → Firebase `explainStreamCallable` → LLM API (streaming) → results rendered progressively with ruby tag conversion. On stream completion, `formatAnalysisResult()` produces structured data (checkboxes, save JSON).
+**Data flow**: Text selection → contentScript sends to background → stored in chrome.storage.local → sidePanel reads it → selects the active route. Managed mode calls `jaAlchemyApiService.generateResponseStream()` → Firebase `explainStreamCallable` → LLM API (streaming). Personal mode calls `DirectLlmApiService` directly against the learner-configured provider after exact-origin permission approval. Both routes render results progressively with ruby tag conversion; on stream completion, `formatAnalysisResult()` produces structured data (checkboxes, save JSON).
 
 The `explain` callable is preserved for batch consumers; the Chrome extension uses `explainStreamCallable`. The raw `explainStream` SSE route was retired after no supported external consumer was found. See `docs/solutions/CALLABLE_STREAMING_MIGRATION.md` for the current contract and compatibility decision.
 

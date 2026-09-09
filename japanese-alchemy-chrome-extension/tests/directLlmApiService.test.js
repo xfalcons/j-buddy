@@ -1,4 +1,5 @@
 import {
+  DIRECT_STREAM_TOTAL_TIMEOUT_MS,
   MAX_DIRECT_OUTPUT_CHARS,
   DirectLlmApiService,
   buildModelsUrl,
@@ -170,7 +171,7 @@ describe('DirectLlmApiService', () => {
     controller.abort();
 
     await expect(request).rejects.toMatchObject({ name: 'AbortError' });
-    expect(fetch.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
   });
 
   test('calls a receiver-sensitive fetch implementation with the extension global', async () => {
@@ -192,6 +193,26 @@ describe('DirectLlmApiService', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(done).toHaveBeenCalledWith('bound response');
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('times out stalled model catalog response headers', async () => {
+    jest.useFakeTimers();
+    const fetch = jest.fn(() => new Promise(() => undefined));
+
+    let outcome;
+    try {
+      outcome = new DirectLlmApiService(fetch).loadModels({
+        apiUrl: profile.apiUrl,
+        apiKey: profile.apiKey,
+      }).then(() => null, (error) => error);
+      await jest.advanceTimersByTimeAsync(DIRECT_STREAM_TOTAL_TIMEOUT_MS);
+      expect(await outcome).toMatchObject({
+        code: 'personal_provider_response_timeout',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
   });
 
   test('isolates direct requests and model discovery from ambient credentials and redirects', async () => {
@@ -526,9 +547,27 @@ describe('DirectLlmApiService', () => {
     controller.abort();
     await request;
 
-    expect(fetch.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
     expect(done).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('times out stalled analysis response headers', async () => {
+    jest.useFakeTimers();
+    const fetch = jest.fn(() => new Promise(() => undefined));
+    const onError = jest.fn();
+
+    try {
+      const request = new DirectLlmApiService(fetch).generateResponseStream(
+        profile, '日本語', 'v2', undefined, jest.fn(), jest.fn(), onError
+      );
+      await jest.advanceTimersByTimeAsync(DIRECT_STREAM_TOTAL_TIMEOUT_MS);
+      await request;
+    } finally {
+      jest.useRealTimers();
+    }
+
+    expect(onError).toHaveBeenCalledWith('個人提供者回應逾時。請檢查設定後再試一次。');
   });
 
   test('cancels and releases an open SSE reader when its analysis is superseded', async () => {

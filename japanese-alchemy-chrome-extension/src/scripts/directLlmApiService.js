@@ -132,6 +132,34 @@ async function readWithDeadline(reader, idleTimeoutMs, remainingTotalMs) {
   }
 }
 
+async function fetchUntilResponse(fetchImpl, url, options, signal) {
+  const deadlineController = new AbortController();
+  let timeoutId;
+  let timedOut = false;
+  const forwardAbort = () => deadlineController.abort();
+  signal?.addEventListener('abort', forwardAbort, { once: true });
+  if (signal?.aborted) forwardAbort();
+
+  try {
+    return await Promise.race([
+      fetchImpl(url, { ...options, signal: deadlineController.signal }),
+      new Promise((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          deadlineController.abort();
+          reject(directTimeoutError());
+        }, DIRECT_STREAM_TOTAL_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    if (timedOut) throw directTimeoutError();
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', forwardAbort);
+  }
+}
+
 async function readBoundedResponseText(response, maximumBytes, signal) {
   if (response?.body?.getReader) {
     const reader = response.body.getReader();
@@ -521,15 +549,15 @@ export class DirectLlmApiService {
   async loadModels(connection, { signal } = {}) {
     let response;
     try {
-      response = await this.fetch(buildModelsUrl(connection.apiUrl), {
+      response = await fetchUntilResponse(this.fetch, buildModelsUrl(connection.apiUrl), {
         method: 'GET',
         headers: { Authorization: `Bearer ${connection.apiKey}` },
         credentials: 'omit',
         redirect: 'error',
-        signal,
-      });
+      }, signal);
     } catch (error) {
       if (isAbortError(error, signal)) throw error;
+      if (error instanceof DirectLlmApiError) throw error;
       throw new DirectLlmApiError(
         '無法取得提供者模型。請檢查網址、權限、API 金鑰與網路連線。',
         'personal_provider_model_catalog_network_error'
@@ -561,7 +589,7 @@ export class DirectLlmApiService {
     const usesResponses = profile?.protocol === 'responses';
     let response;
     try {
-      response = await this.fetch(usesResponses ? buildResponsesUrl(profile.apiUrl) : buildChatCompletionsUrl(profile.apiUrl), {
+      response = await fetchUntilResponse(this.fetch, usesResponses ? buildResponsesUrl(profile.apiUrl) : buildChatCompletionsUrl(profile.apiUrl), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -576,10 +604,10 @@ export class DirectLlmApiService {
           context,
           stream,
         })),
-        signal,
-      });
+      }, signal);
     } catch (error) {
       if (isAbortError(error, signal)) throw error;
+      if (error instanceof DirectLlmApiError) throw error;
       throw new DirectLlmApiError(
         '無法連線至個人提供者。請檢查網址、權限與網路連線。',
         'personal_provider_network_error'

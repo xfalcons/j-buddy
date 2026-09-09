@@ -20,6 +20,7 @@ import {
   normalizeApiBaseUrl,
   persistPersonalProviderModelCatalog,
   requestPersonalProviderOriginPermission,
+  releasePersonalProviderOriginPermission,
   savePersonalProvider,
   setAnalysisProviderMode,
 } from '../src/scripts/personalProvider.js';
@@ -969,6 +970,25 @@ describe('personal provider state', () => {
 
     expect(store[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]).toEqual([]);
     expect(store[`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]).toBeUndefined();
+  });
+
+  test('failed optional-origin release remains durable for provider maintenance', async () => {
+    const { store } = setupChrome();
+    global.chrome.permissions.remove.mockResolvedValue(false);
+
+    await expect(releasePersonalProviderOriginPermission('https://staged.example.test/*'))
+      .resolves.toBe(false);
+
+    expect(store[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY])
+      .toEqual(['https://staged.example.test/*']);
+
+    global.chrome.permissions.remove.mockResolvedValue(true);
+    await getPersonalProviderState();
+
+    expect(store[PERSONAL_PROVIDER_PENDING_PERMISSION_CLEANUP_KEY]).toEqual([]);
+    expect(global.chrome.permissions.remove).toHaveBeenCalledWith({
+      origins: ['https://staged.example.test/*'],
+    });
   });
 
   test('clear storage rejection preserves the prior profile and does not start cleanup', async () => {
