@@ -634,5 +634,3 @@ export class DirectLlmApiService {
     }
   }
 }
-
-export { completeResponseContent, consumeOpenAiSse, isAbortError };

@@ -1,3 +1,5 @@
+import { DEFAULT_VARIANT } from './promptVariant.js';
+
 /**
  * Browser-owned equivalent of the backend's analysis-message contract.
  *
@@ -11,7 +13,7 @@ export const CONTEXT_BEFORE_LABEL = '【前文】';
 export const TARGET_LABEL = '【分析対象】';
 export const CONTEXT_AFTER_LABEL = '【後文】';
 export const MAX_CONTEXT_CHARS = 500;
-export const DEFAULT_PROMPT_VARIANT = 'v2';
+export const DEFAULT_PROMPT_VARIANT = DEFAULT_VARIANT;
 
 const DELIMITER_PATTERN = /[[【［]\s*(?:前文|分析対象|後文)\s*[\]】］]/g;
 

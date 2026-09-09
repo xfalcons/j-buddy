@@ -10,9 +10,6 @@ void initializePersonalProviderState().catch((error) => {
 const panelStates = new Map();
 
 chrome.runtime.onInstalled.addListener(() => {
-  void initializePersonalProviderState().catch((error) => {
-    console.error('[Background] Unable to initialize provider storage:', error.message);
-  });
   console.log("Extension installed");
 });
 
