@@ -16,9 +16,9 @@ export class BedrockResponsesService implements LlmService {
 
   constructor() {
     const config = configSecret.value();
-    this.apiUrl = config.bedrock?.responses?.api_url;
-    this.apiKey = config.bedrock?.responses?.api_key;
-    this.model = config.bedrock?.responses?.model || "gemma-2-9b-it";
+    this.apiUrl = config.bedrock_response?.api_url;
+    this.apiKey = config.bedrock_response?.api_key;
+    this.model = config.bedrock_response?.model;
     this.adapter = new BedrockPayloadAdapter();
 
     if (!this.apiKey) {

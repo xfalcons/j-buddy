@@ -14,9 +14,9 @@ export class BedrockChatService implements LlmService {
 
   constructor() {
     const config = configSecret.value();
-    this.apiUrl = config.bedrock?.chat?.api_url;
-    this.apiKey = config.bedrock?.chat?.api_key;
-    this.model = config.bedrock?.chat?.model;
+    this.apiUrl = config.bedrock_chat?.api_url;
+    this.apiKey = config.bedrock_chat?.api_key;
+    this.model = config.bedrock_chat?.model;
 
     if (!this.apiKey) {
       throw new Error(
