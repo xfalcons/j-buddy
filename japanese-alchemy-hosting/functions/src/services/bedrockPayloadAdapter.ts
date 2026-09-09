@@ -7,18 +7,13 @@ import { SuccessResponse } from "../models/types";
 export class BedrockPayloadAdapter {
   /**
    * Converts J-Buddy's request format to Bedrock /openai/v1/responses format.
-   * - system prompt → instructions array
+   * - system prompt → instructions string
    * - user content → input: [{type: "input_text", text}]
    */
   toBedrockRequest(systemPrompt: string, content: string): object {
     return {
       model: "gemma-2-9b-it",
-      instructions: [
-        {
-          type: "input_text",
-          text: systemPrompt,
-        },
-      ],
+      instructions: systemPrompt,
       input: [
         {
           type: "input_text",
