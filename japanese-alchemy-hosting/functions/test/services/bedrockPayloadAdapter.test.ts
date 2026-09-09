@@ -2,7 +2,7 @@ import { describe, expect, it } from "@jest/globals";
 import { BedrockPayloadAdapter } from "../../src/services/bedrockPayloadAdapter";
 
 describe("BedrockPayloadAdapter", () => {
-  it("sends the system prompt as the string-valued Responses instructions field", () => {
+  it("sends string-valued instructions and input accepted by the Responses API", () => {
     const systemPrompt = "Explain this Japanese text.";
     const payload = new BedrockPayloadAdapter().toBedrockRequest(
       systemPrompt,
@@ -10,8 +10,6 @@ describe("BedrockPayloadAdapter", () => {
     ) as { instructions: unknown; input: unknown };
 
     expect(payload.instructions).toBe(systemPrompt);
-    expect(payload.input).toEqual([
-      { type: "input_text", text: "日本語" },
-    ]);
+    expect(payload.input).toBe("日本語");
   });
 });

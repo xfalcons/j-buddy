@@ -8,18 +8,13 @@ export class BedrockPayloadAdapter {
   /**
    * Converts J-Buddy's request format to Bedrock /openai/v1/responses format.
    * - system prompt → instructions string
-   * - user content → input: [{type: "input_text", text}]
+   * - user content → input string
    */
   toBedrockRequest(systemPrompt: string, content: string): object {
     return {
       model: "gemma-2-9b-it",
       instructions: systemPrompt,
-      input: [
-        {
-          type: "input_text",
-          text: content,
-        },
-      ],
+      input: content,
       temperature: 0.1,
       max_tokens: 8192,
       stream: false,
