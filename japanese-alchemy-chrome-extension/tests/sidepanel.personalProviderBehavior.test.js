@@ -133,6 +133,19 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.personalProviderStatus.textContent).toContain('設定一個相容於 OpenAI 的提供者');
   });
 
+  test('requesting personal mode before setup reveals the form without selecting personal analysis', async () => {
+    const { store } = setupChrome();
+    const elements = createElements();
+
+    const state = await handlePersonalProviderModeChange(elements, PERSONAL_PROVIDER_MODE);
+
+    expect(state.mode).toBe(MANAGED_PROVIDER_MODE);
+    expect(store[ANALYSIS_PROVIDER_MODE_KEY]).toBe(MANAGED_PROVIDER_MODE);
+    expect(elements.providerModeButtons[0].classList.contains('selected')).toBe(true);
+    expect(elements.personalProviderForm.hidden).toBe(false);
+    expect(elements.personalProviderError.textContent).toContain('請先完成個人提供者設定');
+  });
+
   test('saving a ready personal provider shows its active model without exposing its key', async () => {
     const { store } = setupChrome();
     const elements = createElements({

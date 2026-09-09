@@ -1895,6 +1895,20 @@ export async function handlePersonalProviderSave(elements) {
 
 export async function handlePersonalProviderModeChange(elements, mode) {
     try {
+        const currentState = await getPersonalProviderState();
+        if (mode === PERSONAL_PROVIDER_MODE && !currentState.isPersonalReady) {
+            renderPersonalProviderState(elements, currentState);
+            if (elements.personalProviderForm) elements.personalProviderForm.hidden = false;
+            setPersonalProviderFeedback(
+                elements,
+                `請先完成個人提供者設定：${
+                    currentState.personalError?.message || '缺少可用的提供者設定。'
+                }`,
+                'error',
+                true
+            );
+            return currentState;
+        }
         await setAnalysisProviderMode(mode);
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
