@@ -10,9 +10,13 @@ export class BedrockPayloadAdapter {
    * - system prompt → instructions string
    * - user content → input string
    */
-  toBedrockRequest(systemPrompt: string, content: string): object {
+  toBedrockRequest(
+    model: string,
+    systemPrompt: string,
+    content: string
+  ): object {
     return {
-      model: "gemma-2-9b-it",
+      model,
       instructions: systemPrompt,
       input: content,
       temperature: 0.1,

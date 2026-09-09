@@ -32,7 +32,11 @@ export class BedrockResponsesService implements LlmService {
     systemPrompt: string,
     content: string
   ): Promise<LlmStreamCompletion> {
-    const payload = this.adapter.toBedrockRequest(systemPrompt, content);
+    const payload = this.adapter.toBedrockRequest(
+      this.model,
+      systemPrompt,
+      content
+    );
 
     functions.logger.info("Calling Bedrock Responses API (streaming)", {
       model: this.model,
@@ -69,7 +73,11 @@ export class BedrockResponsesService implements LlmService {
     systemPrompt: string,
     content: string
   ): Promise<LlmBatchCompletion> {
-    const payload = this.adapter.toBedrockRequest(systemPrompt, content);
+    const payload = this.adapter.toBedrockRequest(
+      this.model,
+      systemPrompt,
+      content
+    );
 
     functions.logger.info("Calling Bedrock Responses API", {
       model: this.model,
