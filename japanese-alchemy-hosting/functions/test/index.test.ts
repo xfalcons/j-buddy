@@ -6,7 +6,7 @@ jest.mock("firebase-functions/v2/https", () => ({
   onCall: (...args: unknown[]) => mockOnCall(...args),
   onRequest: (...args: unknown[]) => mockOnRequest(...args),
 }));
-jest.mock("../src/config", () => ({ configSecret: {} }));
+jest.mock("../src/config", () => ({ runtimeSecrets: [] }));
 jest.mock("../src/runtimeOptions", () => ({ explainRuntimeOptions: {} }));
 jest.mock("../src/v1/explainCallable", () => ({ explainHandler: jest.fn() }));
 jest.mock("../src/v1/explainStreamCallableHandler", () => ({

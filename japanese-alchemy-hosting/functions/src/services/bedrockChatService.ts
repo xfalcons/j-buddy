@@ -1,6 +1,6 @@
 import * as functions from "firebase-functions";
 import { LlmRequest, LlmResponse, SuccessResponse } from "../models/types";
-import { configSecret } from "../config";
+import { getConfig } from "../config";
 import {
   LlmBatchCompletion,
   LlmService,
@@ -13,7 +13,7 @@ export class BedrockChatService implements LlmService {
   private model: string;
 
   constructor() {
-    const config = configSecret.value();
+    const config = getConfig();
     this.apiUrl = config.bedrock_chat?.api_url;
     this.apiKey = config.bedrock_chat?.api_key;
     this.model = config.bedrock_chat?.model;

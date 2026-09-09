@@ -30,9 +30,9 @@ export interface LlmStreamCompletion {
 export function createLlmService(ai?: AiProvider): LlmService {
   if (ai !== undefined) {
     switch (ai) {
-      case "bedrock-response":
+      case "bedrock_response":
         return new BedrockResponsesService();
-      case "bedrock-chat":
+      case "bedrock_chat":
         return new BedrockChatService();
       case "zai":
         return new ZaiLlmService();

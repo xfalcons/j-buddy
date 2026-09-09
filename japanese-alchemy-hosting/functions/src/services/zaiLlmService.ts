@@ -1,6 +1,6 @@
 import * as functions from "firebase-functions";
 import { LlmRequest, LlmResponse, SuccessResponse } from "../models/types";
-import { configSecret } from "../config";
+import { getConfig } from "../config";
 import { LlmBatchCompletion, LlmService, LlmStreamCompletion } from "./llmService";
 
 export class ZaiLlmService implements LlmService {
@@ -9,7 +9,7 @@ export class ZaiLlmService implements LlmService {
   private model: string;
 
   constructor() {
-    const config = configSecret.value();
+    const config = getConfig();
     this.apiUrl = config.zai.api_url;
     this.apiKey = config.zai.api_key;
     this.model = config.zai.model;

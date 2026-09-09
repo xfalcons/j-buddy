@@ -5,8 +5,7 @@ import { createLlmService } from "../../src/services/llmService";
 
 // Mock the config so services can be instantiated without real secrets.
 jest.mock("../../src/config", () => ({
-  configSecret: {
-    value: () => ({
+  getConfig: () => ({
       gemini: {
         api_url: "https://test-gemini.com",
         api_key: "test-gemini-key",
@@ -18,7 +17,6 @@ jest.mock("../../src/config", () => ({
         model: "test-zai-model",
       },
     }),
-  },
   LLM_PROVIDER: "gemini",
   LLM_CHAIN: ["gemini", "zai"] as const,
 }));

@@ -2,15 +2,13 @@ import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { BedrockResponsesService } from "../../src/services/bedrockResponsesService";
 
 jest.mock("../../src/config", () => ({
-  configSecret: {
-    value: () => ({
+  getConfig: () => ({
       bedrock_response: {
         api_url: "https://bedrock.example",
         api_key: "test-api-key",
         model: "google.gemma-4-31b",
       },
     }),
-  },
 }));
 
 const mockFetch = jest.fn() as any;

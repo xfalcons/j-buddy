@@ -27,7 +27,7 @@ export interface GrammarItem {
 }
 
 // API request types
-export type AiProvider = "gemini" | "zai" | "bedrock-response" | "bedrock-chat";
+export type AiProvider = "gemini" | "zai" | "bedrock_response" | "bedrock_chat";
 
 export interface ExplainRequest {
   content: string;

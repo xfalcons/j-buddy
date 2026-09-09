@@ -1,6 +1,6 @@
 import * as functions from "firebase-functions";
 import { SuccessResponse, LlmUsage } from "../models/types";
-import { configSecret } from "../config";
+import { getConfig } from "../config";
 import {
   LlmBatchCompletion,
   LlmService,
@@ -15,7 +15,7 @@ export class BedrockResponsesService implements LlmService {
   private adapter: BedrockPayloadAdapter;
 
   constructor() {
-    const config = configSecret.value();
+    const config = getConfig();
     this.apiUrl = config.bedrock_response?.api_url;
     this.apiKey = config.bedrock_response?.api_key;
     this.model = config.bedrock_response?.model;

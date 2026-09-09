@@ -1,22 +1,20 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { GeminiLlmService } from "../../src/services/geminiLlmService";
 
-// Mock the config so configSecret.value().gemini returns test credentials.
+// Mock the configuration interface with test credentials.
 jest.mock("../../src/config", () => ({
-  configSecret: {
-    value: () => ({
-      gemini: {
-        api_url: "https://test-api-url.com",
-        api_key: "test-api-key",
-        model: "test-model",
-      },
-      zai: {
-        api_url: "https://zai.test-api-url.com",
-        api_key: "test-zai-key",
-        model: "test-zai-model",
-      },
-    }),
-  },
+  getConfig: jest.fn(() => ({
+    gemini: {
+      api_url: "https://test-api-url.com",
+      api_key: "test-api-key",
+      model: "test-model",
+    },
+    zai: {
+      api_url: "https://zai.test-api-url.com",
+      api_key: "test-zai-key",
+      model: "test-zai-model",
+    },
+  })),
   LLM_PROVIDER: "gemini",
 }));
 
@@ -41,10 +39,10 @@ describe("GeminiLlmService", () => {
     });
 
     it("should throw when the Gemini API key is missing", () => {
-      // Temporarily override configSecret to omit the api_key.
-      const { configSecret } = require("../../src/config");
-      const original = configSecret.value;
-      configSecret.value = () => ({
+      const { getConfig } = jest.requireMock("../../src/config") as {
+        getConfig: jest.Mock;
+      };
+      getConfig.mockReturnValueOnce({
         gemini: { api_url: "https://test-api-url.com", api_key: "", model: "test-model" },
         zai: { api_url: "", api_key: "", model: "" },
       });
@@ -52,8 +50,6 @@ describe("GeminiLlmService", () => {
       expect(() => new GeminiLlmService()).toThrow(
         "Gemini API key not found"
       );
-
-      configSecret.value = original;
     });
   });
 
