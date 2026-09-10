@@ -228,6 +228,7 @@ export function buildDirectResponsesRequest({ profile, selectedText, promptVaria
     instructions: getSystemPrompt(promptVariant),
     input: buildDirectAnalysisMessage(selectedText, context),
     max_output_tokens: 8192,
+    reasoning: { effort: 'low' },
     stream: Boolean(stream),
     store: false,
   };

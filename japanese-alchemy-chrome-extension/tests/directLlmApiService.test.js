@@ -362,6 +362,7 @@ describe('DirectLlmApiService', () => {
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(expect.objectContaining({
       model: 'test-model',
       max_output_tokens: 8192,
+      reasoning: { effort: 'low' },
       stream: true,
       store: false,
       instructions: expect.any(String),
@@ -370,6 +371,96 @@ describe('DirectLlmApiService', () => {
     expect(chunks).toEqual([['分', '分'], ['析', '分析']]);
     expect(done).toHaveBeenCalledWith('分析');
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('rejects a reasoning-only Responses stream that reaches the output-token limit', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.created\ndata: {"type":"response.created","response":{"status":"in_progress"}}\n\n',
+      'event: response.reasoning_text.delta\ndata: {"type":"response.reasoning_text.delta","delta":"Let me analyze"}\n\n',
+      'event: response.reasoning_text.done\ndata: {"type":"response.reasoning_text.done","text":"Let me analyze"}\n\n',
+      'event: response.incomplete\ndata: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}\n\n',
+      'data: [DONE]\n\n',
+    ]));
+    const onChunk = jest.fn();
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, onChunk, done, onError
+    );
+
+    expect(onChunk).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith('個人提供者回應在產生分析結果前達到輸出上限。');
+  });
+
+  test('does not complete partial Responses output followed by an incomplete event', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+      'event: response.incomplete\ndata: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}\n\n',
+    ]));
+    const onChunk = jest.fn();
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, onChunk, done, onError
+    );
+
+    expect(onChunk).toHaveBeenCalledWith('partial', 'partial');
+    expect(done).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith('個人提供者回應在產生分析結果前達到輸出上限。');
+  });
+
+  test('accepts a completed Responses stream when a compatible provider omits response status', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"分析"}\n\n',
+      'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_123"}}\n\n',
+    ]));
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, jest.fn(), done, onError
+    );
+
+    expect(done).toHaveBeenCalledWith('分析');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('does not promote partial Responses text when [DONE] replaces semantic completion', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+      'data: [DONE]\n\n',
+    ]));
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, jest.fn(), done, onError
+    );
+
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith('個人提供者在完成分析前中斷了串流。');
+  });
+
+  test('rejects a completed Responses event with a non-completed status', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+      'event: response.completed\ndata: {"type":"response.completed","response":{"status":"failed"}}\n\n',
+      'data: [DONE]\n\n',
+    ]));
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      responsesProfile, '日本語', 'v2', undefined, jest.fn(), done, onError
+    );
+
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith('個人提供者回傳了不支援的串流回應。');
   });
 
   test('retries a rejected Responses stream once and completes textual JSON output', async () => {
@@ -395,9 +486,10 @@ describe('DirectLlmApiService', () => {
     );
 
   expect(onError.mock.calls).toEqual([]);
-  expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(JSON.parse(fetch.mock.calls[0][1].body).stream).toBe(true);
     expect(JSON.parse(fetch.mock.calls[1][1].body).stream).toBe(false);
+    expect(JSON.parse(fetch.mock.calls[1][1].body).reasoning).toEqual({ effort: 'low' });
     expect(onChunk).not.toHaveBeenCalled();
     expect(done).toHaveBeenCalledWith('完整分析');
   });

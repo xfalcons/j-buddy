@@ -389,6 +389,18 @@ function consumeResponsesSsePayload(payload) {
       'personal_provider_stream_error'
     );
   }
+  if (payload?.type === 'response.incomplete') {
+    throw new DirectLlmApiError(
+      '個人提供者回應在產生分析結果前達到輸出上限。',
+      'personal_provider_incomplete_response'
+    );
+  }
+  if (payload?.type === 'response.completed' && (payload?.response?.status ?? 'completed') !== 'completed') {
+    throw new DirectLlmApiError(
+      '個人提供者回傳了不支援的串流回應。',
+      'personal_provider_invalid_response'
+    );
+  }
   if (payload?.type === 'response.output_text.delta' && typeof payload.delta !== 'string') {
     throw new DirectLlmApiError(
       '個人提供者回傳了不支援的串流回應。',
@@ -397,7 +409,8 @@ function consumeResponsesSsePayload(payload) {
   }
   return {
     delta: payload?.type === 'response.output_text.delta' ? payload.delta : '',
-    terminal: payload?.type === 'response.completed' && payload?.response?.status === 'completed',
+    terminal: payload?.type === 'response.completed'
+      && (payload?.response?.status ?? 'completed') === 'completed',
   };
 }
 
@@ -414,6 +427,7 @@ async function consumeSse(response, onChunk, signal, consumePayload, { doneTermi
   let buffer = '';
   let fullText = '';
   let terminal = false;
+  let transportTerminated = false;
   let receivedBytes = 0;
   const startedAt = Date.now();
   const cancelReader = () => {
@@ -434,12 +448,7 @@ async function consumeSse(response, onChunk, signal, consumePayload, { doneTermi
     if (!data) return;
     if (data === '[DONE]') {
       if (doneTerminates) terminal = true;
-      else {
-        throw new DirectLlmApiError(
-          '個人提供者回傳了不支援的串流回應。',
-          'personal_provider_invalid_response'
-        );
-      }
+      transportTerminated = true;
       return;
     }
 
@@ -465,7 +474,7 @@ async function consumeSse(response, onChunk, signal, consumePayload, { doneTermi
       error.name = 'AbortError';
       throw error;
     }
-    while (!terminal) {
+    while (!terminal && !transportTerminated) {
       const { done, value } = await readWithDeadline(
         reader,
         DIRECT_STREAM_IDLE_TIMEOUT_MS,
@@ -491,11 +500,11 @@ async function consumeSse(response, onChunk, signal, consumePayload, { doneTermi
       buffer = frames.pop() || '';
       for (const frame of frames) {
         consumeFrame(frame);
-        if (terminal) break;
+        if (terminal || transportTerminated) break;
       }
     }
 
-    if (!terminal && buffer) consumeFrame(buffer);
+    if (!terminal && !transportTerminated && buffer) consumeFrame(buffer);
     if (!terminal || (requireText && !fullText)) {
       throw new DirectLlmApiError(
         requireText && terminal
