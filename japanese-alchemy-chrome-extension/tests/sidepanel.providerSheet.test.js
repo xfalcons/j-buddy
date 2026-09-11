@@ -3,6 +3,7 @@ import {
   closeProviderSheet,
   openProviderSheet,
   setupProviderSheetListeners,
+  setProviderSheetReadOnly,
 } from '../src/sidepanel/providerSheet.js';
 
 function createProviderSheetElements() {
@@ -45,6 +46,12 @@ function createProviderSheetElements() {
       providerModeButtons: [managedButton],
       personalProviderApiUrl: { value: 'https://api.example.test/v1' },
       personalProviderApiKey: { value: 'draft-secret-key' },
+      personalProviderProtocol: { value: 'chat_completions', disabled: false },
+      personalProviderModel: { value: 'model-a', disabled: false },
+      personalProviderManualModel: { value: '', disabled: false },
+      loadPersonalProviderModelsButton: { disabled: false },
+      savePersonalProviderButton: { disabled: false },
+      clearPersonalProviderButton: { disabled: false },
     },
     listeners,
     managedButton,
@@ -127,6 +134,27 @@ describe('provider sheet controller', () => {
 
     expect(elements.personalProviderApiUrl.value).toBe('https://api.example.test/v1');
     expect(elements.personalProviderApiKey.value).toBe('draft-secret-key');
+  });
+
+  test('analysis locks provider mutators without locking dismissal', () => {
+    const { elements, managedButton } = createProviderSheetElements();
+
+    setProviderSheetReadOnly(elements, true);
+
+    expect(managedButton.disabled).toBe(true);
+    expect(elements.personalProviderApiUrl.disabled).toBe(true);
+    expect(elements.personalProviderApiKey.disabled).toBe(true);
+    expect(elements.personalProviderProtocol.disabled).toBe(true);
+    expect(elements.personalProviderModel.disabled).toBe(true);
+    expect(elements.personalProviderManualModel.disabled).toBe(true);
+    expect(elements.loadPersonalProviderModelsButton.disabled).toBe(true);
+    expect(elements.savePersonalProviderButton.disabled).toBe(true);
+    expect(elements.clearPersonalProviderButton.disabled).toBe(true);
+    expect(elements.providerSheetCloseButton.disabled).toBeUndefined();
+
+    setProviderSheetReadOnly(elements, false);
+    expect(managedButton.disabled).toBe(false);
+    expect(elements.savePersonalProviderButton.disabled).toBe(false);
   });
 
   test('wires pill and sheet close controls without provider mutators', () => {

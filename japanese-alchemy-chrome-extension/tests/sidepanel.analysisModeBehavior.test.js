@@ -17,6 +17,7 @@ import {
   isValidSelection,
   setSidepanelElementsForTesting,
 } from '../src/sidepanel/sidepanel.js';
+import { closeProviderSheet, openProviderSheet } from '../src/sidepanel/providerSheet.js';
 import { buildContextCacheKey } from '../src/scripts/surroundingContext.js';
 import { PERSONAL_PROVIDER_EPOCH_KEY } from '../src/scripts/personalProvider.js';
 import createDOMPurify from 'dompurify';
@@ -54,6 +55,19 @@ function createButton(variant, selected = false) {
   };
 }
 
+function createProviderRoute(mode, selected = false) {
+  return {
+    dataset: { providerMode: mode },
+    classList: createClassList(selected ? ['selected'] : []),
+    attributes: {},
+    disabled: false,
+    focus: jest.fn(),
+    setAttribute: jest.fn(function setAttribute(name, value) {
+      this.attributes[name] = value;
+    }),
+  };
+}
+
 function setupElements() {
   const prose = { innerHTML: 'stale result' };
   const loadingMessage = { textContent: 'AIによる分析中です。しばらくお待ちください...' };
@@ -78,9 +92,51 @@ function setupElements() {
   const cancelAnalysisButton = { hidden: true };
   const analyzeButton = { disabled: true };
   const pendingSelectionStatus = { textContent: '' };
+  const managedProviderRoute = createProviderRoute('managed', true);
+  const personalProviderRoute = createProviderRoute('personal');
+  const providerSheet = {
+    open: false,
+    showModal: jest.fn(() => { providerSheet.open = true; }),
+    close: jest.fn(() => { providerSheet.open = false; }),
+  };
+  const providerStatusButton = {
+    ariaExpanded: 'false',
+    focus: jest.fn(),
+    setAttribute: jest.fn((name, value) => {
+      if (name === 'aria-expanded') providerStatusButton.ariaExpanded = value;
+    }),
+  };
+  const providerCatalogModel = {
+    value: '',
+    disabled: false,
+    replaceChildren: jest.fn(),
+  };
+  const providerManualModel = { value: '', disabled: false };
+  const providerStatus = { textContent: '', hidden: false, focus: jest.fn() };
+  const providerError = { textContent: '', hidden: true, focus: jest.fn() };
   const elements = {
     alertMessage,
     analysisModeButtons: [compactButton, usageButton],
+    providerModeButtons: [managedProviderRoute, personalProviderRoute],
+    providerStatusButton,
+    providerSheet,
+    providerSheetCloseButton: { disabled: false },
+    providerStatusAnnouncement: { textContent: '', hidden: true },
+    personalProviderModeButton: personalProviderRoute,
+    personalProviderForm: { hidden: true },
+    personalProviderApiUrl: { value: '' },
+    personalProviderApiKey: { value: '' },
+    personalProviderProtocol: { value: 'chat_completions' },
+    personalProviderCatalogModelField: { hidden: false },
+    personalProviderModel: providerCatalogModel,
+    personalProviderManualModelField: { hidden: true },
+    personalProviderManualModel: providerManualModel,
+    loadPersonalProviderModelsButton: { disabled: false, textContent: '載入模型' },
+    personalProviderSummary: { textContent: '狀態未知' },
+    personalProviderStatus: providerStatus,
+    personalProviderError: providerError,
+    savePersonalProviderButton: { disabled: false },
+    clearPersonalProviderButton: { disabled: false },
     cancelAnalysisButton,
     analyzeButton,
     pendingSelectionStatus,
@@ -116,6 +172,12 @@ function setupElements() {
     saveAsBtn,
     saveForLaterBtn,
     usageButton,
+    managedProviderRoute,
+    personalProviderRoute,
+    providerCatalogModel,
+    providerManualModel,
+    providerSheet,
+    providerStatus,
   };
 }
 
@@ -413,6 +475,100 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(saveAsBtn.disabled).toBe(true);
     expect(saveForLaterBtn.disabled).toBe(true);
     expect(global.localStorage.getItem('lastAnalysisResult')).toBeNull();
+
+    apiCalls[0].onDone('# stale response');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('opening the provider sheet during a stream locks mutators without disturbing analysis', async () => {
+    const apiCalls = setupDeferredApi();
+    const {
+      elements,
+      managedProviderRoute,
+      personalProviderRoute,
+      providerCatalogModel,
+      providerManualModel,
+      providerSheet,
+      providerStatus,
+    } = setupElements();
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    expect(managedProviderRoute.disabled).toBe(true);
+    expect(personalProviderRoute.disabled).toBe(true);
+    expect(elements.personalProviderApiUrl.disabled).toBe(true);
+    expect(elements.personalProviderApiKey.disabled).toBe(true);
+    expect(elements.personalProviderProtocol.disabled).toBe(true);
+    expect(providerCatalogModel.disabled).toBe(true);
+    expect(providerManualModel.disabled).toBe(true);
+    expect(elements.loadPersonalProviderModelsButton.disabled).toBe(true);
+    expect(elements.savePersonalProviderButton.disabled).toBe(true);
+    expect(elements.clearPersonalProviderButton.disabled).toBe(true);
+    expect(providerStatus.textContent).toContain('分析進行中');
+
+    openProviderSheet(elements);
+    closeProviderSheet(elements);
+
+    expect(providerSheet.open).toBe(false);
+    expect(apiCalls[0].options.signal.aborted).toBe(false);
+    expect(managedProviderRoute.disabled).toBe(true);
+    expect(elements.savePersonalProviderButton.disabled).toBe(true);
+
+    apiCalls[0].onDone('### 單字分析\n#### <單字>成長\ngrowth');
+    apiCalls[0].resolve();
+    await request;
+
+    expect(managedProviderRoute.disabled).toBe(false);
+    expect(personalProviderRoute.disabled).toBe(false);
+    expect(elements.personalProviderApiUrl.disabled).toBe(false);
+    expect(elements.savePersonalProviderButton.disabled).toBe(false);
+  });
+
+  test('canceling an active stream unlocks the provider sheet', async () => {
+    const apiCalls = setupDeferredApi();
+    const { elements, managedProviderRoute } = setupElements();
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    handleCancelAnalysis(elements);
+
+    expect(managedProviderRoute.disabled).toBe(false);
+    expect(elements.savePersonalProviderButton.disabled).toBe(false);
+
+    apiCalls[0].onDone('# stale response');
+    apiCalls[0].resolve();
+    await request;
+  });
+
+  test('a failed stream unlocks the provider sheet', async () => {
+    const apiCalls = setupDeferredApi();
+    const { elements, managedProviderRoute } = setupElements();
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    apiCalls[0].onError('provider unavailable');
+    apiCalls[0].resolve();
+    await request;
+
+    expect(managedProviderRoute.disabled).toBe(false);
+    expect(elements.personalProviderApiKey.disabled).toBe(false);
+    expect(elements.savePersonalProviderButton.disabled).toBe(false);
+  });
+
+  test('a provider identity change from another sheet cancels and unlocks the active stream', async () => {
+    const apiCalls = setupDeferredApi();
+    const { elements, managedProviderRoute } = setupElements();
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    await handleSidepanelStorageChanges({
+      analysisProviderMode: { oldValue: 'managed', newValue: 'personal' },
+    }, 'local', elements);
+
+    expect(apiCalls[0].options.signal.aborted).toBe(true);
+    expect(managedProviderRoute.disabled).toBe(false);
 
     apiCalls[0].onDone('# stale response');
     apiCalls[0].resolve();

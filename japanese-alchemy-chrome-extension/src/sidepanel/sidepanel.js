@@ -37,6 +37,7 @@ import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
 import {
     announceProviderStatus,
+    setProviderSheetReadOnly,
     setupProviderSheetListeners,
 } from './providerSheet.js';
 
@@ -574,6 +575,7 @@ export async function handleSidepanelStorageChanges(
         analysisRequestId += 1;
         isAnalizing = false;
         activeAnalysisKey = null;
+        setProviderSheetReadOnly(panelElements, false);
         setCompletedAnalysisAvailable(false);
         updateAnalyzeAvailability();
     }
@@ -643,6 +645,7 @@ export function handleCancelAnalysis(panelElements = elements) {
     analysisRequestId += 1;
     cancelActiveAnalysis();
     isAnalizing = false;
+    setProviderSheetReadOnly(panelElements, false);
     activeAnalysisKey = null;
     activeAnalysisPreviewText = '';
     completedAnalysisResponse = '';
@@ -721,6 +724,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             activeAnalysisRequestIdentity = null;
             activeAnalysisBaseIdentity = null;
             isAnalizing = false;
+            setProviderSheetReadOnly(elements, false);
             activeAnalysisKey = null;
             saveForLaterJson = {};
             proseElement.innerHTML = '';
@@ -762,6 +766,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         activeAnalysisBaseIdentity = null;
         activeAnalysisKey = null;
         isAnalizing = false;
+        setProviderSheetReadOnly(elements, false);
         saveForLaterJson = {};
         proseElement.innerHTML = '';
         resultElement.classList.remove('show');
@@ -781,6 +786,12 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     console.log('Analizing Selected Text...');
     let analysisController = null;
     isAnalizing = true;
+    setProviderSheetReadOnly(elements, true);
+    setPersonalProviderFeedback(
+        elements,
+        '分析進行中：提供者設定已暫時鎖定。關閉此視窗即可返回工作區，並使用「停止分析」。',
+        'status'
+    );
     updateAnalyzeAvailability();
     activeAnalysisPreviewText = '';
     setAnalysisCancellationAvailable(true);
@@ -957,12 +968,16 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             activeAnalysisController = null;
         }
         isAnalizing = false;
+        setProviderSheetReadOnly(elements, false);
         activeAnalysisKey = null;
         activeAnalysisRequestIdentity = null;
         activeAnalysisBaseIdentity = null;
         activeAnalysisPreviewText = '';
         setAnalysisCancellationAvailable(false);
         updateAnalyzeAvailability();
+        if (savedPersonalProviderState) {
+            renderPersonalProviderState(elements, savedPersonalProviderState);
+        }
     }
 }
 

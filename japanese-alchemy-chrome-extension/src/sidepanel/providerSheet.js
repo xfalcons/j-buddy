@@ -44,3 +44,21 @@ export function setupProviderSheetListeners(elements) {
     setProviderSheetExpanded(elements, false);
   });
 }
+
+export function setProviderSheetReadOnly(elements, readOnly) {
+  const controls = [
+    ...(elements.providerModeButtons || []),
+    elements.personalProviderApiUrl,
+    elements.personalProviderApiKey,
+    elements.personalProviderProtocol,
+    elements.personalProviderModel,
+    elements.personalProviderManualModel,
+    elements.loadPersonalProviderModelsButton,
+    elements.savePersonalProviderButton,
+    elements.clearPersonalProviderButton,
+  ];
+
+  controls.forEach((control) => {
+    if (control) control.disabled = readOnly;
+  });
+}
