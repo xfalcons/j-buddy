@@ -533,14 +533,17 @@ describe('sidepanel analysis-mode behavior', () => {
 
   test('canceling an active stream unlocks the provider sheet', async () => {
     const apiCalls = setupDeferredApi();
-    const { elements, managedProviderRoute } = setupElements();
+    const { elements, managedProviderRoute, providerStatus } = setupElements();
     const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
     await flushMicrotasks();
+
+    expect(providerStatus.textContent).toContain('分析進行中');
 
     handleCancelAnalysis(elements);
 
     expect(managedProviderRoute.disabled).toBe(false);
     expect(elements.savePersonalProviderButton.disabled).toBe(false);
+    expect(providerStatus.textContent).not.toContain('分析進行中');
 
     apiCalls[0].onDone('# stale response');
     apiCalls[0].resolve();

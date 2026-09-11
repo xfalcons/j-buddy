@@ -670,6 +670,11 @@ export function handleCancelAnalysis(panelElements = elements) {
     cancelActiveAnalysis();
     isAnalizing = false;
     setProviderSheetReadOnly(panelElements, false);
+    if (savedPersonalProviderState) {
+        renderPersonalProviderStatus(panelElements, savedPersonalProviderState);
+    } else {
+        setPersonalProviderFeedback(panelElements, '', 'status');
+    }
     activeAnalysisKey = null;
     activeAnalysisPreviewText = '';
     completedAnalysisResponse = '';
