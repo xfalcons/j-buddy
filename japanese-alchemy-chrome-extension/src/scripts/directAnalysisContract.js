@@ -218,6 +218,7 @@ export function buildDirectCompletionRequest({ profile, selectedText, promptVari
     ],
     temperature: 0.1,
     max_tokens: 8192,
+    reasoning_effort: 'low',
     stream: Boolean(stream),
   };
 }

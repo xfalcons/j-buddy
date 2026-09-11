@@ -55,6 +55,7 @@ describe('direct analysis contract', () => {
       model: 'test-model',
       temperature: 0.1,
       max_tokens: 8192,
+      reasoning_effort: 'low',
       stream: true,
     }));
     expect(request.messages).toEqual([

@@ -334,10 +334,51 @@ describe('DirectLlmApiService', () => {
       headers: expect.objectContaining({ Authorization: 'Bearer private-key-that-must-not-leak' }),
     }));
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(expect.objectContaining({
-      model: 'test-model', temperature: 0.1, max_tokens: 8192, stream: true,
+      model: 'test-model', temperature: 0.1, max_tokens: 8192,
+      reasoning_effort: 'low', stream: true,
     }));
     expect(chunks).toEqual([['分', '分'], ['析', '分析']]);
     expect(done).toHaveBeenCalledTimes(1);
+    expect(done).toHaveBeenCalledWith('分析');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('rejects a reasoning-only Chat Completions stream instead of completing empty', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'data: {"choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Let"},"finish_reason":null}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"me"},"finish_reason":null}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"analyze"},"finish_reason":null}]}\n\n',
+      'data: [DONE]\n\n',
+    ]));
+    const onChunk = jest.fn();
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      profile, '日本語', 'v2', undefined, onChunk, done, onError
+    );
+
+    expect(onChunk).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith('個人提供者回傳了不支援的串流回應。');
+  });
+
+  test('streams Chat Completions answer content after reasoning content', async () => {
+    const fetch = jest.fn(async () => sseResponse([
+      'data: {"choices":[{"delta":{"reasoning_content":"Let me analyze"},"finish_reason":null}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"分析"},"finish_reason":null}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+    ]));
+    const chunks = [];
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      profile, '日本語', 'v2', undefined,
+      (chunk, fullText) => chunks.push([chunk, fullText]), done, onError
+    );
+
+    expect(chunks).toEqual([['分析', '分析']]);
     expect(done).toHaveBeenCalledWith('分析');
     expect(onError).not.toHaveBeenCalled();
   });
@@ -585,6 +626,21 @@ describe('DirectLlmApiService', () => {
     expect(done).toHaveBeenCalledWith('完整分析');
   });
 
+  test('rejects a completed Chat Completions JSON response with no answer content', async () => {
+    const fetch = jest.fn(async () => jsonResponse({
+      choices: [{ message: { content: '', reasoning_content: 'Let me analyze' }, finish_reason: 'stop' }],
+    }));
+    const done = jest.fn();
+    const onError = jest.fn();
+
+    await new DirectLlmApiService(fetch).generateResponseStream(
+      profile, '日本語', 'v2', undefined, jest.fn(), done, onError
+    );
+
+    expect(done).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith('個人提供者回傳了不支援的回應格式。');
+  });
+
   test('retries stream:false once only after an explicit pre-content unsupported-stream refusal', async () => {
     const unsupported = errorResponse(400, { error: { message: 'stream is not supported by this endpoint' } });
     const fetch = jest.fn()
@@ -601,6 +657,7 @@ describe('DirectLlmApiService', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(JSON.parse(fetch.mock.calls[0][1].body).stream).toBe(true);
     expect(JSON.parse(fetch.mock.calls[1][1].body).stream).toBe(false);
+    expect(JSON.parse(fetch.mock.calls[1][1].body).reasoning_effort).toBe('low');
     expect(done).toHaveBeenCalledWith('fallback response');
   });
 

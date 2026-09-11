@@ -326,7 +326,7 @@ function hasTerminalFinishReason(payload) {
 
 function completeResponseContent(payload) {
   const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !hasTerminalFinishReason(payload)) {
+  if (typeof content !== 'string' || !content || !hasTerminalFinishReason(payload)) {
     throw new DirectLlmApiError(
       '個人提供者回傳了不支援的回應格式。',
       'personal_provider_invalid_response'
@@ -526,7 +526,7 @@ const consumeOpenAiSse = (response, onChunk, signal) => consumeSse(
   onChunk,
   signal,
   consumeOpenAiSsePayload,
-  { doneTerminates: true, requireText: false }
+  { doneTerminates: true, requireText: true }
 );
 
 const consumeResponsesSse = (response, onChunk, signal) => consumeSse(
