@@ -43,6 +43,8 @@ function createProviderSheetElements() {
       providerSheetCloseButton: closeButton,
       providerStatusAnnouncement: status,
       providerModeButtons: [managedButton],
+      personalProviderApiUrl: { value: 'https://api.example.test/v1' },
+      personalProviderApiKey: { value: 'draft-secret-key' },
     },
     listeners,
     managedButton,
@@ -114,6 +116,17 @@ describe('provider sheet controller', () => {
 
     expect(status.textContent).toBe('個人 · example-model · 無法使用');
     expect(status.hidden).toBe(false);
+  });
+
+  test('closing preserves an unsaved draft for the next opening', () => {
+    const { elements } = createProviderSheetElements();
+    openProviderSheet(elements);
+
+    closeProviderSheet(elements);
+    openProviderSheet(elements);
+
+    expect(elements.personalProviderApiUrl.value).toBe('https://api.example.test/v1');
+    expect(elements.personalProviderApiKey.value).toBe('draft-secret-key');
   });
 
   test('wires pill and sheet close controls without provider mutators', () => {

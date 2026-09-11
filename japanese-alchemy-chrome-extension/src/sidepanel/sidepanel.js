@@ -35,6 +35,10 @@ import { DirectLlmApiService } from '../scripts/directLlmApiService.js';
 import { normalizeModelCatalogIds } from '../scripts/modelCatalog.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
+import {
+    announceProviderStatus,
+    setupProviderSheetListeners,
+} from './providerSheet.js';
 
 // Configure marked.js to preserve ruby tags and add classes
 marked.setOptions({
@@ -1726,13 +1730,15 @@ export function renderPersonalProviderState(elements, state) {
         elements.personalProviderForm.hidden = mode !== PERSONAL_PROVIDER_MODE;
     }
 
+    const providerSummary = mode === PERSONAL_PROVIDER_MODE
+        ? (profile
+            ? `個人 · ${profile.model}${isPersonalReady ? '' : ' · 無法使用'}`
+            : '個人 · 尚未完成設定')
+        : '代管';
     if (elements.personalProviderSummary) {
-        elements.personalProviderSummary.textContent = mode === PERSONAL_PROVIDER_MODE
-            ? (profile
-                ? `個人 · ${profile.model}${isPersonalReady ? '' : ' · 無法使用'}`
-                : '個人 · 尚未完成設定')
-            : '代管';
+        elements.personalProviderSummary.textContent = providerSummary;
     }
+    announceProviderStatus(elements, providerSummary);
 
     if (elements.personalProviderApiUrl) {
         elements.personalProviderApiUrl.value = profile?.apiUrl || '';
@@ -1766,20 +1772,60 @@ export function renderPersonalProviderState(elements, state) {
     }
 }
 
+function renderUnknownPersonalProviderState(elements, error) {
+    savedPersonalProviderState = null;
+    domPurifyRequired = false;
+    elements.providerModeButtons?.forEach((button) => {
+        button.classList.remove('selected');
+        button.setAttribute('aria-pressed', 'false');
+    });
+    if (elements.personalProviderForm) elements.personalProviderForm.hidden = true;
+    if (elements.personalProviderSummary) elements.personalProviderSummary.textContent = '狀態未知';
+    announceProviderStatus(elements, '狀態未知');
+    if (elements.analyzeButton) elements.analyzeButton.disabled = true;
+    setPersonalProviderFeedback(
+        elements,
+        `提供者狀態未知：${error?.message || '目前無法讀取設定。'}`,
+        'error'
+    );
+}
+
 export async function initializePersonalProviderSettings(elements) {
     try {
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
         return state;
     } catch (error) {
-        updatePersonalProviderModeUi(elements, MANAGED_PROVIDER_MODE, false);
-        setPersonalProviderFeedback(
-            elements,
-            `個人提供者設定無法使用：${error.message}`,
-            'error'
-        );
+        renderUnknownPersonalProviderState(elements, error);
         return null;
     }
+}
+
+export async function refreshPersonalProviderStateAfterPermissionChange(
+    elements,
+    permission
+) {
+    if (!Array.isArray(permission?.origins) || permission.origins.length === 0) return;
+
+    const requestId = ++settingsProjectionRequestId;
+    try {
+        const state = await getPersonalProviderState({ performMaintenance: false });
+        if (requestId === settingsProjectionRequestId) {
+            renderPersonalProviderState(elements, state);
+        }
+    } catch (error) {
+        if (requestId === settingsProjectionRequestId) {
+            renderUnknownPersonalProviderState(elements, error);
+        }
+    }
+}
+
+export function setupPersonalProviderPermissionListeners(panelElements = elements) {
+    const refresh = (permission) => {
+        return refreshPersonalProviderStateAfterPermissionChange(panelElements, permission);
+    };
+    chrome.permissions?.onAdded?.addListener(refresh);
+    chrome.permissions?.onRemoved?.addListener(refresh);
 }
 
 function getPersonalProviderFormValues(elements) {
@@ -1981,6 +2027,10 @@ async function initElements() {
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
     analysisModeButtons: document.querySelectorAll('.analysis-mode-option'),
     providerModeButtons: document.querySelectorAll('.provider-mode-option'),
+    providerStatusButton: document.getElementById('providerStatusButton'),
+    providerSheet: document.getElementById('providerSheet'),
+    providerSheetCloseButton: document.getElementById('providerSheetCloseButton'),
+    providerStatusAnnouncement: document.getElementById('providerStatusAnnouncement'),
     personalProviderModeButton: document.querySelector('[data-provider-mode="personal"]'),
     personalProviderForm: document.getElementById('personalProviderForm'),
     personalProviderApiUrl: document.getElementById('personalProviderApiUrl'),
@@ -2153,6 +2203,8 @@ export async function setupEventListeners() {
         await handlePersonalProviderModeChange(elements, button.dataset.providerMode);
       });
     });
+    setupProviderSheetListeners(elements);
+    setupPersonalProviderPermissionListeners();
     elements.personalProviderForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
       await handlePersonalProviderSave(elements);

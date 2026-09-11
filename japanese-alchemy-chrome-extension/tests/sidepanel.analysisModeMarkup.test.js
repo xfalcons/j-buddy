@@ -26,14 +26,20 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('aria-pressed="true">造句分析</button>');
   });
 
-  test('exposes disclosed custom provider settings without displacing current controls', () => {
-    expect(html).toContain('id="personalProviderSettings"');
+  test('exposes provider settings through a persistent pill and modal sheet', () => {
+    expect(html).toContain('id="providerStatusButton"');
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain('id="providerStatusAnnouncement"');
+    expect(html).toContain('<dialog id="providerSheet"');
+    expect(html).toContain('aria-labelledby="providerSheetTitle"');
     expect(html).toContain('LLM API 提供者');
     expect(html).toContain('data-provider-mode="personal"');
     expect(html).toContain('API 金鑰');
     expect(html).toContain('模型探索只會把 API 金鑰直接傳送至你選擇的提供者');
     expect(html).toContain('個人分析會把 API 金鑰、選取文字與前後文直接傳送至該提供者');
     expect(html).toContain('登入即可私密儲存項目；不登入也可儲存至共享收藏。');
+    expect(html).not.toContain('<details');
+    expect(html.indexOf('id="analyzeButton"')).toBeLessThan(html.indexOf('<dialog id="providerSheet"'));
     expect(html).not.toContain('data-ai-preference');
     expect(html).not.toContain('aiPreference');
   });

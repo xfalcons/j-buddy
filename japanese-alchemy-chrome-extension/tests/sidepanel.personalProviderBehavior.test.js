@@ -23,6 +23,8 @@ import {
   invalidatePersonalProviderModelCatalog,
   initializePersonalProviderSettings,
   redactPersonalProviderApiKey,
+  refreshPersonalProviderStateAfterPermissionChange,
+  setupPersonalProviderPermissionListeners,
 } from '../src/sidepanel/sidepanel.js';
 
 function createClassList(initial = []) {
@@ -57,6 +59,8 @@ function setupChrome(initial = {}, permittedOrigins = []) {
       },
     },
     permissions: {
+      onAdded: { addListener: jest.fn() },
+      onRemoved: { addListener: jest.fn() },
       contains: jest.fn(async ({ origins }) => origins.every((origin) => permissions.has(origin))),
       request: jest.fn(async ({ origins }) => {
         origins.forEach((origin) => permissions.add(origin));
@@ -88,6 +92,10 @@ function createElements(values = {}) {
   };
   return {
     providerModeButtons: [managedButton, personalButton],
+    providerStatusButton: { textContent: '' },
+    providerSheet: { open: false },
+    providerSheetCloseButton: {},
+    providerStatusAnnouncement: { textContent: '', hidden: true },
     personalProviderModeButton: personalButton,
     personalProviderApiUrl: createField(values.apiUrl || ''),
     personalProviderApiKey: createField(values.apiKey || ''),
@@ -110,6 +118,7 @@ function createElements(values = {}) {
     savePersonalProviderButton: { disabled: false },
     loadPersonalProviderModelsButton: { disabled: false },
     clearPersonalProviderButton: { disabled: false },
+    analyzeButton: { disabled: false },
   };
 }
 
@@ -130,7 +139,81 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.providerModeButtons[1].classList.contains('selected')).toBe(false);
     expect(elements.personalProviderForm.hidden).toBe(true);
     expect(elements.personalProviderSummary.textContent).toBe('代管');
+    expect(elements.providerStatusAnnouncement.textContent).toBe('代管');
+    expect(elements.providerStatusAnnouncement.hidden).toBe(false);
     expect(elements.personalProviderStatus.textContent).toContain('設定一個相容於 OpenAI 的提供者');
+  });
+
+  test('a read failure reports unknown state without asserting an active route', async () => {
+    setupChrome();
+    const elements = createElements();
+    const getStoredValues = global.chrome.storage.local.get.getMockImplementation();
+    global.chrome.storage.local.get.mockRejectedValue(new Error('storage unavailable'));
+
+    await initializePersonalProviderSettings(elements);
+    global.chrome.storage.local.get.mockImplementation(getStoredValues);
+
+    expect(elements.personalProviderSummary.textContent).toBe('狀態未知');
+    expect(elements.providerStatusAnnouncement.textContent).toBe('狀態未知');
+    expect(elements.providerModeButtons[0].classList.contains('selected')).toBe(false);
+    expect(elements.providerModeButtons[1].classList.contains('selected')).toBe(false);
+    expect(elements.providerModeButtons[0].setAttribute).toHaveBeenCalledWith('aria-pressed', 'false');
+    expect(elements.analyzeButton.disabled).toBe(true);
+
+    await initializePersonalProviderSettings(elements);
+
+    expect(elements.personalProviderSummary.textContent).toBe('代管');
+    expect(elements.providerModeButtons[0].classList.contains('selected')).toBe(true);
+  });
+
+  test('permission loss marks personal unavailable without rerouting or analyzing', async () => {
+    const { permissions } = setupChrome({
+      [ANALYSIS_PROVIDER_MODE_KEY]: PERSONAL_PROVIDER_MODE,
+      [PERSONAL_PROVIDER_PROFILE_KEY]: {
+        apiUrl: 'https://api.example.test/v1',
+        apiKey: 'personal-secret-key',
+        model: 'example-model',
+      },
+      [PERSONAL_PROVIDER_REVISION_KEY]: 1,
+    }, ['https://api.example.test/*']);
+    const elements = createElements();
+    const generateResponseStream = jest.fn();
+    global.JaAlchemyApiService = class {
+      generateResponseStream = generateResponseStream;
+    };
+    await initializePersonalProviderSettings(elements);
+    permissions.delete('https://api.example.test/*');
+
+    await refreshPersonalProviderStateAfterPermissionChange(elements, {
+      origins: ['https://api.example.test/*'],
+    });
+
+    expect(elements.personalProviderSummary.textContent).toBe('個人 · example-model · 無法使用');
+    expect(elements.providerStatusAnnouncement.textContent).toBe('個人 · example-model · 無法使用');
+    expect(elements.providerModeButtons[1].classList.contains('selected')).toBe(true);
+    expect(elements.personalProviderError.textContent).toContain('請先允許存取此提供者');
+    expect(global.chrome.permissions.request).not.toHaveBeenCalled();
+    expect(global.chrome.storage.local.set).not.toHaveBeenCalledWith(
+      expect.objectContaining({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE })
+    );
+    expect(generateResponseStream).not.toHaveBeenCalled();
+  });
+
+  test('browser permission changes trigger a non-mutating state refresh', async () => {
+    setupChrome();
+    const elements = createElements();
+    await initializePersonalProviderSettings(elements);
+    global.chrome.storage.local.set.mockClear();
+
+    setupPersonalProviderPermissionListeners(elements);
+    const refresh = global.chrome.permissions.onAdded.addListener.mock.calls[0][0];
+    await refresh({ origins: ['https://api.example.test/*'] });
+
+    expect(elements.personalProviderSummary.textContent).toBe('代管');
+    expect(global.chrome.permissions.request).not.toHaveBeenCalled();
+    expect(global.chrome.storage.local.set).not.toHaveBeenCalledWith(
+      expect.objectContaining({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE })
+    );
   });
 
   test('requesting personal mode before setup reveals the form without selecting personal analysis', async () => {

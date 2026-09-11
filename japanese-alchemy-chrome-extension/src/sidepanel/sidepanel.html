@@ -561,30 +561,114 @@
       display: inline-block;
     }
 
-    /* Personal provider settings deliberately live in the side panel so a
-       learner can see where their selected text will be sent before analysis. */
-    .provider-settings {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      margin-bottom: 16px;
-      padding: 12px;
+    .sidepanel-header {
+      align-items: center;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
     }
 
-    .provider-settings summary {
+    .sidepanel-title {
+      color: var(--text-primary);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .provider-status-pill {
+      align-items: center;
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      background: var(--bg-secondary);
       color: var(--text-primary);
       cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      font-size: 12px;
+      gap: 6px;
+      max-width: 70%;
+      padding: 5px 9px;
+    }
+
+    .provider-status-pill:hover,
+    .provider-status-pill:focus-visible {
+      background: var(--button-hover);
+    }
+
+    .provider-status-pill:focus-visible {
+      outline: 2px solid var(--button-bg);
+      outline-offset: 2px;
+    }
+
+    .provider-status-pill .provider-summary {
+      color: inherit;
       font-weight: 600;
-      display: flex;
+    }
+
+    .provider-status-pill::after {
+      content: "設定";
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    #providerStatusAnnouncement {
+      color: var(--text-secondary);
+      font-size: 12px;
+      margin: 0 0 12px;
+    }
+
+    #providerSheet {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-primary);
+      margin: auto;
+      max-height: calc(100vh - 32px);
+      max-width: calc(100% - 24px);
+      padding: 0;
+      width: min(420px, 100%);
+    }
+
+    #providerSheet[open] {
+      display: grid;
+      background: var(--bg-primary);
+      box-shadow: 0 12px 32px var(--shadow-color);
+    }
+
+    #providerSheet::backdrop {
+      background: rgba(0, 0, 0, 0.45);
+    }
+
+    .provider-sheet-header {
       align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
       justify-content: space-between;
-      gap: 12px;
+      padding: 12px 14px;
+    }
+
+    .provider-sheet-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .provider-sheet-close {
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      cursor: pointer;
+      font: inherit;
+      padding: 4px 8px;
     }
 
     .provider-settings-content {
       display: grid;
       gap: 10px;
-      margin-top: 12px;
+      margin: 0;
+      max-height: calc(100vh - 100px);
+      overflow: auto;
+      padding: 14px;
     }
 
     .provider-mode-toggle {
@@ -823,6 +907,21 @@
 </head>
 <body>
     <div class="container-fluid">
+    <header class="sidepanel-header">
+      <span class="sidepanel-title">J-Buddy</span>
+      <button
+        id="providerStatusButton"
+        class="provider-status-pill"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-labelledby="personalProviderSummary"
+      >
+        <span id="personalProviderSummary" class="provider-summary">狀態未知</span>
+      </button>
+    </header>
+    <p id="providerStatusAnnouncement" role="status" aria-live="polite" hidden></p>
+
     <!-- Auth Section -->
     <div id="authSection" class="auth-section">
       <div id="authSignedOut" class="auth-signed-out">
@@ -848,54 +947,6 @@
         <button class="sign-out-button" id="signOutBtn">登出</button>
       </div>
     </div>
-
-    <details class="provider-settings" id="personalProviderSettings">
-      <summary>
-        <span>LLM API 提供者</span>
-        <span id="personalProviderSummary" class="provider-summary">代管</span>
-      </summary>
-      <div class="provider-settings-content">
-        <div class="provider-mode-toggle" role="group" aria-label="LLM API 提供者">
-          <button class="provider-mode-option selected" type="button" data-provider-mode="managed" aria-pressed="true">代管</button>
-          <button class="provider-mode-option" type="button" data-provider-mode="personal" aria-pressed="false" aria-describedby="personalProviderStatus personalProviderError">個人</button>
-        </div>
-        <p class="provider-hint">模型探索只會把 API 金鑰直接傳送至你選擇的提供者；個人分析會把 API 金鑰、選取文字與前後文直接傳送至該提供者，並可能產生費用。</p>
-        <p id="personalProviderStatus" class="provider-message" aria-live="polite" tabindex="-1"></p>
-        <p id="personalProviderError" class="provider-message error" role="alert" tabindex="-1" hidden></p>
-        <form id="personalProviderForm" novalidate hidden>
-          <label class="provider-form-field" for="personalProviderApiUrl">
-            API 網址 (OpenAI Compatible)
-            <input id="personalProviderApiUrl" name="apiUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com/v1" aria-describedby="personalProviderError" required>
-          </label>
-          <label class="provider-form-field" for="personalProviderApiKey">
-            API 金鑰 — 金鑰僅儲存在本機並於本機使用，不會經過代理或伺服器。
-            <input id="personalProviderApiKey" name="apiKey" type="password" autocomplete="off" placeholder="輸入以儲存或更換" aria-describedby="personalProviderError" required>
-          </label>
-          <label class="provider-form-field" for="personalProviderProtocol">
-            個人提供者通訊協定
-            <select id="personalProviderProtocol" name="protocol" aria-describedby="personalProviderError" required>
-              <option value="chat_completions" selected>Chat Completions-compatible</option>
-              <option value="responses">Responses-compatible</option>
-            </select>
-          </label>
-          <button id="loadPersonalProviderModelsButton" class="provider-action" type="button" disabled>載入模型</button>
-          <label id="personalProviderCatalogModelField" class="provider-form-field" for="personalProviderModel">
-            模型
-            <select id="personalProviderModel" name="model" aria-describedby="personalProviderError" required disabled>
-              <option value="" selected>請先載入模型</option>
-            </select>
-          </label>
-          <label id="personalProviderManualModelField" class="provider-form-field" for="personalProviderManualModel" hidden>
-            手動輸入模型 ID
-            <input id="personalProviderManualModel" name="manualModel" type="text" autocomplete="off" placeholder="例如：gpt-5" aria-describedby="personalProviderError" required disabled>
-          </label>
-          <div class="provider-actions">
-            <button id="savePersonalProviderButton" class="provider-action primary" type="submit">儲存</button>
-            <button id="clearPersonalProviderButton" class="provider-action danger" type="button">清除</button>
-          </div>
-        </form>
-      </div>
-    </details>
 
     <div class="controls">
       <div class="controls-left">
@@ -989,6 +1040,54 @@
       <!-- Results will be inserted here with proper ruby tags -->
       <div class="prose"></div>
     </div>
+
+    <dialog id="providerSheet" class="provider-sheet" aria-labelledby="providerSheetTitle">
+      <div class="provider-sheet-header">
+        <h2 id="providerSheetTitle" class="provider-sheet-title">LLM API 提供者</h2>
+        <button id="providerSheetCloseButton" class="provider-sheet-close" type="button">關閉</button>
+      </div>
+      <div class="provider-settings-content">
+        <div class="provider-mode-toggle" role="group" aria-label="LLM API 提供者">
+          <button class="provider-mode-option selected" type="button" data-provider-mode="managed" aria-pressed="true">代管</button>
+          <button class="provider-mode-option" type="button" data-provider-mode="personal" aria-pressed="false" aria-describedby="personalProviderStatus personalProviderError">個人</button>
+        </div>
+        <p class="provider-hint">模型探索只會把 API 金鑰直接傳送至你選擇的提供者；個人分析會把 API 金鑰、選取文字與前後文直接傳送至該提供者，並可能產生費用。</p>
+        <p id="personalProviderStatus" class="provider-message" aria-live="polite" tabindex="-1"></p>
+        <p id="personalProviderError" class="provider-message error" role="alert" tabindex="-1" hidden></p>
+        <form id="personalProviderForm" novalidate hidden>
+          <label class="provider-form-field" for="personalProviderApiUrl">
+            API 網址 (OpenAI Compatible)
+            <input id="personalProviderApiUrl" name="apiUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com/v1" aria-describedby="personalProviderError" required>
+          </label>
+          <label class="provider-form-field" for="personalProviderApiKey">
+            API 金鑰 — 金鑰僅儲存在本機並於本機使用，不會經過代理或伺服器。
+            <input id="personalProviderApiKey" name="apiKey" type="password" autocomplete="off" placeholder="輸入以儲存或更換" aria-describedby="personalProviderError" required>
+          </label>
+          <label class="provider-form-field" for="personalProviderProtocol">
+            個人提供者通訊協定
+            <select id="personalProviderProtocol" name="protocol" aria-describedby="personalProviderError" required>
+              <option value="chat_completions" selected>Chat Completions-compatible</option>
+              <option value="responses">Responses-compatible</option>
+            </select>
+          </label>
+          <button id="loadPersonalProviderModelsButton" class="provider-action" type="button" disabled>載入模型</button>
+          <label id="personalProviderCatalogModelField" class="provider-form-field" for="personalProviderModel">
+            模型
+            <select id="personalProviderModel" name="model" aria-describedby="personalProviderError" required disabled>
+              <option value="" selected>請先載入模型</option>
+            </select>
+          </label>
+          <label id="personalProviderManualModelField" class="provider-form-field" for="personalProviderManualModel" hidden>
+            手動輸入模型 ID
+            <input id="personalProviderManualModel" name="manualModel" type="text" autocomplete="off" placeholder="例如：gpt-5" aria-describedby="personalProviderError" required disabled>
+          </label>
+          <div class="provider-actions">
+            <button id="savePersonalProviderButton" class="provider-action primary" type="submit">儲存</button>
+            <button id="clearPersonalProviderButton" class="provider-action danger" type="button">清除</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
   </div>
 
 </body>
