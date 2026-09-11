@@ -37,6 +37,7 @@ import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
 import {
     announceProviderStatus,
+    isProviderSheetLocked,
     setProviderSheetReadOnly,
     setupProviderSheetListeners,
 } from './providerSheet.js';
@@ -69,6 +70,7 @@ let maskedApiKeyState = null;
 let savedPersonalProviderState = null;
 let settingsProjectionRequestId = 0;
 let domPurifyRequired = false;
+let providerStateUnknown = false;
 
 export async function openExternalPage(url) {
     await chrome.tabs.create({ url, active: true });
@@ -512,6 +514,7 @@ function updateAnalyzeAvailability() {
         const managedAllowanceBlocks = savedPersonalProviderState?.mode !== PERSONAL_PROVIDER_MODE
             && Boolean(managedAllowanceExhaustedUntil && managedAllowanceExhaustedUntil > Date.now());
         elements.analyzeButton.disabled = isAnalizing
+            || providerStateUnknown
             || !isValidSelection(pendingSelectedText)
             || managedAllowanceBlocks;
     }
@@ -585,10 +588,31 @@ export async function handleSidepanelStorageChanges(
         if (providerIdentityChanged && panelElements) {
             await invalidatePersonalProviderModelCatalog(panelElements);
         }
-        const state = await getPersonalProviderState({ performMaintenance: false });
+        let state;
+        try {
+            state = await getPersonalProviderState({ performMaintenance: false });
+        } catch (error) {
+            if (requestId === settingsProjectionRequestId && panelElements) {
+                renderUnknownPersonalProviderState(panelElements, error);
+            }
+            return;
+        }
         if (requestId === settingsProjectionRequestId) {
             savedPersonalProviderState = state;
-            if (panelElements) renderPersonalProviderState(panelElements, state);
+            if (panelElements) {
+                const draftValues = getPersonalProviderFormValues(panelElements);
+                const hasDraft = Boolean(
+                    draftValues.apiUrl.trim()
+                    || draftValues.apiKey.trim()
+                    || draftValues.model.trim()
+                    || draftValues.protocol !== CHAT_COMPLETIONS_PROTOCOL
+                );
+                if (providerIdentityChanged || !hasDraft) {
+                    renderPersonalProviderState(panelElements, state);
+                } else {
+                    renderPersonalProviderStatus(panelElements, state);
+                }
+            }
         }
     }
 
@@ -827,6 +851,21 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                     || !savedProviderSnapshotMatches(providerState, currentProviderState)
                     || (providerState.mode === PERSONAL_PROVIDER_MODE
                         && !currentProviderState.isPersonalReady)) {
+                    if (isLatestAnalysis(requestId)) {
+                        activeAnalysisRequestIdentity = null;
+                        activeAnalysisBaseIdentity = null;
+                        isAnalizing = false;
+                        setProviderSheetReadOnly(elements, false);
+                        activeAnalysisKey = null;
+                        activeAnalysisPreviewText = '';
+                        saveForLaterJson = {};
+                        proseElement.innerHTML = '';
+                        resultElement.classList.remove('show');
+                        setLoadingState(loadingElement, false);
+                        setCompletedAnalysisAvailable(false);
+                        setAnalysisCancellationAvailable(false);
+                        updateAnalyzeAvailability();
+                    }
                     return;
                 }
                 console.log('Initializing API service...');
@@ -969,6 +1008,19 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         }
         isAnalizing = false;
         setProviderSheetReadOnly(elements, false);
+        projectSavedPersonalProviderModel(elements);
+        updateLoadPersonalProviderModelsButton(
+            elements,
+            Boolean(getApplicablePersonalProviderCatalog(getPersonalProviderFormValues(elements)))
+        );
+        if (savedPersonalProviderState) {
+            const providerSummary = formatProviderSummary(savedPersonalProviderState);
+            if (elements.personalProviderSummary) {
+                elements.personalProviderSummary.textContent = providerSummary;
+            }
+            announceProviderStatus(elements, providerSummary);
+            setCanonicalPersonalProviderFeedback(elements, savedPersonalProviderState);
+        }
         activeAnalysisKey = null;
         activeAnalysisRequestIdentity = null;
         activeAnalysisBaseIdentity = null;
@@ -1712,6 +1764,7 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
                 elements,
                 Boolean(getApplicablePersonalProviderCatalog(finalValues))
             );
+            reinforceProviderSheetLock(elements);
         }
     }
 }
@@ -1737,38 +1790,8 @@ function formatProviderSummary({ mode, profile, isPersonalReady }) {
     return `個人 · ${profile.model}${isPersonalReady ? '' : ' · 無法使用'}`;
 }
 
-export function renderPersonalProviderState(elements, state) {
+function setCanonicalPersonalProviderFeedback(elements, state) {
     const { mode, profile, isPersonalReady, personalError } = state;
-    savedPersonalProviderState = state;
-    domPurifyRequired = mode === PERSONAL_PROVIDER_MODE;
-    updatePersonalProviderModeUi(elements, mode, isPersonalReady);
-    updateAnalyzeAvailability();
-
-    if (elements.personalProviderForm) {
-        elements.personalProviderForm.hidden = mode !== PERSONAL_PROVIDER_MODE;
-    }
-
-    const providerSummary = formatProviderSummary(state);
-    if (elements.personalProviderSummary) {
-        elements.personalProviderSummary.textContent = providerSummary;
-    }
-    announceProviderStatus(elements, providerSummary);
-
-    if (elements.personalProviderApiUrl) {
-        elements.personalProviderApiUrl.value = profile?.apiUrl || '';
-    }
-    setMaskedApiKeyState(profile);
-    if (elements.personalProviderApiKey) {
-        elements.personalProviderApiKey.value = profile ? MASKED_API_KEY : '';
-    }
-    if (elements.personalProviderProtocol) {
-        elements.personalProviderProtocol.value = profile?.protocol || CHAT_COMPLETIONS_PROTOCOL;
-    }
-    projectSavedPersonalProviderModel(elements);
-    if (elements.clearPersonalProviderButton) {
-        elements.clearPersonalProviderButton.disabled = !profile;
-    }
-
     const unavailableMessage = mode === PERSONAL_PROVIDER_MODE && !isPersonalReady
         ? `已選取個人分析，但目前無法使用：${personalError?.message || '請先完成提供者設定。'}`
         : '';
@@ -1786,8 +1809,62 @@ export function renderPersonalProviderState(elements, state) {
     }
 }
 
+export function renderPersonalProviderState(elements, state) {
+    const { profile, mode } = state;
+    renderPersonalProviderStatus(elements, state);
+    if (activeModelCatalogRequest) return;
+
+    if (elements.personalProviderForm) {
+        elements.personalProviderForm.hidden = mode !== PERSONAL_PROVIDER_MODE;
+    }
+
+    if (elements.personalProviderApiUrl) {
+        elements.personalProviderApiUrl.value = profile?.apiUrl || '';
+    }
+    setMaskedApiKeyState(profile);
+    if (elements.personalProviderApiKey) {
+        elements.personalProviderApiKey.value = profile ? MASKED_API_KEY : '';
+    }
+    if (elements.personalProviderProtocol) {
+        elements.personalProviderProtocol.value = profile?.protocol || CHAT_COMPLETIONS_PROTOCOL;
+    }
+    projectSavedPersonalProviderModel(elements);
+    if (elements.clearPersonalProviderButton) {
+        elements.clearPersonalProviderButton.disabled = !profile;
+    }
+}
+
+function renderPersonalProviderStatus(elements, state) {
+    const { mode, isPersonalReady } = state;
+    savedPersonalProviderState = state;
+    providerStateUnknown = false;
+    domPurifyRequired = mode === PERSONAL_PROVIDER_MODE;
+    updatePersonalProviderModeUi(elements, mode, isPersonalReady);
+    updateAnalyzeAvailability();
+
+    const providerSummary = formatProviderSummary(state);
+    if (elements.personalProviderSummary) {
+        elements.personalProviderSummary.textContent = providerSummary;
+    }
+    announceProviderStatus(elements, providerSummary);
+    setCanonicalPersonalProviderFeedback(elements, state);
+    reinforceProviderSheetLock(elements);
+}
+
+function reinforceProviderSheetLock(elements) {
+    if (isAnalizing && isProviderSheetLocked()) {
+        setProviderSheetReadOnly(elements, true);
+        setPersonalProviderFeedback(
+            elements,
+            '分析進行中：提供者設定已暫時鎖定。關閉此視窗即可返回工作區，並使用「停止分析」。',
+            'status'
+        );
+    }
+}
+
 function renderUnknownPersonalProviderState(elements, error) {
     savedPersonalProviderState = null;
+    providerStateUnknown = true;
     domPurifyRequired = false;
     elements.providerModeButtons?.forEach((button) => {
         button.classList.remove('selected');
@@ -1825,7 +1902,7 @@ export async function refreshPersonalProviderStateAfterPermissionChange(
     try {
         const state = await getPersonalProviderState({ performMaintenance: false });
         if (requestId === settingsProjectionRequestId) {
-            renderPersonalProviderState(elements, state);
+            renderPersonalProviderStatus(elements, state);
         }
     } catch (error) {
         if (requestId === settingsProjectionRequestId) {

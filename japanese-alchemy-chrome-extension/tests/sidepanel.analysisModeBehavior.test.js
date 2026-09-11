@@ -12,12 +12,17 @@ import {
   handleCancelAnalysis,
   handleSaveForLater,
   handleAnalysisModeChange,
+  handlePersonalProviderLoadModels,
   handleSidepanelStorageChanges,
   renderDailyAllowanceStatus,
+  refreshPersonalProviderStateAfterPermissionChange,
   isValidSelection,
   setSidepanelElementsForTesting,
 } from '../src/sidepanel/sidepanel.js';
-import { closeProviderSheet, openProviderSheet } from '../src/sidepanel/providerSheet.js';
+import {
+  closeProviderSheet,
+  openProviderSheet,
+} from '../src/sidepanel/providerSheet.js';
 import { buildContextCacheKey } from '../src/scripts/surroundingContext.js';
 import { PERSONAL_PROVIDER_EPOCH_KEY } from '../src/scripts/personalProvider.js';
 import createDOMPurify from 'dompurify';
@@ -557,6 +562,84 @@ describe('sidepanel analysis-mode behavior', () => {
     expect(elements.savePersonalProviderButton.disabled).toBe(false);
   });
 
+  test('a permission refresh during a stream keeps provider mutators locked', async () => {
+    const apiCalls = setupDeferredApi();
+    const {
+      elements,
+      managedProviderRoute,
+      personalProviderRoute,
+      providerCatalogModel,
+      providerManualModel,
+      providerStatus,
+    } = setupElements();
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+
+    await refreshPersonalProviderStateAfterPermissionChange(elements, {
+      origins: ['https://provider.example/*'],
+    });
+
+    expect(managedProviderRoute.disabled).toBe(true);
+    expect(personalProviderRoute.disabled).toBe(true);
+    expect(elements.personalProviderApiUrl.disabled).toBe(true);
+    expect(elements.personalProviderApiKey.disabled).toBe(true);
+    expect(elements.personalProviderProtocol.disabled).toBe(true);
+    expect(providerCatalogModel.disabled).toBe(true);
+    expect(providerManualModel.disabled).toBe(true);
+    expect(elements.loadPersonalProviderModelsButton.disabled).toBe(true);
+    expect(elements.savePersonalProviderButton.disabled).toBe(true);
+    expect(elements.clearPersonalProviderButton.disabled).toBe(true);
+    expect(providerStatus.textContent).toContain('分析進行中');
+
+    apiCalls[0].onDone('### 單字分析\n#### <單字>成長\ngrowth');
+    apiCalls[0].resolve();
+    await request;
+
+    expect(managedProviderRoute.disabled).toBe(false);
+    expect(elements.savePersonalProviderButton.disabled).toBe(false);
+    expect(providerStatus.textContent).toContain('設定一個相容於 OpenAI 的提供者');
+  });
+
+  test('model-discovery completion during a stream keeps provider mutators locked', async () => {
+    const analysisCalls = setupDeferredApi();
+    const {
+      elements,
+      managedProviderRoute,
+      providerCatalogModel,
+    } = setupElements();
+    elements.personalProviderApiUrl.value = 'https://api.example.test/v1';
+    elements.personalProviderApiKey.value = 'draft-secret-key';
+    elements.personalProviderModel.value = 'draft-model';
+    global.chrome.permissions = {
+      contains: jest.fn(async () => false),
+      request: jest.fn(async () => true),
+      remove: jest.fn(async () => true),
+    };
+    let resolveModels;
+    const discovery = handlePersonalProviderLoadModels(elements, {
+      loadModels: () => new Promise((resolve) => {
+        resolveModels = resolve;
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const request = analizingSelectedText('成長を後押しする', {}, { promptVariant: 'v2' });
+    await flushMicrotasks();
+    resolveModels(['draft-model']);
+    await discovery;
+
+    expect(managedProviderRoute.disabled).toBe(true);
+    expect(providerCatalogModel.disabled).toBe(true);
+    expect(elements.loadPersonalProviderModelsButton.disabled).toBe(true);
+    expect(elements.savePersonalProviderButton.disabled).toBe(true);
+
+    analysisCalls[0].onDone('### 單字分析\n#### <單字>成長\ngrowth');
+    analysisCalls[0].resolve();
+    await request;
+
+    expect(elements.loadPersonalProviderModelsButton.disabled).toBe(false);
+  });
+
   test('a provider identity change from another sheet cancels and unlocks the active stream', async () => {
     const apiCalls = setupDeferredApi();
     const { elements, managedProviderRoute } = setupElements();
@@ -573,6 +656,29 @@ describe('sidepanel analysis-mode behavior', () => {
     apiCalls[0].onDone('# stale response');
     apiCalls[0].resolve();
     await request;
+  });
+
+  test('a failed cross-sidepanel provider refresh reports unknown state', async () => {
+    const { elements, managedProviderRoute } = setupElements();
+    const getStoredValues = global.chrome.storage.local.get;
+    global.chrome.storage.local.get = jest.fn(async () => {
+      throw new Error('storage unavailable');
+    });
+
+    await handleSidepanelStorageChanges({
+      analysisProviderMode: { oldValue: 'managed', newValue: 'personal' },
+    }, 'local', elements);
+
+    expect(elements.personalProviderSummary.textContent).toBe('狀態未知');
+    expect(elements.providerStatusAnnouncement.textContent).toBe('狀態未知');
+    expect(managedProviderRoute.classList.contains('selected')).toBe(false);
+
+    global.chrome.storage.local.get = getStoredValues;
+    await handleSidepanelStorageChanges({
+      analysisProviderMode: { oldValue: 'personal', newValue: 'managed' },
+    }, 'local', elements);
+
+    expect(elements.personalProviderSummary.textContent).toBe('代管');
   });
 
   test('a cache-only provider storage update does not cancel active analysis', async () => {

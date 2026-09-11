@@ -25,6 +25,7 @@ import {
   redactPersonalProviderApiKey,
   refreshPersonalProviderStateAfterPermissionChange,
   setupPersonalProviderPermissionListeners,
+  setSidepanelElementsForTesting,
 } from '../src/sidepanel/sidepanel.js';
 
 function createClassList(initial = []) {
@@ -145,8 +146,9 @@ describe('sidepanel personal-provider settings', () => {
   });
 
   test('a read failure reports unknown state without asserting an active route', async () => {
-    setupChrome();
+    const { store } = setupChrome();
     const elements = createElements();
+    setSidepanelElementsForTesting(elements);
     const getStoredValues = global.chrome.storage.local.get.getMockImplementation();
     global.chrome.storage.local.get.mockRejectedValue(new Error('storage unavailable'));
 
@@ -158,6 +160,10 @@ describe('sidepanel personal-provider settings', () => {
     expect(elements.providerModeButtons[0].classList.contains('selected')).toBe(false);
     expect(elements.providerModeButtons[1].classList.contains('selected')).toBe(false);
     expect(elements.providerModeButtons[0].setAttribute).toHaveBeenCalledWith('aria-pressed', 'false');
+    expect(elements.analyzeButton.disabled).toBe(true);
+
+    store.selectedText = '成長';
+    await handleSidepanelStorageChanges({ selectedText: { newValue: '成長' } });
     expect(elements.analyzeButton.disabled).toBe(true);
 
     await initializePersonalProviderSettings(elements);
@@ -214,6 +220,90 @@ describe('sidepanel personal-provider settings', () => {
     expect(global.chrome.storage.local.set).not.toHaveBeenCalledWith(
       expect.objectContaining({ [ANALYSIS_PROVIDER_MODE_KEY]: MANAGED_PROVIDER_MODE })
     );
+  });
+
+  test('a permission grant during model discovery preserves the active draft', async () => {
+    setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1',
+      apiKey: 'draft-secret-key',
+      model: 'draft-model',
+    });
+    let resolveModels;
+    const modelService = {
+      loadModels: jest.fn(() => new Promise((resolve) => {
+        resolveModels = resolve;
+      })),
+    };
+
+    const discovery = handlePersonalProviderLoadModels(elements, modelService);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await refreshPersonalProviderStateAfterPermissionChange(elements, {
+      origins: ['https://api.example.test/*'],
+    });
+
+    expect(elements.personalProviderApiUrl.value).toBe('https://api.example.test/v1');
+    expect(elements.personalProviderApiKey.value).toBe('draft-secret-key');
+    expect(elements.personalProviderProtocol.value).toBe(CHAT_COMPLETIONS_PROTOCOL);
+    expect(elements.personalProviderModel.value).toBe('draft-model');
+
+    resolveModels(['draft-model']);
+    await discovery;
+
+    expect(modelService.loadModels).toHaveBeenCalledTimes(1);
+    expect(global.chrome.permissions.remove).not.toHaveBeenCalled();
+    expect(elements.personalProviderStatus.textContent).toContain('模型目錄已載入');
+  });
+
+  test('a permission grant before discovery registration preserves the draft', async () => {
+    setupChrome();
+    const elements = createElements({
+      apiUrl: 'https://api.example.test/v1',
+      apiKey: 'draft-secret-key',
+      model: 'draft-model',
+    });
+    global.chrome.permissions.request = jest.fn(() => new Promise((resolve) => {
+      setTimeout(async () => {
+        await refreshPersonalProviderStateAfterPermissionChange(elements, {
+          origins: ['https://api.example.test/*'],
+        });
+        resolve(true);
+      }, 0);
+    }));
+
+    const discovery = handlePersonalProviderLoadModels(elements, {
+      loadModels: jest.fn(async () => ['draft-model']),
+    });
+    await discovery;
+
+    expect(elements.personalProviderApiUrl.value).toBe('https://api.example.test/v1');
+    expect(elements.personalProviderApiKey.value).toBe('draft-secret-key');
+    expect(elements.personalProviderModel.value).toBe('draft-model');
+    expect(global.chrome.permissions.remove).not.toHaveBeenCalled();
+  });
+
+  test('a cache-only update preserves an unsaved provider draft', async () => {
+    setupChrome();
+    const elements = createElements();
+    await initializePersonalProviderSettings(elements);
+    elements.personalProviderApiUrl.value = 'https://api.example.test/v1';
+    elements.personalProviderApiKey.value = 'draft-secret-key';
+    elements.personalProviderProtocol.value = RESPONSES_PROTOCOL;
+    elements.personalProviderModel.value = 'draft-model';
+
+    await handleSidepanelStorageChanges({
+      [`${PERSONAL_PROVIDER_CATALOG_KEY_PREFIX}1`]: {
+        oldValue: null,
+        newValue: { version: 1, generation: 1 },
+      },
+    });
+
+    expect(elements.personalProviderApiUrl.value).toBe('https://api.example.test/v1');
+    expect(elements.personalProviderApiKey.value).toBe('draft-secret-key');
+    expect(elements.personalProviderProtocol.value).toBe(RESPONSES_PROTOCOL);
+    expect(elements.personalProviderModel.value).toBe('draft-model');
+    expect(elements.personalProviderSummary.textContent).toBe('代管');
   });
 
   test('requesting personal mode before setup reveals the form without selecting personal analysis', async () => {

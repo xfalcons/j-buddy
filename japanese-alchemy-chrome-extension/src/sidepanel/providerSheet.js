@@ -17,6 +17,10 @@ export function announceProviderStatus(elements, message = '') {
   elements.providerStatusAnnouncement.hidden = hidden;
 }
 
+export function isProviderSheetLocked() {
+  return providerSheetLockState !== null;
+}
+
 export function openProviderSheet(elements) {
   const dialog = elements.providerSheet;
   if (!dialog || dialog.open) return;
@@ -67,27 +71,21 @@ export function setProviderSheetReadOnly(elements, readOnly) {
   ];
 
   if (readOnly) {
-    if (providerSheetLockState) return;
+    if (providerSheetLockState) {
+      controls.forEach((control) => {
+        if (control) control.disabled = true;
+      });
+      return;
+    }
     providerSheetLockState = {
       controls: controls
         .filter((control) => control)
         .map((control) => ({ control, disabled: control.disabled })),
-      status: elements.personalProviderStatus
-        ? {
-          textContent: elements.personalProviderStatus.textContent,
-          hidden: elements.personalProviderStatus.hidden,
-        }
-        : null,
     };
   } else {
     providerSheetLockState?.controls.forEach(({ control, disabled }) => {
       control.disabled = disabled;
     });
-    const status = providerSheetLockState?.status;
-    if (status && elements.personalProviderStatus) {
-      elements.personalProviderStatus.textContent = status.textContent;
-      elements.personalProviderStatus.hidden = status.hidden;
-    }
     providerSheetLockState = null;
     return;
   }

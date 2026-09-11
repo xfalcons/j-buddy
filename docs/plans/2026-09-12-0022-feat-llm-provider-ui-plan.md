@@ -204,7 +204,7 @@ The pill is rendered from the existing provider-state result and is not a route 
 | Provider sheet suite | U1 | `cd japanese-alchemy-chrome-extension && npm test -- --runTestsByPath tests/sidepanel.providerSheet.test.js` |
 | Provider UI suites | U1, U2 | `cd japanese-alchemy-chrome-extension && npm test -- --runTestsByPath tests/sidepanel.analysisModeMarkup.test.js tests/sidepanel.personalProviderBehavior.test.js tests/sidepanel.providerSheet.test.js` |
 | Routing and transport neighbors | U3 | `cd japanese-alchemy-chrome-extension && npm test -- --runTestsByPath tests/sidepanel.analysisModeBehavior.test.js tests/directLlmApiService.test.js tests/jaAlchemyApiService.test.js` |
-| Full extension suite | U1 through U3 | `cd japanese-alchemy-chrome-extension && npm test -- --inBand` |
+| Full extension suite | U1 through U3 | `cd japanese-alchemy-chrome-extension && npm test -- --runInBand` |
 | Production build | U1 through U3 | `cd japanese-alchemy-chrome-extension && npm run build` |
 | Browser QA | All units | Load `dist/` in Chrome; verify pill status, modal open/close, keyboard and Escape behavior, incomplete personal setup, managed analysis, personal analysis, active-stream safety, permission changes, clear/reset, and completed-result preservation. |
 | Workspace hygiene | All units | `git diff --check` and review the diff for credentials, raw provider telemetry, provider URL leakage, or accidental provider-contract changes. |
