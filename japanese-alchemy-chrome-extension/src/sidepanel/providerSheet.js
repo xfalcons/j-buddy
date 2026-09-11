@@ -1,11 +1,20 @@
+let providerSheetLockState = null;
+
 function setProviderSheetExpanded(elements, expanded) {
-  elements.providerStatusButton?.setAttribute('aria-expanded', String(expanded));
+  const value = String(expanded);
+  if (elements.providerStatusButton?.getAttribute?.('aria-expanded') === value) return;
+  elements.providerStatusButton?.setAttribute('aria-expanded', value);
 }
 
 export function announceProviderStatus(elements, message = '') {
   if (!elements.providerStatusAnnouncement) return;
+  const hidden = !message;
+  if (
+    elements.providerStatusAnnouncement.textContent === message
+    && elements.providerStatusAnnouncement.hidden === hidden
+  ) return;
   elements.providerStatusAnnouncement.textContent = message;
-  elements.providerStatusAnnouncement.hidden = !message;
+  elements.providerStatusAnnouncement.hidden = hidden;
 }
 
 export function openProviderSheet(elements) {
@@ -25,7 +34,6 @@ export function closeProviderSheet(elements) {
   }
 
   dialog.close?.();
-  setProviderSheetExpanded(elements, false);
   elements.providerStatusButton?.focus?.();
 }
 
@@ -58,7 +66,33 @@ export function setProviderSheetReadOnly(elements, readOnly) {
     elements.clearPersonalProviderButton,
   ];
 
+  if (readOnly) {
+    if (providerSheetLockState) return;
+    providerSheetLockState = {
+      controls: controls
+        .filter((control) => control)
+        .map((control) => ({ control, disabled: control.disabled })),
+      status: elements.personalProviderStatus
+        ? {
+          textContent: elements.personalProviderStatus.textContent,
+          hidden: elements.personalProviderStatus.hidden,
+        }
+        : null,
+    };
+  } else {
+    providerSheetLockState?.controls.forEach(({ control, disabled }) => {
+      control.disabled = disabled;
+    });
+    const status = providerSheetLockState?.status;
+    if (status && elements.personalProviderStatus) {
+      elements.personalProviderStatus.textContent = status.textContent;
+      elements.personalProviderStatus.hidden = status.hidden;
+    }
+    providerSheetLockState = null;
+    return;
+  }
+
   controls.forEach((control) => {
-    if (control) control.disabled = readOnly;
+    if (control) control.disabled = true;
   });
 }

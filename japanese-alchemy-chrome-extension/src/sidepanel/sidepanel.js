@@ -786,12 +786,6 @@ export async function analizingSelectedText(selectedText, context = { before: ''
     console.log('Analizing Selected Text...');
     let analysisController = null;
     isAnalizing = true;
-    setProviderSheetReadOnly(elements, true);
-    setPersonalProviderFeedback(
-        elements,
-        '分析進行中：提供者設定已暫時鎖定。關閉此視窗即可返回工作區，並使用「停止分析」。',
-        'status'
-    );
     updateAnalyzeAvailability();
     activeAnalysisPreviewText = '';
     setAnalysisCancellationAvailable(true);
@@ -815,6 +809,12 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             console.log('Selected text + context same as last time');
         } else if (isValidSelection(selectedTextForRequest)) {
             // Show loading state
+            setProviderSheetReadOnly(elements, true);
+            setPersonalProviderFeedback(
+                elements,
+                '分析進行中：提供者設定已暫時鎖定。關閉此視窗即可返回工作區，並使用「停止分析」。',
+                'status'
+            );
             setLoadingMessage(loadingElement, 'AI 正在分析，請稍候…');
             setLoadingState(loadingElement, true);
             proseElement.innerHTML = '';
@@ -975,9 +975,6 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         activeAnalysisPreviewText = '';
         setAnalysisCancellationAvailable(false);
         updateAnalyzeAvailability();
-        if (savedPersonalProviderState) {
-            renderPersonalProviderState(elements, savedPersonalProviderState);
-        }
     }
 }
 
@@ -1734,6 +1731,12 @@ export function updatePersonalProviderModeUi(elements, mode, isPersonalReady) {
     }
 }
 
+function formatProviderSummary({ mode, profile, isPersonalReady }) {
+    if (mode !== PERSONAL_PROVIDER_MODE) return '代管';
+    if (!profile) return '個人 · 尚未完成設定';
+    return `個人 · ${profile.model}${isPersonalReady ? '' : ' · 無法使用'}`;
+}
+
 export function renderPersonalProviderState(elements, state) {
     const { mode, profile, isPersonalReady, personalError } = state;
     savedPersonalProviderState = state;
@@ -1745,11 +1748,7 @@ export function renderPersonalProviderState(elements, state) {
         elements.personalProviderForm.hidden = mode !== PERSONAL_PROVIDER_MODE;
     }
 
-    const providerSummary = mode === PERSONAL_PROVIDER_MODE
-        ? (profile
-            ? `個人 · ${profile.model}${isPersonalReady ? '' : ' · 無法使用'}`
-            : '個人 · 尚未完成設定')
-        : '代管';
+    const providerSummary = formatProviderSummary(state);
     if (elements.personalProviderSummary) {
         elements.personalProviderSummary.textContent = providerSummary;
     }

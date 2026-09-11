@@ -15,7 +15,7 @@ function createProviderSheetElements() {
     });
     return element;
   };
-  const managedButton = addListener({ name: 'managedButton', focus: jest.fn() });
+  const managedButton = addListener({ name: 'managedButton', disabled: false, focus: jest.fn() });
   const pill = addListener({
     name: 'pill',
     ariaExpanded: 'false',
@@ -33,6 +33,7 @@ function createProviderSheetElements() {
     }),
     close: jest.fn(() => {
       dialog.open = false;
+      listeners.get('dialog:close')?.();
     }),
   });
   const status = { textContent: '', hidden: false };
@@ -44,8 +45,8 @@ function createProviderSheetElements() {
       providerSheetCloseButton: closeButton,
       providerStatusAnnouncement: status,
       providerModeButtons: [managedButton],
-      personalProviderApiUrl: { value: 'https://api.example.test/v1' },
-      personalProviderApiKey: { value: 'draft-secret-key' },
+      personalProviderApiUrl: { value: 'https://api.example.test/v1', disabled: false },
+      personalProviderApiKey: { value: 'draft-secret-key', disabled: false },
       personalProviderProtocol: { value: 'chat_completions', disabled: false },
       personalProviderModel: { value: 'model-a', disabled: false },
       personalProviderManualModel: { value: '', disabled: false },
@@ -76,6 +77,7 @@ describe('provider sheet controller', () => {
 
   test('explicit close restores focus to the status pill', () => {
     const { elements, dialog, pill } = createProviderSheetElements();
+    setupProviderSheetListeners(elements);
     openProviderSheet(elements);
 
     closeProviderSheet(elements);
