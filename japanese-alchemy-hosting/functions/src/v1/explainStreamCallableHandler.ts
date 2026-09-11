@@ -6,8 +6,13 @@ import { SYSTEM_PROMPT_V2 } from "../models/systemPromptV2";
 import { createLlmService } from "../services/llmService";
 import { logLlmUsageTelemetry } from "../services/llmUsageTelemetry";
 import { logger } from "../utils/logger";
+import { getDailyAllowanceConfig } from "../config";
 import { isParsedBodyTooLarge, validateExplainRequest } from "./requestValidation";
-import { checkRateLimit, rateLimitKey } from "./rateLimiter";
+import {
+  admitDailyAllowance,
+  AllowanceStatus,
+  httpsErrorForDeniedAllowance,
+} from "./dailyAllowance";
 import { consumeLlmStream } from "./llmStreamDeltas";
 
 interface StreamChunk {
@@ -17,17 +22,7 @@ interface StreamChunk {
 interface CallableStreamResult {
   success: boolean;
   error?: string;
-}
-
-function clientTag(ip?: string): string {
-  return ip ? rateLimitKey(ip) : "unknown";
-}
-
-function callableErrorForRateLimit(reason?: string): HttpsError {
-  if (reason === "limiter-error") {
-    return new HttpsError("unavailable", "Rate limiter temporarily unavailable");
-  }
-  return new HttpsError("resource-exhausted", "Too many requests");
+  allowance?: AllowanceStatus;
 }
 
 /** Streams managed-provider analysis through the Firebase callable protocol. */
@@ -39,7 +34,7 @@ export async function explainStreamCallableHandler(
 
   if (isParsedBodyTooLarge(request.data)) {
     logger.warn("Rejected oversized callable request body", {
-      client: clientTag(request.rawRequest.ip),
+      client: "unknown",
     });
     throw new HttpsError("invalid-argument", "Request too large");
   }
@@ -47,17 +42,30 @@ export async function explainStreamCallableHandler(
   const validation = validateExplainRequest(request.data);
   if (!validation.ok) {
     logger.warn(`Rejected invalid callable request: ${validation.error}`, {
-      client: clientTag(request.rawRequest.ip),
+      client: "unknown",
     });
     throw new HttpsError("invalid-argument", validation.error ?? "Invalid request");
   }
 
-  const rateLimit = await checkRateLimit(request.rawRequest.ip);
-  if (!rateLimit.allowed) {
-    logger.warn(`Callable request denied: ${rateLimit.reason ?? "rate-limited"}`, {
-      client: clientTag(request.rawRequest.ip),
+  const allowanceConfig = getDailyAllowanceConfig();
+  let allowance: AllowanceStatus | undefined;
+  if (allowanceConfig.enabled) {
+    const decision = await admitDailyAllowance({
+      uid: request.auth?.uid,
+      ip: request.rawRequest.ip,
+      activeHmacKey: allowanceConfig.activeHmacKey,
+      previousHmacKey: allowanceConfig.previousHmacKey,
+      endpoint: "explainStreamCallable",
     });
-    throw callableErrorForRateLimit(rateLimit.reason);
+    if (!decision.allowed) {
+      const error = httpsErrorForDeniedAllowance(decision);
+      throw new HttpsError(error.code, error.message, error.details);
+    }
+    allowance = {
+      limit: decision.limit,
+      remaining: decision.remaining,
+      resetAt: decision.resetAt,
+    };
   }
 
   const { content, prompt = "v2", context_before, context_after, ai } = request.data as any;
@@ -86,9 +94,9 @@ export async function explainStreamCallableHandler(
       completed: streamResult.completed,
     });
 
-    return { success: true };
+    return { success: true, allowance };
   } catch (error) {
     logger.error("Error in callable streaming explain", error);
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error", allowance };
   }
 }

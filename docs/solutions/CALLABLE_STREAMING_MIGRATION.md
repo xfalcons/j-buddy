@@ -27,9 +27,14 @@ must use the Firebase callable stream below.
 `httpsCallable(functions, "explainStreamCallable").stream(requestBody)`.
 
 - Chunks yield `{ content: string }` progressively.
-- The final response is `{ success: true }`, or `{ success: false, error }` for
-  a provider failure.
-- Validation and rate-limit failures use normal Firebase callable errors.
+- The final response is `{ success: true, allowance }`, or
+  `{ success: false, error, allowance }` for a provider failure after
+  admission. `allowance` is present when daily enforcement is enabled and has
+  the shape `{ limit, remaining, resetAt }`.
+- Validation failures and typed daily-allowance denials use normal Firebase
+  callable errors. Daily exhaustion carries
+  `{ reason: "daily_allowance_exhausted", limit, resetAt }` in the error
+  details.
 - Development builds connect the Functions client to the Local Emulator Suite;
   production builds use the deployed callable.
 

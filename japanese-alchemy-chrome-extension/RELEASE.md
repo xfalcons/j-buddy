@@ -37,6 +37,12 @@
   - 新增「開始分析」按鈕，避免意外的選取文字就分析
   - 新增「前往網站」與「常見問題」按鈕
 
+# Release Notes for Ja Alchemy v1.5.0
+  - 完整恢復個人 LLM API 提供者：支援 Chat Completions-compatible 與 Responses-compatible 設定、模型清單載入、手動模型 ID，以及本機設定保存。
+  - 個人提供者會直接連線至學習者設定的 HTTPS 來源，僅在取得精確來源權限後使用；API 金鑰不會傳送至 J-Buddy 後端，也不會在個人分析失敗時自動改用共享提供者。
+  - 個人分析結果與共享分析結果使用獨立快取，並依提供者設定世代、通訊協定、端點、模型、提示版本、選取文字與上下文隔離。
+  - 恢復流程採全新設定 epoch：v1.4.1 移除前留下的個人提供者設定與快取不會被復原或讀取。
+
 title: J-Buddy Learn Japanese
 summary: 你的 AI 日文隨身家教，查單字、看語法一氣呵成；點擊之間，讓日文閱讀從「阻礙」變成「享受」！
 description:
