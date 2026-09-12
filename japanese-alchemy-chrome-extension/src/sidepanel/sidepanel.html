@@ -907,21 +907,6 @@
 </head>
 <body>
     <div class="container-fluid">
-    <header class="sidepanel-header">
-      <span class="sidepanel-title">J-Buddy</span>
-      <button
-        id="providerStatusButton"
-        class="provider-status-pill"
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded="false"
-        aria-labelledby="personalProviderSummary"
-      >
-        <span id="personalProviderSummary" class="provider-summary">狀態未知</span>
-      </button>
-    </header>
-    <p id="providerStatusAnnouncement" role="status" aria-live="polite" hidden></p>
-
     <!-- Auth Section -->
     <div id="authSection" class="auth-section">
       <div id="authSignedOut" class="auth-signed-out">
@@ -947,6 +932,21 @@
         <button class="sign-out-button" id="signOutBtn">登出</button>
       </div>
     </div>
+
+    <header class="sidepanel-header">
+      <span class="sidepanel-title">J-Buddy</span>
+      <button
+        id="providerStatusButton"
+        class="provider-status-pill"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-labelledby="personalProviderSummary"
+      >
+        <span id="personalProviderSummary" class="provider-summary">狀態未知</span>
+      </button>
+    </header>
+    <p id="providerStatusAnnouncement" role="status" aria-live="polite" hidden></p>
 
     <div class="controls">
       <div class="controls-left">

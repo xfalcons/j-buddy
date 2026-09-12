@@ -44,6 +44,12 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).not.toContain('aiPreference');
   });
 
+  test('renders login status above the provider status section', () => {
+    expect(html.indexOf('id="authSection"')).toBeLessThan(
+      html.indexOf('id="providerStatusButton"')
+    );
+  });
+
   test('keeps the top controls in one horizontal row', () => {
     expect(html).toMatch(/\.controls\s*\{[\s\S]*?flex-wrap:\s*nowrap;/);
     expect(html).toMatch(/\.controls-left\s*\{[\s\S]*?flex-wrap:\s*nowrap;/);
