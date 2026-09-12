@@ -35,6 +35,12 @@ import { DirectLlmApiService } from '../scripts/directLlmApiService.js';
 import { normalizeModelCatalogIds } from '../scripts/modelCatalog.js';
 import { buildContextCacheKey } from '../scripts/surroundingContext.js';
 import { enrichMarkdownWithConjugation } from '../scripts/conjugation.js';
+import {
+    announceProviderStatus,
+    isProviderSheetLocked,
+    setProviderSheetReadOnly,
+    setupProviderSheetListeners,
+} from './providerSheet.js';
 
 // Configure marked.js to preserve ruby tags and add classes
 marked.setOptions({
@@ -64,6 +70,7 @@ let maskedApiKeyState = null;
 let savedPersonalProviderState = null;
 let settingsProjectionRequestId = 0;
 let domPurifyRequired = false;
+let providerStateUnknown = false;
 
 export async function openExternalPage(url) {
     await chrome.tabs.create({ url, active: true });
@@ -507,6 +514,7 @@ function updateAnalyzeAvailability() {
         const managedAllowanceBlocks = savedPersonalProviderState?.mode !== PERSONAL_PROVIDER_MODE
             && Boolean(managedAllowanceExhaustedUntil && managedAllowanceExhaustedUntil > Date.now());
         elements.analyzeButton.disabled = isAnalizing
+            || providerStateUnknown
             || !isValidSelection(pendingSelectedText)
             || managedAllowanceBlocks;
     }
@@ -570,6 +578,7 @@ export async function handleSidepanelStorageChanges(
         analysisRequestId += 1;
         isAnalizing = false;
         activeAnalysisKey = null;
+        setProviderSheetReadOnly(panelElements, false);
         setCompletedAnalysisAvailable(false);
         updateAnalyzeAvailability();
     }
@@ -579,10 +588,31 @@ export async function handleSidepanelStorageChanges(
         if (providerIdentityChanged && panelElements) {
             await invalidatePersonalProviderModelCatalog(panelElements);
         }
-        const state = await getPersonalProviderState({ performMaintenance: false });
+        let state;
+        try {
+            state = await getPersonalProviderState({ performMaintenance: false });
+        } catch (error) {
+            if (requestId === settingsProjectionRequestId && panelElements) {
+                renderUnknownPersonalProviderState(panelElements, error);
+            }
+            return;
+        }
         if (requestId === settingsProjectionRequestId) {
             savedPersonalProviderState = state;
-            if (panelElements) renderPersonalProviderState(panelElements, state);
+            if (panelElements) {
+                const draftValues = getPersonalProviderFormValues(panelElements);
+                const hasDraft = Boolean(
+                    draftValues.apiUrl.trim()
+                    || draftValues.apiKey.trim()
+                    || draftValues.model.trim()
+                    || draftValues.protocol !== CHAT_COMPLETIONS_PROTOCOL
+                );
+                if (providerIdentityChanged || !hasDraft) {
+                    renderPersonalProviderState(panelElements, state);
+                } else {
+                    renderPersonalProviderStatus(panelElements, state);
+                }
+            }
         }
     }
 
@@ -639,6 +669,12 @@ export function handleCancelAnalysis(panelElements = elements) {
     analysisRequestId += 1;
     cancelActiveAnalysis();
     isAnalizing = false;
+    setProviderSheetReadOnly(panelElements, false);
+    if (savedPersonalProviderState) {
+        renderPersonalProviderStatus(panelElements, savedPersonalProviderState);
+    } else {
+        setPersonalProviderFeedback(panelElements, '', 'status');
+    }
     activeAnalysisKey = null;
     activeAnalysisPreviewText = '';
     completedAnalysisResponse = '';
@@ -717,6 +753,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             activeAnalysisRequestIdentity = null;
             activeAnalysisBaseIdentity = null;
             isAnalizing = false;
+            setProviderSheetReadOnly(elements, false);
             activeAnalysisKey = null;
             saveForLaterJson = {};
             proseElement.innerHTML = '';
@@ -758,6 +795,7 @@ export async function analizingSelectedText(selectedText, context = { before: ''
         activeAnalysisBaseIdentity = null;
         activeAnalysisKey = null;
         isAnalizing = false;
+        setProviderSheetReadOnly(elements, false);
         saveForLaterJson = {};
         proseElement.innerHTML = '';
         resultElement.classList.remove('show');
@@ -800,6 +838,12 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             console.log('Selected text + context same as last time');
         } else if (isValidSelection(selectedTextForRequest)) {
             // Show loading state
+            setProviderSheetReadOnly(elements, true);
+            setPersonalProviderFeedback(
+                elements,
+                '分析進行中：提供者設定已暫時鎖定。關閉此視窗即可返回工作區，並使用「停止分析」。',
+                'status'
+            );
             setLoadingMessage(loadingElement, 'AI 正在分析，請稍候…');
             setLoadingState(loadingElement, true);
             proseElement.innerHTML = '';
@@ -812,6 +856,21 @@ export async function analizingSelectedText(selectedText, context = { before: ''
                     || !savedProviderSnapshotMatches(providerState, currentProviderState)
                     || (providerState.mode === PERSONAL_PROVIDER_MODE
                         && !currentProviderState.isPersonalReady)) {
+                    if (isLatestAnalysis(requestId)) {
+                        activeAnalysisRequestIdentity = null;
+                        activeAnalysisBaseIdentity = null;
+                        isAnalizing = false;
+                        setProviderSheetReadOnly(elements, false);
+                        activeAnalysisKey = null;
+                        activeAnalysisPreviewText = '';
+                        saveForLaterJson = {};
+                        proseElement.innerHTML = '';
+                        resultElement.classList.remove('show');
+                        setLoadingState(loadingElement, false);
+                        setCompletedAnalysisAvailable(false);
+                        setAnalysisCancellationAvailable(false);
+                        updateAnalyzeAvailability();
+                    }
                     return;
                 }
                 console.log('Initializing API service...');
@@ -953,6 +1012,20 @@ export async function analizingSelectedText(selectedText, context = { before: ''
             activeAnalysisController = null;
         }
         isAnalizing = false;
+        setProviderSheetReadOnly(elements, false);
+        projectSavedPersonalProviderModel(elements);
+        updateLoadPersonalProviderModelsButton(
+            elements,
+            Boolean(getApplicablePersonalProviderCatalog(getPersonalProviderFormValues(elements)))
+        );
+        if (savedPersonalProviderState) {
+            const providerSummary = formatProviderSummary(savedPersonalProviderState);
+            if (elements.personalProviderSummary) {
+                elements.personalProviderSummary.textContent = providerSummary;
+            }
+            announceProviderStatus(elements, providerSummary);
+            setCanonicalPersonalProviderFeedback(elements, savedPersonalProviderState);
+        }
         activeAnalysisKey = null;
         activeAnalysisRequestIdentity = null;
         activeAnalysisBaseIdentity = null;
@@ -1696,6 +1769,7 @@ export async function handlePersonalProviderLoadModels(elements, modelService = 
                 elements,
                 Boolean(getApplicablePersonalProviderCatalog(finalValues))
             );
+            reinforceProviderSheetLock(elements);
         }
     }
 }
@@ -1715,40 +1789,14 @@ export function updatePersonalProviderModeUi(elements, mode, isPersonalReady) {
     }
 }
 
-export function renderPersonalProviderState(elements, state) {
+function formatProviderSummary({ mode, profile, isPersonalReady }) {
+    if (mode !== PERSONAL_PROVIDER_MODE) return '代管';
+    if (!profile) return '個人 · 尚未完成設定';
+    return `個人 · ${profile.model}${isPersonalReady ? '' : ' · 無法使用'}`;
+}
+
+function setCanonicalPersonalProviderFeedback(elements, state) {
     const { mode, profile, isPersonalReady, personalError } = state;
-    savedPersonalProviderState = state;
-    domPurifyRequired = mode === PERSONAL_PROVIDER_MODE;
-    updatePersonalProviderModeUi(elements, mode, isPersonalReady);
-    updateAnalyzeAvailability();
-
-    if (elements.personalProviderForm) {
-        elements.personalProviderForm.hidden = mode !== PERSONAL_PROVIDER_MODE;
-    }
-
-    if (elements.personalProviderSummary) {
-        elements.personalProviderSummary.textContent = mode === PERSONAL_PROVIDER_MODE
-            ? (profile
-                ? `個人 · ${profile.model}${isPersonalReady ? '' : ' · 無法使用'}`
-                : '個人 · 尚未完成設定')
-            : '代管';
-    }
-
-    if (elements.personalProviderApiUrl) {
-        elements.personalProviderApiUrl.value = profile?.apiUrl || '';
-    }
-    setMaskedApiKeyState(profile);
-    if (elements.personalProviderApiKey) {
-        elements.personalProviderApiKey.value = profile ? MASKED_API_KEY : '';
-    }
-    if (elements.personalProviderProtocol) {
-        elements.personalProviderProtocol.value = profile?.protocol || CHAT_COMPLETIONS_PROTOCOL;
-    }
-    projectSavedPersonalProviderModel(elements);
-    if (elements.clearPersonalProviderButton) {
-        elements.clearPersonalProviderButton.disabled = !profile;
-    }
-
     const unavailableMessage = mode === PERSONAL_PROVIDER_MODE && !isPersonalReady
         ? `已選取個人分析，但目前無法使用：${personalError?.message || '請先完成提供者設定。'}`
         : '';
@@ -1766,20 +1814,114 @@ export function renderPersonalProviderState(elements, state) {
     }
 }
 
+export function renderPersonalProviderState(elements, state) {
+    const { profile, mode } = state;
+    renderPersonalProviderStatus(elements, state);
+    if (activeModelCatalogRequest) return;
+
+    if (elements.personalProviderForm) {
+        elements.personalProviderForm.hidden = mode !== PERSONAL_PROVIDER_MODE;
+    }
+
+    if (elements.personalProviderApiUrl) {
+        elements.personalProviderApiUrl.value = profile?.apiUrl || '';
+    }
+    setMaskedApiKeyState(profile);
+    if (elements.personalProviderApiKey) {
+        elements.personalProviderApiKey.value = profile ? MASKED_API_KEY : '';
+    }
+    if (elements.personalProviderProtocol) {
+        elements.personalProviderProtocol.value = profile?.protocol || CHAT_COMPLETIONS_PROTOCOL;
+    }
+    projectSavedPersonalProviderModel(elements);
+    if (elements.clearPersonalProviderButton) {
+        elements.clearPersonalProviderButton.disabled = !profile;
+    }
+}
+
+function renderPersonalProviderStatus(elements, state) {
+    const { mode, isPersonalReady } = state;
+    savedPersonalProviderState = state;
+    providerStateUnknown = false;
+    domPurifyRequired = mode === PERSONAL_PROVIDER_MODE;
+    updatePersonalProviderModeUi(elements, mode, isPersonalReady);
+    updateAnalyzeAvailability();
+
+    const providerSummary = formatProviderSummary(state);
+    if (elements.personalProviderSummary) {
+        elements.personalProviderSummary.textContent = providerSummary;
+    }
+    announceProviderStatus(elements, providerSummary);
+    setCanonicalPersonalProviderFeedback(elements, state);
+    reinforceProviderSheetLock(elements);
+}
+
+function reinforceProviderSheetLock(elements) {
+    if (isAnalizing && isProviderSheetLocked()) {
+        setProviderSheetReadOnly(elements, true);
+        setPersonalProviderFeedback(
+            elements,
+            '分析進行中：提供者設定已暫時鎖定。關閉此視窗即可返回工作區，並使用「停止分析」。',
+            'status'
+        );
+    }
+}
+
+function renderUnknownPersonalProviderState(elements, error) {
+    savedPersonalProviderState = null;
+    providerStateUnknown = true;
+    domPurifyRequired = false;
+    elements.providerModeButtons?.forEach((button) => {
+        button.classList.remove('selected');
+        button.setAttribute('aria-pressed', 'false');
+    });
+    if (elements.personalProviderForm) elements.personalProviderForm.hidden = true;
+    if (elements.personalProviderSummary) elements.personalProviderSummary.textContent = '狀態未知';
+    announceProviderStatus(elements, '狀態未知');
+    if (elements.analyzeButton) elements.analyzeButton.disabled = true;
+    setPersonalProviderFeedback(
+        elements,
+        `提供者狀態未知：${error?.message || '目前無法讀取設定。'}`,
+        'error'
+    );
+}
+
 export async function initializePersonalProviderSettings(elements) {
     try {
         const state = await getPersonalProviderState();
         renderPersonalProviderState(elements, state);
         return state;
     } catch (error) {
-        updatePersonalProviderModeUi(elements, MANAGED_PROVIDER_MODE, false);
-        setPersonalProviderFeedback(
-            elements,
-            `個人提供者設定無法使用：${error.message}`,
-            'error'
-        );
+        renderUnknownPersonalProviderState(elements, error);
         return null;
     }
+}
+
+export async function refreshPersonalProviderStateAfterPermissionChange(
+    elements,
+    permission
+) {
+    if (!Array.isArray(permission?.origins) || permission.origins.length === 0) return;
+
+    const requestId = ++settingsProjectionRequestId;
+    try {
+        const state = await getPersonalProviderState({ performMaintenance: false });
+        if (requestId === settingsProjectionRequestId) {
+            renderPersonalProviderStatus(elements, state);
+        }
+    } catch (error) {
+        if (requestId === settingsProjectionRequestId) {
+            renderUnknownPersonalProviderState(elements, error);
+        }
+    }
+}
+
+export function setupPersonalProviderPermissionListeners(panelElements = elements) {
+    const refresh = (permission) => {
+        return refreshPersonalProviderStateAfterPermissionChange(panelElements, permission);
+    };
+    chrome.permissions?.onAdded?.addListener(refresh);
+    chrome.permissions?.onRemoved?.addListener(refresh);
 }
 
 function getPersonalProviderFormValues(elements) {
@@ -1981,6 +2123,10 @@ async function initElements() {
     shareCheckboxContainer: document.getElementById('shareCheckboxContainer'),
     analysisModeButtons: document.querySelectorAll('.analysis-mode-option'),
     providerModeButtons: document.querySelectorAll('.provider-mode-option'),
+    providerStatusButton: document.getElementById('providerStatusButton'),
+    providerSheet: document.getElementById('providerSheet'),
+    providerSheetCloseButton: document.getElementById('providerSheetCloseButton'),
+    providerStatusAnnouncement: document.getElementById('providerStatusAnnouncement'),
     personalProviderModeButton: document.querySelector('[data-provider-mode="personal"]'),
     personalProviderForm: document.getElementById('personalProviderForm'),
     personalProviderApiUrl: document.getElementById('personalProviderApiUrl'),
@@ -2153,6 +2299,8 @@ export async function setupEventListeners() {
         await handlePersonalProviderModeChange(elements, button.dataset.providerMode);
       });
     });
+    setupProviderSheetListeners(elements);
+    setupPersonalProviderPermissionListeners();
     elements.personalProviderForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
       await handlePersonalProviderSave(elements);
