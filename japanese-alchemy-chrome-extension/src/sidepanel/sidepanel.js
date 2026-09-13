@@ -525,12 +525,32 @@ export function setPendingSelection(selectedText, context = {}, refreshId = null
     if (refreshId === null) pendingSelectionRefreshId += 1;
     pendingSelectedText = selectedText || '';
     pendingContext = normalizeContext(context);
-    if (elements?.pendingSelectionStatus) {
-        elements.pendingSelectionStatus.textContent = isValidSelection(pendingSelectedText)
-            ? `已選取：「${pendingSelectedText}」；按「開始分析」才會傳送。`
-            : '請在頁面選取 2–500 個字元後再開始分析。';
-    }
+    renderPendingSelectionStatus();
     updateAnalyzeAvailability();
+}
+
+function renderPendingSelectionStatus() {
+    const status = elements?.pendingSelectionStatus;
+    if (!status) return;
+
+    if (!isValidSelection(pendingSelectedText)) {
+        status.textContent = '請在頁面選取 2–500 個字元後再開始分析。';
+        return;
+    }
+
+    if (typeof status.replaceChildren !== 'function') {
+        status.textContent = `已選取：「${pendingSelectedText}」；按「開始分析」才會傳送。`;
+        return;
+    }
+
+    const selectedText = globalThis.document.createElement('span');
+    selectedText.className = 'pending-selection-text';
+    selectedText.textContent = pendingSelectedText;
+    status.replaceChildren(
+        globalThis.document.createTextNode('已選取：「'),
+        selectedText,
+        globalThis.document.createTextNode('」；按「開始分析」才會傳送。')
+    );
 }
 
 export async function handleAnalyzePendingSelection() {

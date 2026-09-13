@@ -290,7 +290,18 @@ describe('sidepanel analysis-mode behavior', () => {
   });
 
   test('shows the pending selected text before analysis is confirmed', async () => {
-    const { pendingSelectionStatus } = setupElements();
+    const { elements } = setupElements();
+    const selectedTextNode = { className: '', textContent: '' };
+    const renderedStatus = {
+      textContent: '',
+      replaceChildren: jest.fn((...nodes) => {
+        renderedStatus.textContent = nodes.map((node) => node.textContent).join('');
+      }),
+    };
+    globalThis.document.createElement = jest.fn(() => selectedTextNode);
+    globalThis.document.createTextNode = jest.fn((text) => ({ textContent: text }));
+    elements.pendingSelectionStatus = renderedStatus;
+    setSidepanelElementsForTesting(elements);
     const selectedText = '日'.repeat(500);
     setupStorage({
       selectedText,
@@ -300,8 +311,9 @@ describe('sidepanel analysis-mode behavior', () => {
 
     await handleSidepanelStorageChanges({ selectedText: { newValue: selectedText } });
 
-    expect(pendingSelectionStatus.textContent).toContain(selectedText);
-    expect(pendingSelectionStatus.textContent).toContain('開始分析');
+    expect(selectedTextNode.className).toBe('pending-selection-text');
+    expect(selectedTextNode.textContent).toBe(selectedText);
+    expect(renderedStatus.textContent).toContain('開始分析');
   });
 
   test('includes the parsed structured analysis in a page save payload', async () => {

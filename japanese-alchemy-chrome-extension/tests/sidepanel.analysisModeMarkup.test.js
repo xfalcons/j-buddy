@@ -55,6 +55,11 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toMatch(/#providerStatusAnnouncement\s*\{[\s\S]*?clip-path:\s*inset\(50%\);/);
   });
 
+  test('styles the pending selected text separately from notification copy', () => {
+    expect(html).toMatch(/\.pending-selection-text\s*\{[\s\S]*?color:\s*var\(--text-primary\);/);
+    expect(html).toMatch(/\.pending-selection-text\s*\{[\s\S]*?font-weight:\s*600;/);
+  });
+
   test('keeps the top controls in one horizontal row', () => {
     expect(html).toMatch(/\.controls\s*\{[\s\S]*?flex-wrap:\s*nowrap;/);
     expect(html).toMatch(/\.controls-left\s*\{[\s\S]*?flex-wrap:\s*nowrap;/);
