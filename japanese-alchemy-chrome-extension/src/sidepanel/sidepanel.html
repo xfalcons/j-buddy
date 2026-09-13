@@ -611,8 +611,7 @@
       font-weight: 600;
     }
 
-    .provider-status-pill::after {
-      content: "設定";
+    .provider-settings-affordance {
       color: var(--text-secondary);
       font-weight: 400;
     }
@@ -954,9 +953,10 @@
         type="button"
         aria-haspopup="dialog"
         aria-expanded="false"
-        aria-labelledby="personalProviderSummary"
+        aria-labelledby="personalProviderSummary providerSettingsAffordance"
       >
         <span id="personalProviderSummary" class="provider-summary">狀態未知</span>
+        <span id="providerSettingsAffordance" class="provider-settings-affordance">設定</span>
       </button>
     </header>
     <p id="providerStatusAnnouncement" role="status" aria-live="polite" hidden></p>

@@ -50,6 +50,16 @@ describe('sidepanel analysis-mode markup', () => {
     );
   });
 
+  test('includes the provider settings affordance in the pill accessible name', () => {
+    expect(html).toContain(
+      'aria-labelledby="personalProviderSummary providerSettingsAffordance"'
+    );
+    expect(html).toContain(
+      '<span id="providerSettingsAffordance" class="provider-settings-affordance">設定</span>'
+    );
+    expect(html).not.toContain('.provider-status-pill::after');
+  });
+
   test('keeps provider status announcements accessible without duplicating the pill visually', () => {
     expect(html).toMatch(/#providerStatusAnnouncement\s*\{[\s\S]*?position:\s*absolute;/);
     expect(html).toMatch(/#providerStatusAnnouncement\s*\{[\s\S]*?clip-path:\s*inset\(50%\);/);
