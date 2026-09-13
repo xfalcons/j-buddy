@@ -50,6 +50,11 @@ describe('sidepanel analysis-mode markup', () => {
     );
   });
 
+  test('keeps provider status announcements accessible without duplicating the pill visually', () => {
+    expect(html).toMatch(/#providerStatusAnnouncement\s*\{[\s\S]*?position:\s*absolute;/);
+    expect(html).toMatch(/#providerStatusAnnouncement\s*\{[\s\S]*?clip-path:\s*inset\(50%\);/);
+  });
+
   test('keeps the top controls in one horizontal row', () => {
     expect(html).toMatch(/\.controls\s*\{[\s\S]*?flex-wrap:\s*nowrap;/);
     expect(html).toMatch(/\.controls-left\s*\{[\s\S]*?flex-wrap:\s*nowrap;/);
