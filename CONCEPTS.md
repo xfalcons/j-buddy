@@ -36,6 +36,9 @@ A learner-configured LLM provider profile stored in the current Chrome browser p
 ### Provider restoration epoch
 The persisted generation boundary that makes pre-restoration personal profiles and caches unreachable while allowing fresh personal-provider setup.
 
+### Provider status pill
+The persistent Chrome sidepanel header control that identifies the active managed or personal analysis route and opens the focused provider setup sheet; it reports status but does not itself switch routes.
+
 ### High-value vocabulary item
 A vocabulary item selected for analysis because it materially helps comprehension or later sentence production in the current source text. High-value items may include verbs, サ變 nouns, adjectives, adverbs, compound nouns, and katakana loanwords, and are preferred over exhaustive N1-N3 extraction.
 

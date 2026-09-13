@@ -26,16 +26,48 @@ describe('sidepanel analysis-mode markup', () => {
     expect(html).toContain('aria-pressed="true">造句分析</button>');
   });
 
-  test('exposes disclosed custom provider settings without displacing current controls', () => {
-    expect(html).toContain('id="personalProviderSettings"');
+  test('exposes provider settings through a persistent pill and modal sheet', () => {
+    expect(html).toContain('id="providerStatusButton"');
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain('id="providerStatusAnnouncement"');
+    expect(html).toContain('<dialog id="providerSheet"');
+    expect(html).toContain('aria-labelledby="providerSheetTitle"');
     expect(html).toContain('LLM API 提供者');
     expect(html).toContain('data-provider-mode="personal"');
     expect(html).toContain('API 金鑰');
     expect(html).toContain('模型探索只會把 API 金鑰直接傳送至你選擇的提供者');
     expect(html).toContain('個人分析會把 API 金鑰、選取文字與前後文直接傳送至該提供者');
     expect(html).toContain('登入即可私密儲存項目；不登入也可儲存至共享收藏。');
+    expect(html).not.toContain('<details');
+    expect(html.indexOf('id="analyzeButton"')).toBeLessThan(html.indexOf('<dialog id="providerSheet"'));
     expect(html).not.toContain('data-ai-preference');
     expect(html).not.toContain('aiPreference');
+  });
+
+  test('renders login status above the provider status section', () => {
+    expect(html.indexOf('id="authSection"')).toBeLessThan(
+      html.indexOf('id="providerStatusButton"')
+    );
+  });
+
+  test('includes the provider settings affordance in the pill accessible name', () => {
+    expect(html).toContain(
+      'aria-labelledby="personalProviderSummary providerSettingsAffordance"'
+    );
+    expect(html).toContain(
+      '<span id="providerSettingsAffordance" class="provider-settings-affordance">設定</span>'
+    );
+    expect(html).not.toContain('.provider-status-pill::after');
+  });
+
+  test('keeps provider status announcements accessible without duplicating the pill visually', () => {
+    expect(html).toMatch(/#providerStatusAnnouncement\s*\{[\s\S]*?position:\s*absolute;/);
+    expect(html).toMatch(/#providerStatusAnnouncement\s*\{[\s\S]*?clip-path:\s*inset\(50%\);/);
+  });
+
+  test('styles the pending selected text separately from notification copy', () => {
+    expect(html).toMatch(/\.pending-selection-text\s*\{[\s\S]*?color:\s*var\(--text-primary\);/);
+    expect(html).toMatch(/\.pending-selection-text\s*\{[\s\S]*?font-weight:\s*600;/);
   });
 
   test('keeps the top controls in one horizontal row', () => {
