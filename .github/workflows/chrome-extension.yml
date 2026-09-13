@@ -1,0 +1,37 @@
+name: Chrome Extension
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/chrome-extension.yml"
+      - "japanese-alchemy-chrome-extension/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    name: Test and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: japanese-alchemy-chrome-extension
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: japanese-alchemy-chrome-extension/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build extension
+        run: npm run build
